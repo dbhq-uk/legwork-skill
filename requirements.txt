@@ -1,0 +1,19 @@
+# Deep Research Skill Dependencies (Bright Data)
+#
+# Required Python packages (installed by setup.sh into .venv):
+requests>=2.31
+
+# Optional Python packages:
+#   weasyprint — PDF generation from HTML reports.
+#                Install: pip install weasyprint
+#                Used by: reference/html-generation.md (Phase 8 PDF output)
+#
+# External services (not Python packages):
+#   Bright Data SERP API + Web Unlocker
+#     - Sign up: https://brightdata.com/
+#     - Create one SERP API zone and one Web Unlocker zone
+#     - Configure: ~/.deep-research/config.env  (or environment variables)
+#         BRIGHTDATA_API_TOKEN=...
+#         BD_SERP_ZONE=...
+#         BD_UNLOCKER_ZONE=...
+#     - Used by: scripts/bd_search.py

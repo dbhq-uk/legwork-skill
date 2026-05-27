@@ -2,52 +2,62 @@
 """
 bd_search.py - Bright Data backend for the deep-research skill.
 
-Drop-in replacement for the `search-cli` binary the skill called via
-Bash. Emulates the same invocation surface:
+Shells out to the official Bright Data CLI (`brightdata` / `bdata`,
+package `@brightdata/cli`). Preserves the historical invocation surface so
+the rest of the skill doesn't need to change:
 
     bd_search.py "query" --json -c 10 [-m MODE]
 
-Search modes (general/news/academic/scholar/patents/people/images) go to the
-Bright Data SERP API. Content modes (extract/scrape) + a URL go to the
-Bright Data Web Unlocker. Output is always JSON on stdout; errors go to
-stderr with a non-zero exit so the skill cleanly falls back to built-in
-WebSearch.
+Search modes (general/news/images, plus aliases scholar/academic/patents/people
+which the CLI doesn't support natively and so fall through to web search) call
+`brightdata search`. Content modes (extract/scrape) + a URL call
+`brightdata scrape -f markdown`. Output is always JSON on stdout; errors go to
+stderr with a non-zero exit so the skill falls back to built-in WebSearch.
 
-Credentials are read from environment variables, falling back to
-~/.deep-research/config.env (simple KEY=VALUE lines):
-
-    BRIGHTDATA_API_TOKEN   Bright Data API token (Bearer)
-    BD_SERP_ZONE           name of your SERP API zone
-    BD_UNLOCKER_ZONE       name of your Web Unlocker zone
-    BD_COUNTRY             optional default country code for SERP gl=
-
-Run via the skill's venv:
-
-    ~/.claude/skills/deep-research/.venv/bin/python \\
-        ~/.claude/skills/deep-research/scripts/bd_search.py "query" --json
+Authentication is handled entirely by the CLI itself (run `brightdata login`,
+or set `BRIGHTDATA_API_KEY`). This wrapper does not read or write any
+credentials of its own.
 """
 
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
-from pathlib import Path
-from urllib.parse import quote_plus
 
-import requests
-
-API_ENDPOINT = "https://api.brightdata.com/request"
 SERP_MODES = {"general", "news", "academic", "scholar", "patents", "people", "images"}
 CONTENT_MODES = {"extract", "scrape"}
-TIMEOUT = 60
-CONFIG_PATH = Path.home() / ".deep-research" / "config.env"
-SETUP_HINT = "Re-run ~/.claude/skills/deep-research/setup.sh --reset to update credentials."
-# HTTP statuses that indicate auth/quota problems (token revoked, zone deleted, balance hit, etc.).
-AUTH_STATUSES = {401, 402, 403}
-EXIT_AUTH = 2  # Wrapper exit code for auth/quota failures, distinct from generic failure (1).
+TIMEOUT = 90
+SETUP_HINT = "Run `brightdata login` (or set BRIGHTDATA_API_KEY) to authenticate."
+# Bright Data CLI exits 1 for every error. Map known auth/quota messages onto
+# exit code 2 so the skill's "credentials are bad, tell the user" branch fires.
+EXIT_AUTH = 2
+AUTH_ERROR_SUBSTRINGS = (
+    "Invalid or expired API key",
+    "No API key",
+    "not authenticated",
+    "Authentication failed",
+    "Access denied",
+    "Rate limit exceeded",
+    "quota",
+    "balance",
+    "No Web Unlocker zone",
+    "No SERP zone",
+)
 
-# Google SERP "tbm" tab per mode (None = standard web results).
-_TBM = {"news": "nws", "images": "isch"}
+# Map our historical -m mode to the CLI's --type. Modes the CLI doesn't model
+# natively (scholar, academic, patents, people) fall through to web search;
+# the downstream re-ranker handles credibility scoring either way.
+_TYPE_FOR_MODE = {
+    "general": "web",
+    "news": "news",
+    "images": "images",
+    "scholar": "web",
+    "academic": "web",
+    "patents": "web",
+    "people": "web",
+}
 
 
 def _fail(msg: str, code: int = 1) -> None:
@@ -56,93 +66,62 @@ def _fail(msg: str, code: int = 1) -> None:
     sys.exit(code)
 
 
-def _load_config_env() -> None:
-    """Populate os.environ from ~/.deep-research/config.env for any unset keys.
+def _cli_bin() -> str:
+    for name in ("brightdata", "bdata"):
+        path = shutil.which(name)
+        if path:
+            return path
+    _fail(
+        "Bright Data CLI not found on PATH. Install with: npm install -g @brightdata/cli",
+        code=EXIT_AUTH,
+    )
 
-    Real environment variables always win. File format is simple KEY=VALUE
-    lines; blank lines and lines starting with `#` are ignored. Surrounding
-    quotes on values are stripped. Bad lines are silently skipped — the wrapper
-    will fail later if a required var is still missing, with a clear message.
-    """
-    if not CONFIG_PATH.is_file():
-        return
+
+def _classify_exit(stderr: str) -> int:
+    """Return EXIT_AUTH if stderr looks like an auth/quota failure, else 1."""
+    s = stderr.lower()
+    return EXIT_AUTH if any(sub.lower() in s for sub in AUTH_ERROR_SUBSTRINGS) else 1
+
+
+def _run(cmd: list[str]) -> str:
+    """Run the CLI and return stdout. On failure, _fail() with a useful code."""
     try:
-        for raw in CONFIG_PATH.read_text().splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
-    except OSError:
-        # Don't crash on a malformed/unreadable config — let _token()/zone checks fail cleanly.
-        pass
-
-
-def _token() -> str:
-    tok = os.environ.get("BRIGHTDATA_API_TOKEN")
-    if not tok:
-        _fail(
-            f"BRIGHTDATA_API_TOKEN not set (env or ~/.deep-research/config.env). {SETUP_HINT}",
-            code=EXIT_AUTH,
-        )
-    return tok
-
-
-def _post(zone: str, url: str) -> requests.Response:
-    """Single call to the unified Bright Data /request endpoint."""
-    try:
-        return requests.post(
-            API_ENDPOINT,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {_token()}",
-            },
-            json={"zone": zone, "url": url, "format": "raw"},
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
             timeout=TIMEOUT,
+            check=False,
         )
-    except requests.RequestException as e:
-        _fail(f"request failed: {e}")
-
-
-def _build_google_url(query: str, mode: str, count: int, country: str | None) -> str:
-    """Construct a Google search URL with brd_json=1 for parsed results."""
-    params = [f"q={quote_plus(query)}", "brd_json=1", f"num={count}"]
-    tbm = _TBM.get(mode)
-    if tbm:
-        params.append(f"tbm={tbm}")
-    if mode == "scholar":
-        # Google Scholar host; brd_json parsing still applies.
-        base = "https://scholar.google.com/scholar"
-    elif mode == "patents":
-        params = [f"q={quote_plus(query)}", "brd_json=1"]
-        base = "https://patents.google.com/xhr/query"
-    else:
-        base = "https://www.google.com/search"
-    if country:
-        params.append(f"gl={country}")
-    return f"{base}?{'&'.join(params)}"
+    except subprocess.TimeoutExpired:
+        _fail(f"Bright Data CLI timed out after {TIMEOUT}s")
+    except OSError as e:
+        _fail(f"failed to invoke Bright Data CLI: {e}")
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
+        code = _classify_exit(msg)
+        hint = f" {SETUP_HINT}" if code == EXIT_AUTH else ""
+        _fail(f"Bright Data CLI failed: {msg[:400]}{hint}", code=code)
+    return proc.stdout
 
 
 def _normalize_serp(parsed: dict, count: int) -> list[dict]:
     """Map Bright Data parsed SERP JSON to the skill's loose source shape.
 
-    Defensive: the parsed payload exposes organic results under 'organic'
-    (and occasionally 'organic_results'); fields vary slightly by vertical.
+    Defensive across verticals: organic web results live under 'organic';
+    news verticals may use 'news'. Field names ('link'/'url',
+    'description'/'snippet') also vary, so we accept either.
     """
-    organic = parsed.get("organic") or parsed.get("organic_results") or []
+    items = parsed.get("organic") or parsed.get("news") or parsed.get("organic_results") or []
     results = []
-    for i, item in enumerate(organic[:count], start=1):
+    for i, item in enumerate(items[:count], start=1):
         results.append(
             {
                 "rank": item.get("rank", i),
                 "title": item.get("title") or item.get("name") or "",
                 "url": item.get("link") or item.get("url") or "",
                 "snippet": item.get("description") or item.get("snippet") or "",
-                # date is best-effort; populated when Google exposes it. Feeds
-                # source_evaluator recency scoring, which defaults to 50 if null.
+                # date is best-effort. source_evaluator defaults to recency=50 when null.
                 "date": item.get("date") or item.get("published") or None,
                 "source_type": "web",
             }
@@ -151,19 +130,21 @@ def _normalize_serp(parsed: dict, count: int) -> list[dict]:
 
 
 def run_serp(args) -> None:
-    url = _build_google_url(args.query, args.mode, args.count, args.country)
-    resp = _post(args.serp_zone, url)
-    if resp.status_code in AUTH_STATUSES:
-        _fail(
-            f"SERP auth/quota failure HTTP {resp.status_code}: {resp.text[:200]}. {SETUP_HINT}",
-            code=EXIT_AUTH,
-        )
-    if resp.status_code != 200:
-        _fail(f"SERP HTTP {resp.status_code}: {resp.text[:300]}")
+    cli = _cli_bin()
+    cmd = [
+        cli, "search", args.query,
+        "--type", _TYPE_FOR_MODE.get(args.mode, "web"),
+        "--json",
+    ]
+    if args.country:
+        cmd.extend(["--country", args.country])
+    if args.zone:
+        cmd.extend(["--zone", args.zone])
+    raw = _run(cmd)
     try:
-        parsed = resp.json()
+        parsed = json.loads(raw)
     except ValueError:
-        _fail("SERP response was not JSON (check brd_json support on zone)")
+        _fail(f"SERP response was not JSON: {raw[:300]}")
     results = _normalize_serp(parsed, args.count)
     if not results:
         _fail("SERP returned zero organic results")
@@ -184,15 +165,13 @@ def run_content(args) -> None:
     target = args.query  # in content modes the positional arg is a URL
     if not target.startswith(("http://", "https://")):
         _fail(f"{args.mode} mode requires a URL, got: {target[:80]}")
-    resp = _post(args.unlocker_zone, target)
-    if resp.status_code in AUTH_STATUSES:
-        _fail(
-            f"Unlocker auth/quota failure HTTP {resp.status_code}: {resp.text[:200]}. {SETUP_HINT}",
-            code=EXIT_AUTH,
-        )
-    if resp.status_code != 200:
-        _fail(f"Unlocker HTTP {resp.status_code}: {resp.text[:300]}")
-    body = resp.text
+    cli = _cli_bin()
+    cmd = [cli, "scrape", target, "-f", "markdown"]
+    if args.country:
+        cmd.extend(["--country", args.country])
+    if args.zone:
+        cmd.extend(["--zone", args.zone])
+    body = _run(cmd)
     if args.max_chars and len(body) > args.max_chars:
         body = body[: args.max_chars]
     json.dump(
@@ -211,8 +190,6 @@ def run_content(args) -> None:
 
 
 def main() -> None:
-    _load_config_env()
-
     p = argparse.ArgumentParser(prog="bd_search.py", add_help=True)
     p.add_argument("query", help="search query, or URL for extract/scrape modes")
     p.add_argument("-m", "--mode", default="general")
@@ -220,23 +197,16 @@ def main() -> None:
     p.add_argument("--json", action="store_true", help="accepted for compat; output is always JSON")
     p.add_argument("--country", default=os.environ.get("BD_COUNTRY"))
     p.add_argument("--max-chars", type=int, default=20000, help="truncate scraped content")
-    p.add_argument("--serp-zone", default=os.environ.get("BD_SERP_ZONE"))
-    p.add_argument("--unlocker-zone", default=os.environ.get("BD_UNLOCKER_ZONE"))
+    p.add_argument(
+        "--zone",
+        default=os.environ.get("BD_SERP_ZONE") or os.environ.get("BD_UNLOCKER_ZONE"),
+        help="override the CLI's default zone for SERP or scrape calls",
+    )
     args = p.parse_args()
 
     if args.mode in CONTENT_MODES:
-        if not args.unlocker_zone:
-            _fail(
-                f"BD_UNLOCKER_ZONE not set (env or ~/.deep-research/config.env). {SETUP_HINT}",
-                code=EXIT_AUTH,
-            )
         run_content(args)
     elif args.mode in SERP_MODES:
-        if not args.serp_zone:
-            _fail(
-                f"BD_SERP_ZONE not set (env or ~/.deep-research/config.env). {SETUP_HINT}",
-                code=EXIT_AUTH,
-            )
         run_serp(args)
     else:
         _fail(f"unknown mode: {args.mode}")

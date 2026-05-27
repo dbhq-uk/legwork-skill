@@ -1,19 +1,15 @@
-# Deep Research Skill Dependencies (Bright Data)
+# Deep Research Skill Dependencies (Bright Data CLI)
 #
 # Required Python packages (installed by setup.sh into .venv):
-requests>=2.31
+#   (none — the SERP/Unlocker backend now shells out to the Bright Data CLI)
 
 # Optional Python packages:
 #   weasyprint — PDF generation from HTML reports.
 #                Install: pip install weasyprint
 #                Used by: reference/html-generation.md (Phase 8 PDF output)
 #
-# External services (not Python packages):
-#   Bright Data SERP API + Web Unlocker
-#     - Sign up: https://brightdata.com/
-#     - Create one SERP API zone and one Web Unlocker zone
-#     - Configure: ~/.deep-research/config.env  (or environment variables)
-#         BRIGHTDATA_API_TOKEN=...
-#         BD_SERP_ZONE=...
-#         BD_UNLOCKER_ZONE=...
+# External tooling (not Python packages):
+#   Bright Data CLI (`brightdata` / `bdata`, npm: @brightdata/cli)
+#     - Install: npm install -g @brightdata/cli
+#     - Authenticate: brightdata login   (or set BRIGHTDATA_API_KEY)
 #     - Used by: scripts/bd_search.py

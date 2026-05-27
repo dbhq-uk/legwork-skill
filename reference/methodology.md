@@ -80,14 +80,14 @@ Use the returned year for all date-filtered queries and recency checks. Do NOT a
 - Example: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum computing 2026" -m academic --json -c 15`
 - For page content: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "https://example.com/article" -m scrape --json`
 - Result ordering = Google SERP rank. Final relevance ranking is applied DOWNSTREAM by `source_evaluator.py` (deterministic credibility scoring) — no neural/semantic ranker is required
-- Credentials: reads `BRIGHTDATA_API_TOKEN` / `BD_SERP_ZONE` / `BD_UNLOCKER_ZONE` from the environment, falling back to `~/.deep-research/config.env`
+- Credentials: handled by the Bright Data CLI itself (`brightdata login`, or `BRIGHTDATA_API_KEY` env var). The wrapper just shells out.
 - On any non-zero exit, the wrapper has failed cleanly: fall back to WebSearch (next section)
 
 **Fallback: WebSearch (if bd_search.py fails or is unavailable)**
 - Built-in Claude web search, no setup required
 - Parameters: `query` (required), optional `allowed_domains`, `blocked_domains`
 - Use when: bd_search.py exits non-zero, is rate-limited, or for domain-restricted queries
-- **If the wrapper's stderr JSON contains an auth/quota error** (HTTP 401/402/403, exit code 2, or missing-credential message), tell the user to run `~/.claude/skills/deep-research/setup.sh --reset` before continuing. Don't silently fall back forever on bad credentials — the user almost certainly wants to know.
+- **If the wrapper's stderr JSON contains an auth/quota error** (exit code 2, or a message about authentication / API key / quota / Web Unlocker zone), tell the user to run `brightdata login` (or `~/.claude/skills/deep-research/setup.sh --reset`) before continuing. Don't silently fall back forever on bad credentials — the user almost certainly wants to know.
 
 **Optional: Exa MCP (if configured, for semantic/neural search)**
 - Tool name: `mcp__Exa__exa_search`

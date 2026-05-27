@@ -2,34 +2,44 @@
 
 A Claude Code skill that runs multi-source web research and produces a citation-backed report.
 
-The search backend is retargeted from `search-cli` (Brave/Serper/Exa/Jina/Firecrawl) to **Bright Data SERP API + Web Unlocker**. The skill's downstream relevance/rerank machinery (`source_evaluator.py`, Triangulate, Critique) is unchanged — Bright Data returns Google's SERP order, and the skill re-ranks on credibility on top.
+The search backend is retargeted from `search-cli` (Brave/Serper/Exa/Jina/Firecrawl) to the **Bright Data CLI** (`@brightdata/cli`), which fronts Bright Data's SERP API + Web Unlocker. The skill's downstream relevance/rerank machinery (`source_evaluator.py`, Triangulate, Critique) is unchanged — Bright Data returns Google's SERP order, and the skill re-ranks on credibility on top.
 
 ## Installation
 
-From the repo root:
+You need the Bright Data CLI on PATH. Install it once:
+
+```bash
+npm install -g @brightdata/cli
+# or:  curl -fsSL https://cli.brightdata.com/install.sh | sh
+```
+
+That gives you `brightdata` (and an alias `bdata`).
+
+Then, from the repo root:
 
 ```bash
 ./install.sh deep-research
 ```
 
-That symlinks this directory into `~/.claude/skills/deep-research`, provisions a Python venv, and installs `requests`.
+That symlinks this directory into `~/.claude/skills/deep-research` and provisions a Python venv (used by the rest of the skill's scripts — no Python packages are required by the search wrapper itself).
 
 ## Credentials
 
-1. Sign up at [brightdata.com](https://brightdata.com/) and create:
-   - one **SERP API** zone
-   - one **Web Unlocker** zone
-2. Run `~/.claude/skills/deep-research/setup.sh` — it prompts for the three values, writes `~/.deep-research/config.env` at `chmod 600`, and validates them against the SERP API with a single test request.
+The Bright Data CLI manages its own credentials. Sign up at [brightdata.com](https://brightdata.com/), then:
 
-Re-enter or update credentials any time with:
+```bash
+brightdata login        # interactive (opens a browser)
+# or non-interactive:
+export BRIGHTDATA_API_KEY=...
+```
+
+On first login the CLI auto-provisions the zones it needs (`cli_unlocker`, etc.), so you don't need to create any zones in the dashboard. `~/.claude/skills/deep-research/setup.sh` runs a live test against the CLI and offers to call `brightdata login` for you if you're not authenticated. To re-authenticate later:
 
 ```bash
 ~/.claude/skills/deep-research/setup.sh --reset
 ```
 
-The wrapper reads environment variables first, then falls back to `~/.deep-research/config.env`. If you'd rather skip the prompts and edit the file by hand, run `setup.sh --no-prompt` to scaffold an empty template.
-
-**When credentials go bad at runtime** (token revoked, zone deleted, plan exhausted), the wrapper exits with code `2` and an error message pointing back at `setup.sh --reset`. Claude will surface the message instead of silently falling through to `WebSearch` forever.
+**When credentials go bad at runtime** (key revoked, plan exhausted, etc.), the wrapper exits with code `2` and an error message pointing back at `brightdata login`. Claude will surface the message instead of silently falling through to `WebSearch` forever.
 
 ## Usage
 
@@ -50,11 +60,11 @@ The skill's `reference/methodology.md` instructs Claude to invoke `~/.claude/ski
 bd_search.py "<query|url>" [--json] [-c N] [-m MODE] [--country XX] [--max-chars N]
 ```
 
-**Search modes** (Bright Data SERP API): `general, news, academic, scholar, patents, people, images`
+**Search modes** (Bright Data SERP API, via `brightdata search`): `general, news, images` are mapped to the CLI's `--type` natively. Aliases `academic, scholar, patents, people` fall through to web search; the skill's downstream credibility re-ranker handles ordering.
 
-**Content modes** (Bright Data Web Unlocker, positional arg must be a URL): `extract, scrape`
+**Content modes** (Bright Data Web Unlocker, via `brightdata scrape -f markdown`, positional arg must be a URL): `extract, scrape`
 
-On any failure (missing creds, non-200, empty results) the wrapper emits a JSON error to stderr and exits non-zero, which triggers the skill's documented fallback to Claude's built-in `WebSearch`.
+On any failure (CLI not installed, auth/quota error, empty results) the wrapper emits a JSON error to stderr and exits non-zero, which triggers the skill's documented fallback to Claude's built-in `WebSearch`. Known auth/quota messages from the CLI are mapped to exit code `2` so the skill can prompt the user to re-authenticate instead of looping.
 
 ## Pipeline
 
@@ -87,7 +97,7 @@ Bright Data SERP and Web Unlocker bill per successful request. The retrieve phas
 
 - **Publish dates often missing** from Google organic results, which flattens the recency signal in `source_evaluator.py` (defaults to 50/100). Optional enhancement: parse meta tags from scraped pages and backfill the date before calling `evaluate_source`.
 - **Unknown-domain flattening**: open-web SERP surfaces many domains not in `source_evaluator.py`'s hardcoded tiers; they all score 55. For niche research areas, extend `HIGH_AUTHORITY_DOMAINS`/`MODERATE_AUTHORITY_DOMAINS`.
-- **SERP schema drift**: Bright Data's parsed JSON field names vary by vertical. `_normalize_serp()` in `bd_search.py` is defensive but unverified against every zone. If results come back empty, check field names against the live response.
+- **SERP schema drift**: Bright Data's parsed JSON field names vary by vertical (organic vs news). `_normalize_serp()` in `bd_search.py` is defensive but unverified against every CLI release. If results come back empty, run `brightdata search "<query>" --type news --json` by hand and check the field names against the live response.
 
 ## Files
 
@@ -95,13 +105,13 @@ Bright Data SERP and Web Unlocker bill per successful request. The retrieve phas
 deep-research/
 ├── SKILL.md                   # Skill entry point
 ├── README.md                  # (this file)
-├── setup.sh                   # Creates .venv, installs deps, scaffolds creds template
-├── requirements.txt           # requests (Bright Data wrapper)
+├── setup.sh                   # Creates .venv, verifies the Bright Data CLI is installed + authed
+├── requirements.txt           # (empty — wrapper now shells out to the Bright Data CLI)
 ├── reference/                 # Methodology, report assembly, quality gates, etc.
 ├── templates/                 # Markdown + HTML report templates
 ├── schemas/                   # JSON schemas for sources/evidence/claims/manifest
 ├── scripts/
-│   ├── bd_search.py           # Bright Data SERP + Web Unlocker wrapper
+│   ├── bd_search.py           # Bright Data CLI wrapper (search + scrape)
 │   ├── citation_manager.py    # Source registry, run manifest
 │   ├── evidence_store.py      # Evidence persistence (JSONL)
 │   ├── source_evaluator.py    # Deterministic credibility scorer (THE re-ranker)

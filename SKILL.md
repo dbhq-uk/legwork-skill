@@ -9,7 +9,7 @@ description: Use when the user needs multi-source research with citation trackin
 
 Deliver citation-tracked research reports through a structured pipeline with evidence persistence, source identity management, claim-level verification, and progressive context management.
 
-**Autonomy Principle:** Operate independently. Infer assumptions from context. Only stop for critical errors or incomprehensible queries. Surface high-materiality assumptions explicitly in the Introduction and Methodology rather than silently defaulting.
+**Autonomy Principle:** Operate independently once a mode is chosen. Infer assumptions from context. Only stop for critical errors or incomprehensible queries. Surface high-materiality assumptions explicitly in the Introduction and Methodology rather than silently defaulting. **Exception:** mode selection is confirmed up front (see below) so the user knows whether they're committing to 5 minutes or 45.
 
 ---
 
@@ -22,13 +22,24 @@ Request Analysis
 +-- Complex analysis needed? --> CONTINUE
 
 Mode Selection
-+-- Initial exploration --> quick (3 phases, 2-5 min)
-+-- Standard research --> standard (6 phases, 5-10 min) [DEFAULT]
-+-- Critical decision --> deep (8 phases, 10-20 min)
-+-- Comprehensive review --> ultradeep (8+ phases, 20-45 min)
++-- User named a mode? --> use it, start immediately
++-- User did NOT name a mode? --> ASK using AskUserQuestion (see below)
 ```
 
-**Default assumptions:** Technical query = technical audience. Comparison = balanced perspective. Trend = recent 1-2 years.
+**Mode menu (always present these four when asking):**
+
+| Mode | Phases | Duration | When |
+|------|--------|----------|------|
+| quick | 3 | 2–5 min | Initial exploration, scoping |
+| standard | 6 | 5–10 min | Balanced research [recommend by default] |
+| deep | 8 | 10–20 min | Critical decisions, multi-angle |
+| ultradeep | 8+ | 20–45 min | Comprehensive review, high stakes |
+
+**Counts as "user named a mode":** the request contains the literal word `quick`, `standard`, `deep`, `ultradeep`, or an equivalent like "quick scan", "ultradeep mode", "do a deep dive". `"deep research"` on its own is the skill name and does NOT count as choosing deep mode — still ask.
+
+**Ask via `AskUserQuestion`** (or your platform's equivalent) before doing anything else — no searches, no scope, no folder creation. Use one question with four options matching the table above. Pre-select `standard` as the recommended option but let the user pick freely. Then, once chosen, the Autonomy Principle takes over and the run proceeds without further confirmation.
+
+**Default assumptions** (apply within the chosen mode): Technical query = technical audience. Comparison = balanced perspective. Trend = recent 1-2 years.
 
 ---
 

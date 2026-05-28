@@ -12,6 +12,8 @@ For the evidence substrate, see scripts/citation_manager.py and scripts/evidence
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -19,6 +21,23 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
+
+
+def _resolve_output_base() -> Path:
+    """$DEEP_RESEARCH_OUTPUT, else <git-root>/research, else $PWD/research."""
+    override = os.environ.get("DEEP_RESEARCH_OUTPUT")
+    if override:
+        return Path(override).expanduser()
+    try:
+        root = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, check=True, timeout=5,
+        ).stdout.strip()
+        if root:
+            return Path(root) / "research"
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return Path.cwd() / "research"
 
 
 class ResearchPhase(Enum):
@@ -131,7 +150,7 @@ class ResearchEngine:
     def __init__(self, mode: ResearchMode = ResearchMode.STANDARD):
         self.mode = mode
         self.state: Optional[ResearchState] = None
-        self.output_dir = Path.home() / ".claude" / "research_output"
+        self.output_dir = _resolve_output_base()
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def initialize_research(self, query: str) -> ResearchState:

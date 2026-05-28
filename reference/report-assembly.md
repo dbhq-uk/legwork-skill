@@ -29,11 +29,16 @@
 ### Phase 8.1: Setup
 
 ```bash
-# Create folder: ~/Documents/[TopicName]_Research_[YYYYMMDD]/
-mkdir -p ~/Documents/[folder_name]
+# Resolve the output base:
+#   $DEEP_RESEARCH_OUTPUT if set,
+#   else <git-root-of-cwd>/research,
+#   else $PWD/research (when not in a git repo).
+OUTPUT_BASE="${DEEP_RESEARCH_OUTPUT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/research}"
+FOLDER="$OUTPUT_BASE/[TopicName]_Research_$(date +%Y%m%d)"
+mkdir -p "$FOLDER"
 
 # Initialize markdown file with frontmatter
-# Path: [folder]/research_report_[YYYYMMDD]_[slug].md
+# Path: $FOLDER/research_report_[YYYYMMDD]_[slug].md
 ```
 
 ### Phase 8.2: Section Generation Loop
@@ -107,7 +112,7 @@ Source identity is stable across edits and continuation. Display numbers are der
 ## File Organization
 
 **1. Create dedicated folder:**
-- Location: `~/Documents/[TopicName]_Research_[YYYYMMDD]/`
+- Location: `<output-base>/[TopicName]_Research_[YYYYMMDD]/` where `<output-base>` is `$DEEP_RESEARCH_OUTPUT` if set, else `<git-root-of-cwd>/research`, else `$PWD/research` when not in a git repo (see Phase 8.1 above for the one-liner).
 - Clean topic name (remove special chars, use underscores)
 
 **2. File naming convention:**

@@ -11,8 +11,11 @@ the rest of the skill doesn't need to change:
 Search modes (general/news/images, plus aliases scholar/academic/patents/people
 which the CLI doesn't support natively and so fall through to web search) call
 `brightdata search`. Content modes (extract/scrape) + a URL call
-`brightdata scrape -f markdown`. Output is always JSON on stdout; errors go to
-stderr with a non-zero exit so the skill falls back to built-in WebSearch.
+`brightdata scrape -f markdown`. The `reddit` mode + a reddit.com URL calls
+`brightdata pipelines reddit_posts` instead — required because the default
+Unlocker zone blocks reddit.com under robots.txt. Output is always JSON on
+stdout; errors go to stderr with a non-zero exit so the skill falls back to
+built-in WebSearch.
 
 Authentication is handled entirely by the CLI itself (run `brightdata login`,
 or set `BRIGHTDATA_API_KEY`). This wrapper does not read or write any
@@ -28,7 +31,9 @@ import sys
 
 SERP_MODES = {"general", "news", "academic", "scholar", "patents", "people", "images"}
 CONTENT_MODES = {"extract", "scrape"}
-TIMEOUT = 90
+PIPELINE_MODES = {"reddit"}
+TIMEOUT_FAST = 90      # search + scrape
+TIMEOUT_PIPELINE = 700  # `brightdata pipelines` polls (CLI default 600s + headroom)
 SETUP_HINT = "Run `brightdata login` (or set BRIGHTDATA_API_KEY) to authenticate."
 # Bright Data CLI exits 1 for every error. Map known auth/quota messages onto
 # exit code 2 so the skill's "credentials are bad, tell the user" branch fires.
@@ -83,18 +88,18 @@ def _classify_exit(stderr: str) -> int:
     return EXIT_AUTH if any(sub.lower() in s for sub in AUTH_ERROR_SUBSTRINGS) else 1
 
 
-def _run(cmd: list[str]) -> str:
+def _run(cmd: list[str], timeout: int = TIMEOUT_FAST) -> str:
     """Run the CLI and return stdout. On failure, _fail() with a useful code."""
     try:
         proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=TIMEOUT,
+            timeout=timeout,
             check=False,
         )
     except subprocess.TimeoutExpired:
-        _fail(f"Bright Data CLI timed out after {TIMEOUT}s")
+        _fail(f"Bright Data CLI timed out after {timeout}s")
     except OSError as e:
         _fail(f"failed to invoke Bright Data CLI: {e}")
     if proc.returncode != 0:
@@ -189,9 +194,53 @@ def run_content(args) -> None:
     sys.stdout.write("\n")
 
 
+# Pipeline mode → (CLI dataset name, URL-substring check). Pipelines are
+# structured-data products billed per record, not per Unlocker hit, so we use
+# them only when the Unlocker zone is known to be blocked (e.g. reddit.com under
+# default robots.txt). Trustpilot has no equivalent pipeline; stick with SERP.
+_PIPELINE_FOR_MODE = {
+    "reddit": ("reddit_posts", "reddit.com"),
+}
+
+
+def run_pipeline(args) -> None:
+    target = args.query
+    if not target.startswith(("http://", "https://")):
+        _fail(f"{args.mode} mode requires a URL, got: {target[:80]}")
+    dataset, url_check = _PIPELINE_FOR_MODE[args.mode]
+    if url_check not in target:
+        _fail(f"{args.mode} mode expects a {url_check} URL, got: {target[:80]}")
+    cli = _cli_bin()
+    cmd = [cli, "pipelines", dataset, target, "--json"]
+    raw = _run(cmd, timeout=TIMEOUT_PIPELINE)
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        _fail(f"Pipeline response was not JSON: {raw[:300]}")
+    # Pass the structured records through as a JSON string in `content` so the
+    # skill's existing content-mode handlers can quote/parse it. Cheap and
+    # avoids guessing the (per-dataset) schema in this wrapper.
+    body = json.dumps(parsed, ensure_ascii=False)
+    if args.max_chars and len(body) > args.max_chars:
+        body = body[: args.max_chars]
+    json.dump(
+        {
+            "url": target,
+            "mode": args.mode,
+            "provider": "brightdata",
+            "title": None,
+            "content": body,
+            "date": None,
+        },
+        sys.stdout,
+        ensure_ascii=False,
+    )
+    sys.stdout.write("\n")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="bd_search.py", add_help=True)
-    p.add_argument("query", help="search query, or URL for extract/scrape modes")
+    p.add_argument("query", help="search query, or URL for extract/scrape/reddit modes")
     p.add_argument("-m", "--mode", default="general")
     p.add_argument("-c", "--count", type=int, default=10)
     p.add_argument("--json", action="store_true", help="accepted for compat; output is always JSON")
@@ -206,6 +255,8 @@ def main() -> None:
 
     if args.mode in CONTENT_MODES:
         run_content(args)
+    elif args.mode in PIPELINE_MODES:
+        run_pipeline(args)
     elif args.mode in SERP_MODES:
         run_serp(args)
     else:

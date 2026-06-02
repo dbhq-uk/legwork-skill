@@ -64,7 +64,9 @@ bd_search.py "<query|url>" [--json] [-c N] [-m MODE] [--country XX] [--max-chars
 
 **Content modes** (Bright Data Web Unlocker, via `brightdata scrape -f markdown`, positional arg must be a URL): `extract, scrape`
 
-On any failure (CLI not installed, auth/quota error, empty results) the wrapper emits a JSON error to stderr and exits non-zero, which triggers the skill's documented fallback to Claude's built-in `WebSearch`. Known auth/quota messages from the CLI are mapped to exit code `2` so the skill can prompt the user to re-authenticate instead of looping.
+**Pipeline mode** (Bright Data structured datasets, via `brightdata pipelines reddit_posts`, positional arg must be a reddit.com URL): `reddit`. Required because the default Unlocker zone blocks reddit.com under robots.txt. Returns the dataset JSON as the `content` field for the skill to quote from. Billed per record (separate from Unlocker), slower (10-60s typical, up to 10 minutes for big threads). For Trustpilot there is no equivalent pipeline — rely on SERP snippets.
+
+On any failure (CLI not installed, auth/quota error, empty results, zone-blocked URL) the wrapper emits a JSON error to stderr and exits non-zero, which triggers the skill's documented fallback to Claude's built-in `WebSearch`. Known auth/quota messages from the CLI are mapped to exit code `2` so the skill can prompt the user to re-authenticate instead of looping.
 
 ## Pipeline
 

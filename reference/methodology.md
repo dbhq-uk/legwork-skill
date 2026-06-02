@@ -77,8 +77,11 @@ Use the returned year for all date-filtered queries and recency checks. Do NOT a
 - JSON output for structured processing: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "query" --json`
 - Search modes (SERP API): general, news, academic, scholar, patents, people, images
 - Content modes (Web Unlocker): extract, scrape (positional arg MUST be a URL, not a query)
+- Pipeline mode (Bright Data structured datasets, billed per record): `reddit` (URL must contain reddit.com)
 - Example: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum computing 2026" -m academic --json -c 15`
 - For page content: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "https://example.com/article" -m scrape --json`
+- **Reddit URLs:** use `-m reddit` instead of `-m scrape`. The default Unlocker zone blocks reddit.com under robots.txt; the `reddit_posts` pipeline returns structured JSON (post + comments + scores) and is the only path that works without an account-manager unlock. Slower (10-60s typical, can be minutes) and billed per record, so prefer top-relevance threads and don't dump entire subreddits.
+- **Trustpilot URLs:** do NOT scrape — same Unlocker block, and there is no pipeline equivalent. Use SERP snippets (`-m general "site:trustpilot.com <query>"`) to capture general sentiment; quote only what the snippet shows.
 - Result ordering = Google SERP rank. Final relevance ranking is applied DOWNSTREAM by `source_evaluator.py` (deterministic credibility scoring) — no neural/semantic ranker is required
 - Credentials: handled by the Bright Data CLI itself (`brightdata login`, or `BRIGHTDATA_API_KEY` env var). The wrapper just shells out.
 - On any non-zero exit, the wrapper has failed cleanly: fall back to WebSearch (next section)

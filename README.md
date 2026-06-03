@@ -50,7 +50,7 @@ deep research on the current state of quantum computing
 deep research in ultradeep mode: compare PostgreSQL vs Supabase for our stack
 ```
 
-The skill picks a mode (quick/standard/deep/ultradeep), runs the 8-phase pipeline, and saves output to `<git-root>/research/[Topic]_Research_[YYYYMMDD]/` — where `<git-root>` is the git root of the directory you invoke from (falling back to the cwd itself if it isn't a git repo). Set `$DEEP_RESEARCH_OUTPUT` to override the base path.
+The skill picks a mode (quick/standard/deep/ultradeep), runs the 8-phase pipeline, and saves output to `<git-root>/docs/research/[Topic]_Research_[YYYYMMDD]/` — where `<git-root>` is the git root of the directory you invoke from (falling back to the cwd itself if it isn't a git repo). Set `$DEEP_RESEARCH_OUTPUT` to override the base path.
 
 ## How the search backend works
 

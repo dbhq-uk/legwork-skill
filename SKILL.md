@@ -99,10 +99,10 @@ Mode Selection
 Resolve `<output-base>` at the start of the run using:
 
 ```bash
-OUTPUT_BASE="${DEEP_RESEARCH_OUTPUT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/research}"
+OUTPUT_BASE="${DEEP_RESEARCH_OUTPUT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/docs/research}"
 ```
 
-- `$DEEP_RESEARCH_OUTPUT` if set, else `<git-root>/research/`, else `$PWD/research/` when not in a git repo.
+- `$DEEP_RESEARCH_OUTPUT` if set, else `<git-root>/docs/research/`, else `$PWD/docs/research/` when not in a git repo.
 - Surface the resolved path in the Methodology Appendix so reruns are reproducible.
 
 Contents of the dated folder:

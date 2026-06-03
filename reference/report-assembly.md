@@ -31,9 +31,9 @@
 ```bash
 # Resolve the output base:
 #   $DEEP_RESEARCH_OUTPUT if set,
-#   else <git-root-of-cwd>/research,
-#   else $PWD/research (when not in a git repo).
-OUTPUT_BASE="${DEEP_RESEARCH_OUTPUT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/research}"
+#   else <git-root-of-cwd>/docs/research,
+#   else $PWD/docs/research (when not in a git repo).
+OUTPUT_BASE="${DEEP_RESEARCH_OUTPUT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/docs/research}"
 FOLDER="$OUTPUT_BASE/[TopicName]_Research_$(date +%Y%m%d)"
 mkdir -p "$FOLDER"
 
@@ -112,7 +112,7 @@ Source identity is stable across edits and continuation. Display numbers are der
 ## File Organization
 
 **1. Create dedicated folder:**
-- Location: `<output-base>/[TopicName]_Research_[YYYYMMDD]/` where `<output-base>` is `$DEEP_RESEARCH_OUTPUT` if set, else `<git-root-of-cwd>/research`, else `$PWD/research` when not in a git repo (see Phase 8.1 above for the one-liner).
+- Location: `<output-base>/[TopicName]_Research_[YYYYMMDD]/` where `<output-base>` is `$DEEP_RESEARCH_OUTPUT` if set, else `<git-root-of-cwd>/docs/research`, else `$PWD/docs/research` when not in a git repo (see Phase 8.1 above for the one-liner).
 - Clean topic name (remove special chars, use underscores)
 
 **2. File naming convention:**

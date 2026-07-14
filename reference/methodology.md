@@ -107,6 +107,8 @@ Use Task tool with general-purpose agents (3-5 agents) for:
 - Repository analysis (code examples, implementations)
 - Specialized domain research (requires multi-step investigation)
 
+**Model:** spawn every deep-dive agent on the cheaper `haiku` model (`model="haiku"`). These agents fetch pages and extract structured evidence — mechanical, high-volume work that does not need the premium orchestrator model. Do not let them inherit the main-session model.
+
 **Sub-agent output format:** Require all sub-agents to return structured evidence, not free text:
 ```json
 {"claim": "specific claim text", "evidence_quote": "exact quote from source", "source_url": "https://...", "source_title": "...", "confidence": 0.85}
@@ -131,9 +133,9 @@ Evidence must not live only in model context — it must be persisted to `eviden
 - Bash: ~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum computing commercial applications 2026" -m news --json -c 10
 - Bash: ~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum computing vs classical comparison" --json -c 10
 - Bash: ~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum error correction research" -m academic --json -c 10
-- Task(subagent_type="general-purpose", description="Analyze quantum computing papers", prompt="Deep dive into quantum computing academic papers from [CURRENT_YEAR], extract key findings and methodologies")
-- Task(subagent_type="general-purpose", description="Industry analysis", prompt="Analyze quantum computing industry reports and market data, identify commercial applications")
-- Task(subagent_type="general-purpose", description="Technical challenges", prompt="Extract technical limitations and challenges from quantum computing research")
+- Task(subagent_type="general-purpose", model="haiku", description="Analyze quantum computing papers", prompt="Deep dive into quantum computing academic papers from [CURRENT_YEAR], extract key findings and methodologies")
+- Task(subagent_type="general-purpose", model="haiku", description="Industry analysis", prompt="Analyze quantum computing industry reports and market data, identify commercial applications")
+- Task(subagent_type="general-purpose", model="haiku", description="Technical challenges", prompt="Extract technical limitations and challenges from quantum computing research")
 ```
 
 **Example parallel execution (using Exa MCP - if available):**
@@ -143,7 +145,7 @@ Evidence must not live only in model context — it must be persisted to `eviden
 - mcp__Exa__exa_search(query="quantum computing limitations", type="keyword", num_results=10)
 - mcp__Exa__exa_search(query="quantum computing commercial", type="auto", num_results=10, start_published_date="[use current year from Step 0]")
 - mcp__Exa__exa_search(query="quantum error correction", type="neural", num_results=10, include_domains=["arxiv.org"])
-- Task(subagent_type="general-purpose", description="Academic analysis", prompt="Analyze quantum computing academic papers")
+- Task(subagent_type="general-purpose", model="haiku", description="Academic analysis", prompt="Analyze quantum computing academic papers")
 ```
 
 **Step 3: Collect and organize results**
@@ -190,7 +192,7 @@ As results arrive:
 - Semantic/neural exploration is OPTIONAL, not required — ranking is handled by source_evaluator.py downstream
 - Use Grep/Read for local documentation
 - Execute code for computational analysis (when needed)
-- Use Task tool to spawn parallel retrieval agents (3-5 agents)
+- Use Task tool to spawn parallel retrieval agents (3-5 agents) on the cheaper `haiku` model (`model="haiku"`)
 
 **Output:** Organized information repository with source tracking, credibility scores, and coverage map
 
@@ -403,7 +405,7 @@ Rather than linear thinking, branch into multiple reasoning paths:
 
 ### Parallel Agent Deployment
 
-Use Task tool to spawn sub-agents for:
+Use Task tool to spawn sub-agents (on the cheaper `haiku` model — `model="haiku"`) for:
 - Parallel source retrieval
 - Independent verification paths
 - Competing hypothesis evaluation

@@ -246,7 +246,7 @@ Your task: Systematically collect information from multiple sources
 - WebSearch: For current information and broad coverage
 - WebFetch: For detailed extraction from specific URLs
 - Grep/Read: For local documentation if relevant
-- Task: Spawn 2-3 parallel retrieval agents for efficiency
+- Task: Spawn 2-3 parallel retrieval agents (on the cheaper `haiku` model) for efficiency
 
 ## Output:
 Store all sources with metadata. Each source should include:

@@ -69,11 +69,12 @@ Trigger auto-continuation when report exceeds 18,000 words in single run.
 
 ## Spawning Continuation Agent
 
-Use Task tool:
+Use Task tool. **Model:** spawn continuation agents on `sonnet` (`model="sonnet"`) — they write report prose, which is quality-sensitive, so use Sonnet rather than the cheapest tier (but still not the premium orchestrator model). Every recursively-spawned "next agent" below uses the same `sonnet` override.
 
 ```
 Task(
   subagent_type="general-purpose",
+  model="sonnet",
   description="Continue deep-research report generation",
   prompt="""
 CONTINUATION TASK: Continue existing deep-research report.

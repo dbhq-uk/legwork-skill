@@ -82,6 +82,20 @@ Mode Selection
 
 ---
 
+## Subagent Model Policy
+
+Subagents must run on **cheaper models than the orchestrator** — never let them inherit the premium main-session model. Pass an explicit model override every time you spawn one:
+
+| Subagent role | Phase | Model | Why |
+|---------------|-------|-------|-----|
+| Retrieval / deep-dive agents | 3 (RETRIEVE) | `haiku` | Fetch pages + extract structured evidence — mechanical, high-volume |
+| PDF generation agent | 8 (PACKAGE) | `haiku` | Mechanical HTML→PDF conversion |
+| Continuation agents | Long reports (>18K words) | `sonnet` | Writes report prose — quality-sensitive |
+
+Spawn with the model override, e.g. `Task(subagent_type="general-purpose", model="haiku", ...)`. If your platform's subagent tool names the parameter differently, use that name — the requirement is that these subagents never run on the orchestrator's premium model. Only the orchestrator (scoping, synthesis, critique) stays on the main model.
+
+---
+
 ## Output Contract
 
 **Required sections:**

@@ -18,6 +18,8 @@ Claim types (per GPT Pro's refinement of Codex's proposal):
   - speculation: labeled, no support gate
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json

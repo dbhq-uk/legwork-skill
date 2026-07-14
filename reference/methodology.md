@@ -71,7 +71,16 @@ Use the returned year for all date-filtered queries and recency checks. Do NOT a
 
 **CRITICAL: Use correct tool and parameters to avoid errors**
 
-**Primary: bd_search.py — Bright Data SERP API + Web Unlocker (always use first)**
+**Primary: WebSearch + WebFetch (built-in, free — always use first)**
+- `WebSearch` for all query-based retrieval: `query` (required), optional `allowed_domains`, `blocked_domains`
+- `WebFetch` for reading specific pages surfaced by search
+- Fire all query variants concurrently in a single message
+- Prefer snippets over full-page fetches where a snippet establishes the claim (see SKILL.md Token Efficiency Policy)
+
+**Fallback: bd_search.py — Bright Data SERP API + Web Unlocker (paid — use only when built-ins fail)**
+
+Use when: `WebFetch` is blocked/paywalled on a needed page, the URL is a Reddit thread, you need geo/vertical SERP (`--country`, news, images), or WebSearch coverage stays thin after 2-3 query variants. Every call is billed — never use it where a built-in would have worked.
+
 - Single Python wrapper bundled with this skill. Invoke by absolute path via the Bash tool — do NOT rely on a `search` binary on $PATH
 - Wrapper path: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py`
 - JSON output for structured processing: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "query" --json`
@@ -84,13 +93,9 @@ Use the returned year for all date-filtered queries and recency checks. Do NOT a
 - **Trustpilot URLs:** do NOT scrape — same Unlocker block, and there is no pipeline equivalent. Use SERP snippets (`-m general "site:trustpilot.com <query>"`) to capture general sentiment; quote only what the snippet shows.
 - Result ordering = Google SERP rank. Final relevance ranking is applied DOWNSTREAM by `source_evaluator.py` (deterministic credibility scoring) — no neural/semantic ranker is required
 - Credentials: handled by the Bright Data CLI itself (`brightdata login`, or `BRIGHTDATA_API_KEY` env var). The wrapper just shells out.
-- On any non-zero exit, the wrapper has failed cleanly: fall back to WebSearch (next section)
-
-**Fallback: WebSearch (if bd_search.py fails or is unavailable)**
-- Built-in Claude web search, no setup required
-- Parameters: `query` (required), optional `allowed_domains`, `blocked_domains`
-- Use when: bd_search.py exits non-zero, is rate-limited, or for domain-restricted queries
-- **If the wrapper's stderr JSON contains an auth/quota error** (exit code 2, or a message about authentication / API key / quota / Web Unlocker zone), tell the user to run `brightdata login` (or `~/.claude/skills/deep-research/setup.sh --reset`) before continuing. Don't silently fall back forever on bad credentials — the user almost certainly wants to know.
+- On any non-zero exit, the wrapper has failed cleanly: return to the built-in WebSearch/WebFetch path
+- **If the wrapper's stderr JSON contains an auth/quota error** (exit code 2, or a message about authentication / API key / quota / Web Unlocker zone), tell the user to run `brightdata login` (or `~/.claude/skills/deep-research/setup.sh --reset`) before retrying Bright Data. The built-ins keep the run going in the meantime.
+- Cap scraped content with `--max-chars 8000` unless more is specifically needed
 
 **Optional: Exa MCP (if configured, for semantic/neural search)**
 - Tool name: `mcp__Exa__exa_search`
@@ -125,14 +130,14 @@ python scripts/evidence_store.py add --json '{"source_id": "...", "quote": "exac
 ```
 Evidence must not live only in model context — it must be persisted to `evidence.jsonl` before synthesis begins. This ensures continuation agents and claim-support verification can access the full evidence trail.
 
-**Example parallel execution (using bd_search.py via Bash):**
+**Example parallel execution (built-in tools, default path):**
 ```
-[Single message with multiple Bash tool calls]
-- Bash: ~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum computing 2026 state of the art" --json -c 10
-- Bash: ~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum computing limitations challenges" --json -c 10
-- Bash: ~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum computing commercial applications 2026" -m news --json -c 10
-- Bash: ~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum computing vs classical comparison" --json -c 10
-- Bash: ~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum error correction research" -m academic --json -c 10
+[Single message with multiple tool calls]
+- WebSearch(query="quantum computing 2026 state of the art")
+- WebSearch(query="quantum computing limitations challenges")
+- WebSearch(query="quantum computing commercial applications 2026")
+- WebSearch(query="quantum computing vs classical comparison")
+- WebSearch(query="quantum error correction research", allowed_domains=["arxiv.org", "nature.com"])
 - Task(subagent_type="general-purpose", model="haiku", description="Analyze quantum computing papers", prompt="Deep dive into quantum computing academic papers from [CURRENT_YEAR], extract key findings and methodologies")
 - Task(subagent_type="general-purpose", model="haiku", description="Industry analysis", prompt="Analyze quantum computing industry reports and market data, identify commercial applications")
 - Task(subagent_type="general-purpose", model="haiku", description="Technical challenges", prompt="Extract technical limitations and challenges from quantum computing research")
@@ -186,9 +191,8 @@ As results arrive:
 - Prioritize high-credibility sources (>80) for core claims
 
 **Techniques:**
-- Use bd_search.py (Bright Data) for all searches (primary tool, SERP + Web Unlocker)
-- Fall back to WebSearch if bd_search.py exits non-zero or is rate-limited
-- Use WebFetch for deep dives into specific sources (secondary)
+- Use WebSearch for all searches (primary, free) and WebFetch for deep dives into specific sources
+- Fall back to bd_search.py (Bright Data, paid) when WebFetch is blocked, the target is Reddit, geo/vertical SERP is needed, or WebSearch coverage stays thin
 - Semantic/neural exploration is OPTIONAL, not required — ranking is handled by source_evaluator.py downstream
 - Use Grep/Read for local documentation
 - Execute code for computational analysis (when needed)
@@ -354,10 +358,24 @@ Simulate 2-3 specific critic personas relevant to the topic:
 - "Adversarial Reviewer" — What would a peer reviewer reject?
 - "Implementation Engineer" — Can these recommendations actually be executed?
 
-**Critical Gap Loop-Back:**
-If critique identifies a critical knowledge gap (not just a writing issue), return to Phase 3 with targeted "delta-queries" before proceeding to Phase 7. Time-box to 3-5 minutes. This prevents publishing reports with known blind spots.
+**Claim-Support Verification (Deep/UltraDeep only — this is the phase that runs it):**
 
-**Output:** Critique report with improvement recommendations
+Deep and ultradeep runs must mechanically verify that every factual claim in the draft
+is backed by a persisted evidence span, not just by a citation marker:
+
+```bash
+python scripts/extract_claims.py --report [path] --dir [folder]   # -> claims.jsonl
+python scripts/verify_claim_support.py --dir [folder]             # -> support_status per claim
+```
+
+Any claim coming back `unsupported` is a blocker: either retrieve + persist the missing
+evidence (delta-query, below) or soften/remove the claim. Re-run until clean. Quick and
+standard modes skip this entirely — see reference/quality-gates.md for the mode policy.
+
+**Critical Gap Loop-Back:**
+If critique identifies a critical knowledge gap (not just a writing issue), return to Phase 3 with targeted "delta-queries" before proceeding to Phase 7. Time-box to 3-5 minutes. This prevents publishing reports with known blind spots. An `unsupported` claim from the check above is exactly such a gap.
+
+**Output:** Critique report with improvement recommendations; clean `claims.jsonl` (deep/ultradeep)
 
 ---
 

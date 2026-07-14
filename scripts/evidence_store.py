@@ -14,6 +14,8 @@ Evidence identity:
 All state is append-only JSONL. Evidence is never modified after capture.
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
@@ -121,6 +123,92 @@ def cmd_add(args: argparse.Namespace) -> None:
     }))
 
 
+VALID_EVIDENCE_TYPES = {
+    'direct_quote', 'paraphrase', 'data_point', 'figure_reference', 'methodology',
+}
+
+
+def _build_evidence_row(data: dict, evidence_id: str) -> dict:
+    evidence_type = data.get('evidence_type', 'direct_quote')
+    if evidence_type not in VALID_EVIDENCE_TYPES:
+        evidence_type = 'direct_quote'
+    return {
+        'evidence_id': evidence_id,
+        'source_id': data['source_id'],
+        'retrieval_query': data.get('retrieval_query'),
+        'locator': data.get('locator'),
+        'quote': data['quote'],
+        'evidence_type': evidence_type,
+        'captured_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def cmd_add_batch(args: argparse.Namespace) -> None:
+    """Append MANY evidence rows in ONE process.
+
+    Reads a JSONL file (one evidence object per line) or a JSON array via --json.
+    The dedup index is built once, so a retrieval batch costs one process spawn and
+    one file scan instead of one per span.
+    """
+    if args.jsonl_file:
+        records = []
+        with open(args.jsonl_file) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    records.append(json.loads(line))
+    elif args.json:
+        records = json.loads(args.json)
+        if not isinstance(records, list):
+            print(json.dumps({'error': '--json must be a JSON array of evidence objects'}),
+                  file=sys.stderr)
+            sys.exit(1)
+    else:
+        print(json.dumps({'error': 'one of --jsonl-file or --json is required'}),
+              file=sys.stderr)
+        sys.exit(1)
+
+    evidence_path = os.path.join(args.dir, 'evidence.jsonl')
+
+    # Build the dedup index ONCE.
+    seen = {row.get('evidence_id') for row in read_jsonl(evidence_path)}
+
+    added, duplicates, errors = [], [], []
+    new_rows = []
+
+    for i, data in enumerate(records):
+        source_id = data.get('source_id', '')
+        quote = data.get('quote', '')
+        if not source_id or not quote:
+            errors.append({'index': i, 'error': 'source_id and quote are required'})
+            continue
+
+        evidence_id = compute_evidence_id(source_id, quote, data.get('locator'))
+        if evidence_id in seen:
+            duplicates.append({'evidence_id': evidence_id, 'source_id': source_id})
+            continue
+
+        seen.add(evidence_id)
+        new_rows.append(_build_evidence_row(data, evidence_id))
+        added.append({'evidence_id': evidence_id, 'source_id': source_id})
+
+    if new_rows:
+        with open(evidence_path, 'a') as f:
+            for row in new_rows:
+                f.write(json.dumps(row, ensure_ascii=False) + '\n')
+
+    result = {
+        'status': 'ok',
+        'added': len(added),
+        'duplicates': len(duplicates),
+        'errors': len(errors),
+        'evidence': added,
+    }
+    if errors:
+        result['error_detail'] = errors
+    print(json.dumps(result, ensure_ascii=False))
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     """List evidence rows, optionally filtered."""
     evidence_path = os.path.join(args.dir, 'evidence.jsonl')
@@ -181,6 +269,15 @@ def main() -> None:
     p_add.add_argument('--json', required=True, help='JSON with source_id, quote, locator, evidence_type, retrieval_query')
     p_add.add_argument('--dir', required=True, help='Run directory containing evidence.jsonl')
 
+    # add-batch
+    p_batch = sub.add_parser(
+        'add-batch',
+        help='Append MANY evidence rows in one process (preferred over looping add)',
+    )
+    p_batch.add_argument('--jsonl-file', help='File with one evidence JSON object per line')
+    p_batch.add_argument('--json', help='JSON array of evidence objects')
+    p_batch.add_argument('--dir', required=True, help='Run directory containing evidence.jsonl')
+
     # list
     p_list = sub.add_parser('list', help='List evidence rows')
     p_list.add_argument('--dir', required=True, help='Run directory')
@@ -195,6 +292,7 @@ def main() -> None:
     dispatch = {
         'init': cmd_init,
         'add': cmd_add,
+        'add-batch': cmd_add_batch,
         'list': cmd_list,
         'export': cmd_export,
     }

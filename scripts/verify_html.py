@@ -4,6 +4,8 @@ HTML Report Verification Script
 Validates that HTML reports are properly generated with all sections from MD
 """
 
+from __future__ import annotations
+
 import argparse
 import re
 from pathlib import Path

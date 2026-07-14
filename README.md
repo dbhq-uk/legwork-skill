@@ -1,127 +1,160 @@
-# Deep Research (Bright Data)
+# Deep Research
 
-A Claude Code skill that runs multi-source web research and produces a citation-backed report.
+A Claude Code skill for multi-source web research that produces citation-backed findings — tuned for **frequent, day-to-day research**, not occasional consulting deliverables.
 
-The search backend is retargeted from `search-cli` (Brave/Serper/Exa/Jina/Firecrawl) to the **Bright Data CLI** (`@brightdata/cli`), which fronts Bright Data's SERP API + Web Unlocker. The skill's downstream relevance/rerank machinery (`source_evaluator.py`, Triangulate, Critique) is unchanged — Bright Data returns Google's SERP order, and the skill re-ranks on credibility on top.
+See [docs/day-to-day-fix-list.md](docs/day-to-day-fix-list.md) for the design rationale behind the changes.
+
+## What makes it different
+
+**Free by default, paid only when needed.** Retrieval runs on the host's built-in `WebSearch`/`WebFetch`. The Bright Data CLI is a *fallback*, used only where the built-ins genuinely can't do the job. A run against unblocked sources makes **zero** paid calls.
+
+**No prompt before it starts.** It picks a mode, announces it, and begins. Redirect it mid-run if it guessed wrong — that costs far less than a blocking question on every research request.
+
+**Costs scale with mode.** A five-minute question does not get a full evidence ledger, a multi-minute network validation pass, or an 8-section report. A high-stakes one gets all three.
+
+**Brief by default.** The deliverable for quick/standard is a findings memo (800–2,500 words), not a formal report. Brief drops scaffolding, never rigor: every claim still carries an inline `[N]`, and the bibliography is still complete.
 
 ## Installation
 
-You need the Bright Data CLI on PATH. Install it once:
-
 ```bash
-npm install -g @brightdata/cli
-# or:  curl -fsSL https://cli.brightdata.com/install.sh | sh
+./install.sh deep-research     # from the repo root
 ```
 
-That gives you `brightdata` (and an alias `bdata`).
+That symlinks the skill into `~/.claude/skills/deep-research` and provisions a Python venv. The scripts are **stdlib-only** — no packages required.
 
-Then, from the repo root:
-
-```bash
-./install.sh deep-research
-```
-
-That symlinks this directory into `~/.claude/skills/deep-research` and provisions a Python venv (used by the rest of the skill's scripts — no Python packages are required by the search wrapper itself).
-
-## Credentials
-
-The Bright Data CLI manages its own credentials. Sign up at [brightdata.com](https://brightdata.com/), then:
+Optional, for the fallback provider:
 
 ```bash
-brightdata login        # interactive (opens a browser)
-# or non-interactive:
-export BRIGHTDATA_API_KEY=...
+npm install -g @brightdata/cli   # or: curl -fsSL https://cli.brightdata.com/install.sh | sh
+brightdata login                 # or: export BRIGHTDATA_API_KEY=...
 ```
 
-On first login the CLI auto-provisions the zones it needs (`cli_unlocker`, etc.), so you don't need to create any zones in the dashboard. `~/.claude/skills/deep-research/setup.sh` runs a live test against the CLI and offers to call `brightdata login` for you if you're not authenticated. To re-authenticate later:
-
-```bash
-~/.claude/skills/deep-research/setup.sh --reset
-```
-
-**When credentials go bad at runtime** (key revoked, plan exhausted, etc.), the wrapper exits with code `2` and an error message pointing back at `brightdata login`. Claude will surface the message instead of silently falling through to `WebSearch` forever.
+Setup succeeds without it; you just lose fallback scraping.
 
 ## Usage
 
-Tell Claude what you want:
-
 ```
-deep research on the current state of quantum computing
-deep research in ultradeep mode: compare PostgreSQL vs Supabase for our stack
+deep research the tradeoffs of pgvector vs a dedicated vector DB at our scale
+research in deep mode: regulatory exposure of shipping this feature in the EU
+quick: what changed in the EU AI Act in the last six months?
 ```
 
-The skill picks a mode (quick/standard/deep/ultradeep), runs the 8-phase pipeline, and saves output to `<git-root>/docs/research/[Topic]_Research_[YYYYMMDD]/` — where `<git-root>` is the git root of the directory you invoke from (falling back to the cwd itself if it isn't a git repo). Set `$DEEP_RESEARCH_OUTPUT` to override the base path.
+Add `brief` or `full report` to override the deliverable format.
 
-## How the search backend works
+### Modes
 
-The skill's `reference/methodology.md` instructs Claude to invoke `~/.claude/skills/deep-research/scripts/bd_search.py` via the Bash tool, with the same CLI surface as the original `search-cli`:
+| Mode | Duration | Format | Artifacts | Gates |
+|------|----------|--------|-----------|-------|
+| quick | 2–5 min | brief | report only | validate + offline citations |
+| standard **(default)** | 5–10 min | brief | + sources, evidence | validate + offline citations |
+| deep | 10–20 min | report | + claims ledger | + network citations, claim-support |
+| ultradeep | 20–45 min | report | + claims ledger | + network citations, claim-support |
+
+Set a different default with `export DEEP_RESEARCH_DEFAULT_MODE=deep`.
+
+### Tuning it to your research niche
+
+The credibility scorer flattens unknown domains to 55/100. Register the domains you actually trust in `~/.deep-research/domains.json`:
+
+```json
+{
+  "high": ["mytrustedjournal.org", "internal-wiki.company.com"],
+  "moderate": ["someindustryblog.dev"],
+  "low": ["contentfarm.example"]
+}
+```
+
+These merge over the built-in tiers and apply to subdomains. User entries win outright — list a built-in "high" domain under `low` and it scores low. Point `$DEEP_RESEARCH_DOMAINS` elsewhere to override the path.
+
+## Search backend
+
+Retrieval is **built-in first**:
+
+| Situation | Provider |
+|-----------|----------|
+| Normal search and page reads | `WebSearch` / `WebFetch` (free) |
+| Page is bot-blocked, paywalled, or JS-heavy | Bright Data `-m scrape` |
+| Reddit thread | Bright Data `-m reddit` (structured pipeline; billed per record) |
+| Geo-specific or vertical SERP (`--country`, news, images) | Bright Data SERP |
+| Coverage still thin after 2–3 query variants | Bright Data SERP |
+
+Bright Data is invoked through `scripts/bd_search.py`:
 
 ```
 bd_search.py "<query|url>" [--json] [-c N] [-m MODE] [--country XX] [--max-chars N]
 ```
 
-**Search modes** (Bright Data SERP API, via `brightdata search`): `general, news, images` are mapped to the CLI's `--type` natively. Aliases `academic, scholar, patents, people` fall through to web search; the skill's downstream credibility re-ranker handles ordering.
+Modes: `general, news, images` (SERP, native) · `academic, scholar, patents, people` (SERP, aliased to web) · `extract, scrape` (Web Unlocker; arg must be a URL) · `reddit` (dataset pipeline; arg must be a reddit.com URL).
 
-**Content modes** (Bright Data Web Unlocker, via `brightdata scrape -f markdown`, positional arg must be a URL): `extract, scrape`
+On any failure the wrapper emits JSON to stderr and exits non-zero, and the skill falls back to the built-ins. Auth/quota failures map to exit code `2` so you get told to re-authenticate rather than silently degrading.
 
-**Pipeline mode** (Bright Data structured datasets, via `brightdata pipelines reddit_posts`, positional arg must be a reddit.com URL): `reddit`. Required because the default Unlocker zone blocks reddit.com under robots.txt. Returns the dataset JSON as the `content` field for the skill to quote from. Billed per record (separate from Unlocker), slower (10-60s typical, up to 10 minutes for big threads). For Trustpilot there is no equivalent pipeline — rely on SERP snippets.
-
-On any failure (CLI not installed, auth/quota error, empty results, zone-blocked URL) the wrapper emits a JSON error to stderr and exits non-zero, which triggers the skill's documented fallback to Claude's built-in `WebSearch`. Known auth/quota messages from the CLI are mapped to exit code `2` so the skill can prompt the user to re-authenticate instead of looping.
+**Cost:** SERP and Web Unlocker bill per successful request; the Reddit pipeline bills per record. Nothing else in the skill costs money.
 
 ## Pipeline
 
 `Scope → Plan → Retrieve (parallel) → Triangulate → Outline → Synthesize → Critique (loop-back) → Refine → Package`
 
-Mode caps:
-
-| Mode | Phases | Duration |
-|------|--------|----------|
-| Quick | 3 | 2–5 min |
-| Standard | 6 | 5–10 min |
-| Deep | 8 | 10–20 min |
-| UltraDeep | 8+ | 20–45 min |
+Quick mode runs Scope → Retrieve → Package. See [reference/methodology.md](reference/methodology.md).
 
 ## Output
 
-In `<output-base>/[Topic]_Research_[YYYYMMDD]/` (resolved as above):
+Written to `<output-base>/[Topic]_Research_[YYYYMMDD]/`, where `<output-base>` is `$DEEP_RESEARCH_OUTPUT`, else `<git-root>/docs/research/`, else `$PWD/docs/research/`.
 
-- Markdown report (primary source of truth)
-- `sources.jsonl`, `evidence.jsonl`, `claims.jsonl` (persisted evidence trail)
-- `run_manifest.json` (records `provider_config.primary: "brightdata"`)
-- HTML (McKinsey style, auto-opened)
-- PDF (optional, requires `pip install weasyprint` in the skill's venv)
+| File | Modes |
+|------|-------|
+| Markdown deliverable (brief or report) | all |
+| `run_manifest.json` | all |
+| `sources.jsonl` — stable source registry (sha256 IDs) | standard+ |
+| `evidence.jsonl` — append-only quotes + locators | standard+ |
+| `claims.jsonl` — claim ledger with support status | deep/ultradeep |
+| HTML / PDF | on explicit request only |
 
-## Cost notes
+Source IDs are content-derived, so they survive renumbering, context compaction, and continuation agents. Display numbers `[N]` are assigned at render time and never stored.
 
-Bright Data SERP and Web Unlocker bill per successful request. The retrieve phase fires 5–10 concurrent searches per batch; budget accordingly. Hard failures fall back to `WebSearch` (free) but cost is otherwise not capped by the skill.
+## Scripts
+
+All stdlib-only; Python 3.9+.
+
+| Script | Purpose |
+|--------|---------|
+| `validate_report.py --report P --format brief\|report` | Structural gate (local) |
+| `verify_citations.py --report P [--offline]` | Citation checks. `--offline` = zero network; the network pass is 8-way concurrent and cached |
+| `citation_manager.py` | `init-run`, `register-source(s)`, `assign-display-numbers`, `export-bibliography` |
+| `evidence_store.py` | `init`, `add`, `add-batch`, `list`, `export` |
+| `source_evaluator.py score` | Credibility scoring / re-ranking; user-extensible domain tiers |
+| `extract_claims.py` → `verify_claim_support.py` | Claim ledger + support verification (deep/ultradeep) |
+| `bd_search.py` | Bright Data fallback wrapper |
+| `md_to_html.py`, `verify_html.py` | HTML rendering (on request) |
+
+**Use the batch forms** (`register-sources --jsonl-file`, `add-batch --jsonl-file`): they build the dedup index once, instead of one subprocess and one full file rescan per record.
+
+## Tests
+
+```bash
+python3 -m pytest tests/ -v      # 105 tests, no network required
+```
+
+CI runs the suite across Python 3.9–3.13 plus an end-to-end smoke job (fixtures through the real gates, a full run lifecycle, and a setup run with no Bright Data CLI present).
 
 ## Known limitations
 
-- **Publish dates often missing** from Google organic results, which flattens the recency signal in `source_evaluator.py` (defaults to 50/100). Optional enhancement: parse meta tags from scraped pages and backfill the date before calling `evaluate_source`.
-- **Unknown-domain flattening**: open-web SERP surfaces many domains not in `source_evaluator.py`'s hardcoded tiers; they all score 55. For niche research areas, extend `HIGH_AUTHORITY_DOMAINS`/`MODERATE_AUTHORITY_DOMAINS`.
-- **SERP schema drift**: Bright Data's parsed JSON field names vary by vertical (organic vs news). `_normalize_serp()` in `bd_search.py` is defensive but unverified against every CLI release. If results come back empty, run `brightdata search "<query>" --type news --json` by hand and check the field names against the live response.
+- **Publish dates are often missing** from SERP results, which flattens the recency signal to 50/100. Backfill from scraped page meta tags where you have the page anyway.
+- **The Reddit pipeline is slow** (10–60s typical, occasionally minutes) and billed per record. Prefer top-relevance threads.
+- **Trustpilot cannot be scraped** — the Unlocker zone blocks it and there is no pipeline equivalent. Use SERP snippets (`-m general "site:trustpilot.com ..."`) and quote only what the snippet shows.
+- **Claude-only.** `reference/*.md` hardcodes `~/.claude/skills/...` paths and the skill isn't in `install-codex.sh`'s skill list.
 
 ## Files
 
 ```
 deep-research/
-├── SKILL.md                   # Skill entry point
-├── README.md                  # (this file)
-├── setup.sh                   # Creates .venv, verifies the Bright Data CLI is installed + authed
-├── requirements.txt           # (empty — wrapper now shells out to the Bright Data CLI)
-├── reference/                 # Methodology, report assembly, quality gates, etc.
-├── templates/                 # Markdown + HTML report templates
-├── schemas/                   # JSON schemas for sources/evidence/claims/manifest
-├── scripts/
-│   ├── bd_search.py           # Bright Data CLI wrapper (search + scrape)
-│   ├── citation_manager.py    # Source registry, run manifest
-│   ├── evidence_store.py      # Evidence persistence (JSONL)
-│   ├── source_evaluator.py    # Deterministic credibility scorer (THE re-ranker)
-│   ├── research_engine.py     # Phase orchestration prompts
-│   ├── validate_report.py     # 9-check structural validator
-│   ├── verify_citations.py    # DOI/URL/hallucination checker
-│   └── ...
-└── tests/                         # Tests (citation manager, evidence store, etc.)
+├── SKILL.md                   # Skill entry point (mode/format/provider policy)
+├── docs/day-to-day-fix-list.md  # Design doc for the day-to-day rework
+├── setup.sh                   # venv; Bright Data CLI check is advisory
+├── reference/                 # methodology, report-assembly, quality-gates, html, continuation
+├── templates/                 # brief_template.md, report_template.md, mckinsey HTML
+├── schemas/                   # source / evidence / claim / run_manifest
+├── scripts/                   # see table above
+└── tests/                     # 105 tests + fixtures
 ```
 
 ## License

@@ -1,54 +1,91 @@
 # Quality Gates and Standards
 
+## Gate Policy by Mode
+
+Validation cost scales with mode. The expensive gate (network citation verification)
+and the thorough gate (claim-support verification) are reserved for the modes that
+earn them.
+
+| Gate | quick | standard | deep | ultradeep |
+|------|-------|----------|------|-----------|
+| `validate_report.py` (local, fast) | Y | Y | Y | Y |
+| `verify_citations.py --offline` (local) | Y | Y | - | - |
+| `verify_citations.py` (network DOI/URL) | - | - | Y | Y |
+| `extract_claims.py` → `verify_claim_support.py` | - | - | Y | Y |
+
+Rationale: a 5-minute question does not warrant a multi-minute network pass over every
+bibliography entry. The offline check still catches the defects that actually occur —
+fabricated-looking titles, entries with no DOI *or* URL, body citations with no
+bibliography entry, and vice versa.
+
+---
+
 ## Validation Scripts
 
-### Citation Verification
+### Structure & Quality Validation (all modes)
 
 ```bash
-python scripts/verify_citations.py --report [path]
+python scripts/validate_report.py --report [path] --format brief|report
 ```
 
-**Checks:**
-- DOI resolution (verifies citation exists)
-- Title/year matching (detects mismatched metadata)
-- Flags suspicious entries (recent year without DOI, no URL, failed verification)
+Purely local, no network. Pass `--format brief` for brief-format deliverables (the
+default for quick/standard) so the full-report section list isn't enforced.
 
-**On suspicious citations:** Review flagged, remove/replace fabricated, re-run until clean.
-
-### Structure & Quality Validation
-
-```bash
-python scripts/validate_report.py --report [path]
-```
-
-**9 automated checks:**
-1. Executive summary length (200-400 words)
-2. Required sections present
-3. Citations formatted [1], [2], [3]
-4. Bibliography matches citations
-5. No placeholder text (TBD, TODO)
-6. Word count reasonable (500-10000)
-7. Minimum 10 sources
-8. No broken internal links
+**Checks:** required sections for the format, executive-summary length (report format),
+citation formatting `[N]`, bibliography ↔ citation cross-match, no placeholder text
+(TBD/TODO), sane word count, minimum source count, no broken internal links.
 
 **Failure handling:**
 - Attempt 1: Auto-fix formatting/links
 - Attempt 2: Manual review + correction
 - After 2 failures: STOP, report issues, ask user
 
+### Citation Verification
+
+```bash
+# quick / standard — local only, sub-second, zero network
+python scripts/verify_citations.py --report [path] --offline
+
+# deep / ultradeep — full network verification (concurrent, cached)
+python scripts/verify_citations.py --report [path]
+```
+
+**Offline checks:** hallucination-pattern heuristics, entries lacking both DOI and URL,
+body↔bibliography citation coverage.
+**Network checks (adds):** DOI resolution via doi.org, URL reachability, title/year
+matching against DOI metadata.
+
+The network pass runs 8-way concurrent and caches every DOI/URL for the run, so retry
+cycles never re-fetch. **On suspicious citations:** review flagged, remove/replace
+fabricated, re-run until clean.
+
+### Claim-Support Verification (deep / ultradeep only)
+
+```bash
+python scripts/extract_claims.py --report [path] --dir [folder]
+python scripts/verify_claim_support.py --dir [folder]
+```
+
+Extracts atomic factual claims from the report into `claims.jsonl`, then checks each
+against the persisted `evidence.jsonl` spans. **No claim with `support_status:
+unsupported` ships.** Fix by adding the missing evidence (retrieve → persist) or by
+softening/removing the claim, then re-run.
+
+Skip entirely in quick/standard — there, inline `[N]` citations plus the bibliography
+are the evidence trail.
+
 ### Validation Loop Protocol
 
-**After generating ANY report, run this loop:**
+**After generating any deliverable, run the gates for your mode (table above):**
 
-1. Run `python scripts/validate_report.py --report [path]`
-2. Run `python scripts/verify_citations.py --report [path]`
-3. If EITHER fails:
-   - Read error output carefully
-   - Fix the specific issues identified
-   - Re-run BOTH validators
-4. Maximum 3 retry cycles. If still failing after 3 cycles: STOP and report issues to user.
+1. `validate_report.py` (always)
+2. `verify_citations.py` — with `--offline` in quick/standard, without in deep/ultradeep
+3. Claim-support pair — deep/ultradeep only
+4. If ANY fails: read the output, fix the specific issues, re-run the failed gate
+5. Maximum 3 retry cycles. If still failing: STOP and report issues to the user.
 
-**Do NOT skip validation.** Every report must pass both scripts before delivery.
+**Do NOT skip the gates for your mode.** But equally: do not run deep-mode gates on a
+quick-mode question.
 
 ---
 

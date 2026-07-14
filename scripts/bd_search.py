@@ -22,6 +22,8 @@ or set `BRIGHTDATA_API_KEY`). This wrapper does not read or write any
 credentials of its own.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os

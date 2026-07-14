@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 """
 Report Validation Script
-Ensures research reports meet quality standards before delivery
+Ensures research deliverables meet quality standards before delivery.
+
+Two formats, matching the skill's two deliverable shapes:
+
+  --format report  (default) full 8-section research report; the deep/ultradeep shape
+  --format brief   findings memo; the quick/standard shape
+
+Brief drops the scaffolding sections (Executive Summary, Introduction, Methodology
+Appendix) but keeps every rigor check: citations, complete bibliography, no
+placeholders, no truncation.
+
+Purely local: this script makes no network calls.
 """
+
+from __future__ import annotations
 
 import argparse
 import re
@@ -10,12 +23,40 @@ import sys
 from pathlib import Path
 from typing import List, Tuple, Dict
 
+# Section requirements per format. Brief keeps the substance, drops the ceremony.
+REQUIRED_SECTIONS = {
+    'report': [
+        "Executive Summary",
+        "Introduction",
+        "Main Analysis",
+        "Synthesis",
+        "Limitations",
+        "Recommendations",
+        "Bibliography",
+        "Methodology",
+    ],
+    'brief': [
+        "Findings",
+        "Limitations",
+        "Bibliography",
+    ],
+}
+
+RECOMMENDED_SECTIONS = {
+    'report': ["Counterevidence Register", "Claims-Evidence Table"],
+    'brief': ["So What"],
+}
+
+# Minimum sensible length per format (words). Below this, warn.
+MIN_WORDS = {'report': 500, 'brief': 300}
+
 
 class ReportValidator:
     """Validates research report quality"""
 
-    def __init__(self, report_path: Path):
+    def __init__(self, report_path: Path, fmt: str = 'report'):
         self.report_path = report_path
+        self.format = fmt
         self.content = self._read_report()
         self.errors: List[str] = []
         self.warnings: List[str] = []
@@ -32,11 +73,10 @@ class ReportValidator:
     def validate(self) -> bool:
         """Run all validation checks"""
         print(f"\n{'='*60}")
-        print(f"VALIDATING REPORT: {self.report_path.name}")
+        print(f"VALIDATING {self.format.upper()}: {self.report_path.name}")
         print(f"{'='*60}\n")
 
         checks = [
-            ("Executive Summary", self._check_executive_summary),
             ("Required Sections", self._check_required_sections),
             ("Citations", self._check_citations),
             ("Bibliography", self._check_bibliography),
@@ -46,6 +86,10 @@ class ReportValidator:
             ("Source Count", self._check_source_count),
             ("Broken Links", self._check_broken_references),
         ]
+
+        # The executive-summary length gate only applies to the full report format.
+        if self.format == 'report':
+            checks.insert(0, ("Executive Summary", self._check_executive_summary))
 
         for check_name, check_func in checks:
             print(f"⏳ Checking: {check_name}...", end=" ")
@@ -80,23 +124,9 @@ class ReportValidator:
         return True
 
     def _check_required_sections(self) -> bool:
-        """Check all required sections are present"""
-        required = [
-            "Executive Summary",
-            "Introduction",
-            "Main Analysis",
-            "Synthesis",
-            "Limitations",
-            "Recommendations",
-            "Bibliography",
-            "Methodology"
-        ]
-
-        # Recommended sections (warnings if missing, not errors)
-        recommended = [
-            "Counterevidence Register",
-            "Claims-Evidence Table"
-        ]
+        """Check all required sections for this format are present"""
+        required = REQUIRED_SECTIONS[self.format]
+        recommended = RECOMMENDED_SECTIONS[self.format]
 
         missing = []
         for section in required:
@@ -114,17 +144,30 @@ class ReportValidator:
                 missing_recommended.append(section)
 
         if missing_recommended:
-            self.warnings.append(f"Missing recommended sections (for academic rigor): {', '.join(missing_recommended)}")
+            self.warnings.append(
+                f"Missing recommended sections: {', '.join(missing_recommended)}"
+            )
 
         return True
 
+    def _body(self) -> str:
+        """Report content EXCLUDING the bibliography.
+
+        Citation checks must look only here: the bibliography is a list of [N] entries,
+        so counting it as 'citations' would let a report with zero inline citations pass
+        purely on the strength of having a bibliography.
+        """
+        return re.split(r'##\s*Bibliography', self.content, flags=re.IGNORECASE)[0]
+
     def _check_citations(self) -> bool:
-        """Check citation format and presence"""
-        # Find all citation references [1], [2], etc.
-        citations = re.findall(r'\[(\d+)\]', self.content)
+        """Check citation format and presence in the report BODY"""
+        citations = re.findall(r'\[(\d+)\]', self._body())
 
         if not citations:
-            self.errors.append("No citations found in report")
+            self.errors.append(
+                "No citations found in the report body "
+                "(a bibliography alone does not count — claims must be cited inline)"
+            )
             return False
 
         unique_citations = set(citations)
@@ -189,20 +232,27 @@ class ReportValidator:
                 self.errors.append(f"Bibliography has gaps in numbering: missing {missing}")
                 return False
 
-        # Find citations in text
-        text_citations = set(re.findall(r'\[(\d+)\]', self.content))
+        # Cross-match against BODY citations only (see _body): comparing against the
+        # whole document would include the bibliography's own [N] markers, making the
+        # 'unused entries' check vacuous.
+        body_citations = set(re.findall(r'\[(\d+)\]', self._body()))
         bib_citations = set(bib_entries)
 
-        # Check all citations have bibliography entries
-        missing_in_bib = text_citations - bib_citations
+        # Every citation in the body must have a bibliography entry. A [N] with no
+        # entry is, in practice, a fabricated citation.
+        missing_in_bib = body_citations - bib_citations
         if missing_in_bib:
-            self.errors.append(f"Citations missing from bibliography: {sorted(missing_in_bib)}")
+            self.errors.append(
+                f"Citations missing from bibliography: {sorted(int(n) for n in missing_in_bib)}"
+            )
             return False
 
-        # Check for unused bibliography entries
-        unused = bib_citations - text_citations
+        # Entries nobody cites: usually a leftover from an edited draft.
+        unused = bib_citations - body_citations
         if unused:
-            self.warnings.append(f"Unused bibliography entries: {sorted(unused)}")
+            self.warnings.append(
+                f"Unused bibliography entries: {sorted(int(n) for n in unused)}"
+            )
 
         return True
 
@@ -245,12 +295,17 @@ class ReportValidator:
         return True
 
     def _check_word_count(self) -> bool:
-        """Check overall report length"""
+        """Check overall deliverable length"""
         word_count = len(self.content.split())
+        floor = MIN_WORDS[self.format]
 
-        if word_count < 500:
-            self.warnings.append(f"Report is very short: {word_count} words (consider expanding)")
-        # No upper limit warning - progressive assembly supports unlimited lengths
+        if word_count < floor:
+            self.warnings.append(
+                f"{self.format.capitalize()} is very short: {word_count} words "
+                f"(expected at least {floor})"
+            )
+        # No upper limit: word targets are ceilings, not quotas, and progressive
+        # assembly supports long reports.
 
         return True
 
@@ -324,8 +379,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python validate_report.py --report report.md
-  python validate_report.py -r ~/.claude/research_output/research_report_20251104_153045.md
+  python validate_report.py --report report.md                  # full report format
+  python validate_report.py --report memo.md --format brief     # findings-memo format
         """
     )
 
@@ -333,7 +388,15 @@ Examples:
         '--report', '-r',
         type=str,
         required=True,
-        help='Path to research report markdown file'
+        help='Path to the research deliverable (markdown)'
+    )
+
+    parser.add_argument(
+        '--format', '-f',
+        default='report',
+        choices=['report', 'brief'],
+        help='Deliverable format. "brief" = findings memo (quick/standard default); '
+             '"report" = full 8-section report (deep/ultradeep default)'
     )
 
     args = parser.parse_args()
@@ -344,7 +407,7 @@ Examples:
         print(f"❌ ERROR: Report file not found: {report_path}")
         sys.exit(1)
 
-    validator = ReportValidator(report_path)
+    validator = ReportValidator(report_path, fmt=args.format)
     passed = validator.validate()
 
     sys.exit(0 if passed else 1)

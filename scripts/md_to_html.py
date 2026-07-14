@@ -4,6 +4,8 @@ Markdown to HTML converter for research reports
 Properly converts markdown sections to HTML while preserving structure and formatting
 """
 
+from __future__ import annotations
+
 import re
 from typing import Tuple
 from pathlib import Path

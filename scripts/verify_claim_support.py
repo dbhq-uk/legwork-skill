@@ -13,6 +13,8 @@ Only factual claims hard-fail on unsupported status.
 Synthesis/recommendation need traceability but softer thresholds.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os

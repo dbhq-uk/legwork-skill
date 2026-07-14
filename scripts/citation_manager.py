@@ -15,6 +15,8 @@ Source identity:
 All state is append-only JSONL. No mutable citation numbers in state files.
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
@@ -122,7 +124,8 @@ def cmd_init_run(args: argparse.Namespace) -> None:
         'finished_at': None,
         'assumptions': [],
         'provider_config': {
-            'primary': 'brightdata',
+            'primary': 'websearch',      # built-in WebSearch/WebFetch (free)
+            'fallback': 'brightdata',    # paid: blocked pages, Reddit, geo/vertical SERP
             'scholarly': None,
         },
         'report_dir': out_dir,
@@ -185,6 +188,88 @@ def cmd_register_source(args: argparse.Namespace) -> None:
         'source_id': source_id,
         'canonical_locator': canonical,
     }))
+
+
+def _build_source_row(data: dict, canonical: str, source_id: str) -> dict:
+    return {
+        'source_id': source_id,
+        'canonical_locator': canonical,
+        'raw_url': data.get('raw_url', data.get('url', '')),
+        'title': data.get('title', ''),
+        'authors': data.get('authors'),
+        'year': data.get('year'),
+        'source_type': data.get('source_type', 'web'),
+        'metadata_status': data.get('metadata_status', 'unverified'),
+        'registered_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def cmd_register_sources(args: argparse.Namespace) -> None:
+    """Register many sources in ONE process.
+
+    Reads a JSONL file (one source object per line) or a JSON array via --json.
+    The dedup index is built once, so this is O(n) for the whole batch rather than
+    O(n^2) across n separate `register-source` subprocess spawns.
+    """
+    if args.jsonl_file:
+        records = []
+        with open(args.jsonl_file) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    records.append(json.loads(line))
+    elif args.json:
+        records = json.loads(args.json)
+        if not isinstance(records, list):
+            print(json.dumps({'error': '--json must be a JSON array of source objects'}),
+                  file=sys.stderr)
+            sys.exit(1)
+    else:
+        print(json.dumps({'error': 'one of --jsonl-file or --json is required'}),
+              file=sys.stderr)
+        sys.exit(1)
+
+    sources_path = os.path.join(args.dir, 'sources.jsonl')
+
+    # Build the dedup index ONCE.
+    seen = {row.get('source_id') for row in read_jsonl(sources_path)}
+
+    registered, duplicates, errors = [], [], []
+    new_rows = []
+
+    for i, data in enumerate(records):
+        raw_url = data.get('raw_url', data.get('url', ''))
+        if not raw_url:
+            errors.append({'index': i, 'error': 'raw_url is required'})
+            continue
+
+        canonical = data.get('canonical_locator') or canonicalize_locator(raw_url)
+        source_id = compute_source_id(canonical)
+
+        if source_id in seen:
+            duplicates.append({'source_id': source_id, 'canonical_locator': canonical})
+            continue
+
+        seen.add(source_id)
+        new_rows.append(_build_source_row(data, canonical, source_id))
+        registered.append({'source_id': source_id, 'canonical_locator': canonical})
+
+    # Single open/append for the whole batch.
+    if new_rows:
+        with open(sources_path, 'a') as f:
+            for row in new_rows:
+                f.write(json.dumps(row, ensure_ascii=False) + '\n')
+
+    result = {
+        'status': 'ok',
+        'registered': len(registered),
+        'duplicates': len(duplicates),
+        'errors': len(errors),
+        'sources': registered,
+    }
+    if errors:
+        result['error_detail'] = errors
+    print(json.dumps(result, ensure_ascii=False))
 
 
 def cmd_assign_display_numbers(args: argparse.Namespace) -> None:
@@ -276,6 +361,15 @@ def main() -> None:
     p_reg.add_argument('--json', required=True, help='JSON object with at least raw_url and title')
     p_reg.add_argument('--dir', required=True, help='Run directory containing sources.jsonl')
 
+    # register-sources (batch)
+    p_regs = sub.add_parser(
+        'register-sources',
+        help='Register MANY sources in one process (preferred over looping register-source)',
+    )
+    p_regs.add_argument('--jsonl-file', help='File with one source JSON object per line')
+    p_regs.add_argument('--json', help='JSON array of source objects')
+    p_regs.add_argument('--dir', required=True, help='Run directory containing sources.jsonl')
+
     # assign-display-numbers
     p_num = sub.add_parser('assign-display-numbers', help='Map stable source IDs to display numbers')
     p_num.add_argument('--dir', required=True, help='Run directory containing sources.jsonl')
@@ -290,6 +384,7 @@ def main() -> None:
     dispatch = {
         'init-run': cmd_init_run,
         'register-source': cmd_register_source,
+        'register-sources': cmd_register_sources,
         'assign-display-numbers': cmd_assign_display_numbers,
         'export-bibliography': cmd_export_bibliography,
     }

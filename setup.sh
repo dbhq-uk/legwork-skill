@@ -61,15 +61,27 @@ find_cli() {
 
 CLI_BIN=$(find_cli || true)
 
+# The Bright Data CLI is a FALLBACK provider (blocked pages, Reddit, geo SERP).
+# The skill's primary path is the host's built-in WebSearch/WebFetch, so a missing
+# CLI is a warning, not a failure — setup must still succeed without it.
 if [ -z "$CLI_BIN" ]; then
     echo ""
-    echo "Bright Data CLI not found on PATH." >&2
-    echo "Install it with:" >&2
-    echo "  npm install -g @brightdata/cli" >&2
-    echo "  # or:  curl -fsSL https://cli.brightdata.com/install.sh | sh" >&2
-    echo "" >&2
-    echo "Then re-run this setup script." >&2
-    exit 1
+    echo "Note: Bright Data CLI not found on PATH."
+    echo "  The skill works without it — built-in WebSearch/WebFetch is the primary provider."
+    echo "  Fallback scraping (blocked/paywalled pages, Reddit threads, geo SERP) will be unavailable."
+    echo "  To enable it later:"
+    echo "    npm install -g @brightdata/cli   # or: curl -fsSL https://cli.brightdata.com/install.sh | sh"
+    echo "    $SKILL_DIR/setup.sh --reset"
+    echo ""
+    if [ "$RESET" = 1 ]; then
+        echo "Error: --reset re-authenticates the Bright Data CLI, but it isn't installed." >&2
+        exit 1
+    fi
+    echo "=== Setup Complete (venv only) ==="
+    echo "Virtual environment: $VENV_DIR"
+    echo "Bright Data CLI:     not installed (fallback disabled)"
+    echo ""
+    exit 0
 fi
 
 echo "Bright Data CLI: $CLI_BIN ($("$CLI_BIN" --version 2>/dev/null || echo '?'))"
@@ -109,10 +121,13 @@ else
         read -r -p "Run \`$CLI_BIN login\` now? (Y/n): " do_login
         if [[ ! "$do_login" =~ ^[Nn]$ ]]; then
             "$CLI_BIN" login
-            validate_cli || exit 1
+            validate_cli || {
+                echo "Login completed but validation still fails — fallback provider disabled." >&2
+                echo "The skill still works via built-in WebSearch/WebFetch." >&2
+            }
         else
-            echo "Skipping login. Re-run ./setup.sh --reset when you're ready." >&2
-            exit 1
+            # Non-fatal: Bright Data is the fallback, not the primary provider.
+            echo "Skipping login. Fallback scraping stays disabled until you run: ./setup.sh --reset"
         fi
     fi
 fi

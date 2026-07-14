@@ -1,6 +1,24 @@
 # Report Assembly: Progressive File Generation
 
-## Length Requirements by Mode
+## Pick the format first
+
+| Mode | Default format | Template |
+|------|----------------|----------|
+| quick | **brief** | [brief_template.md](../templates/brief_template.md) |
+| standard | **brief** | [brief_template.md](../templates/brief_template.md) |
+| deep | report | [report_template.md](../templates/report_template.md) |
+| ultradeep | report | [report_template.md](../templates/report_template.md) |
+
+The user overrides freely ("brief" / "full report"). Brief drops scaffolding sections,
+never rigor — same citation discipline, same complete bibliography.
+
+## Length Requirements
+
+**Brief format** (quick/standard default): 800–2,500 words total.
+Answer (2-4 sentences) → Findings (3-6 × 150-400 words) → So What (200-500) →
+Limitations (2-4 sentences) → Bibliography.
+
+**Report format** (deep/ultradeep default):
 
 | Mode | Target Words | Description |
 |------|--------------|-------------|
@@ -8,6 +26,8 @@
 | Standard | 4,000-8,000 | Comprehensive analysis |
 | Deep | 8,000-15,000 | Thorough investigation |
 | UltraDeep | 15,000-20,000+ | Maximum rigor (at output limit) |
+
+**These are ceilings, not quotas.** Stop when the question is answered — never pad findings to reach a length band (see SKILL.md Token Efficiency Policy). A standard-mode question fully answered in 1,200 words ships at 1,200 words.
 
 ---
 
@@ -46,20 +66,44 @@ mkdir -p "$FOLDER"
 **Pattern:** Generate section -> Write/Edit to file -> Move to next section
 Each Write/Edit call contains ONE section (<=2,000 words per call)
 
-**Initialize research run (persist to disk):**
+**Initialize research run (standard/deep/ultradeep — quick mode skips this entirely):**
 ```bash
 # Create run manifest and artifact files using citation_manager CLI
 python scripts/citation_manager.py init-run --out-dir [folder] --query "[question]" --mode [mode]
 # Creates: run_manifest.json, sources.jsonl, evidence.jsonl, claims.jsonl
 ```
 
-**Register each source as you encounter it:**
+In **quick** mode there is no JSONL ledger: inline `[N]` citations plus a complete
+bibliography are the evidence trail. Just write the markdown.
+
+**Register sources in BATCHES, not one at a time:**
 ```bash
+# Preferred: one process for the whole retrieval batch (O(n), not O(n^2))
+python scripts/citation_manager.py register-sources --jsonl-file [batch.jsonl] --dir [folder]
+
+# Single-source form (only for one-offs)
 python scripts/citation_manager.py register-source \
   --json '{"raw_url": "...", "title": "...", "source_type": "academic", "year": "2024"}' \
   --dir [folder]
-# Returns stable source_id (sha256-based, survives renumbering and continuation)
 ```
+Returns stable source_ids (sha256-based, survive renumbering and continuation).
+
+**Persist evidence in batches too:**
+```bash
+python scripts/evidence_store.py add-batch --jsonl-file [evidence_batch.jsonl] --dir [folder]
+```
+
+**Sub-agent evidence → CLI payload mapping.** Retrieval subagents return
+`{"claim", "evidence_quote", "source_url", "source_title", "confidence"}`. Translate before persisting:
+
+| Sub-agent field | Goes to | CLI field |
+|-----------------|---------|-----------|
+| `source_url` | `register-sources` | `raw_url` |
+| `source_title` | `register-sources` | `title` |
+| (returned source_id) | `add-batch` | `source_id` |
+| `evidence_quote` | `add-batch` | `quote` |
+| `claim` | the draft (and `claims.jsonl` in deep/ultra) | — |
+| `confidence` | not persisted — it's the subagent's self-estimate, not evidence | — |
 
 **Assign display numbers after all sources registered:**
 ```bash
@@ -121,7 +165,7 @@ All files use same base name:
 - `research_report_20251104_topic_slug.html`
 - `research_report_20251104_topic_slug.pdf`
 
-**3. Also save copy to:** `~/.claude/research_output/` (internal tracking)
+**3. HTML/PDF variants:** generate only when the user requested them; markdown is the default deliverable.
 
 ---
 

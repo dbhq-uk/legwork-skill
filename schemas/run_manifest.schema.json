@@ -55,14 +55,18 @@
       "properties": {
         "primary": {
           "type": "string",
-          "description": "Primary search provider (e.g. WebSearch)"
+          "description": "Primary search provider. Default: the host's built-in WebSearch/WebFetch (free)."
+        },
+        "fallback": {
+          "type": ["string", "null"],
+          "description": "Paid fallback provider used for blocked/paywalled pages, Reddit, and geo/vertical SERP (e.g. brightdata)."
         },
         "scholarly": {
           "type": ["string", "null"],
           "description": "Scholarly API provider if configured (e.g. openalex, semantic_scholar)"
         }
       },
-      "default": { "primary": "search-cli", "scholarly": null }
+      "default": { "primary": "websearch", "fallback": "brightdata", "scholarly": null }
     },
     "report_dir": {
       "type": "string",

@@ -383,17 +383,28 @@ CITATION TRACKING (CRITICAL):
 
 <!-- Explicit mapping of major claims to supporting sources -->
 
-| Claim ID | Major Claim | Evidence Type | Supporting Sources | Confidence |
-|----------|-------------|---------------|-------------------|------------|
-| C1 | [First major claim from findings] | [Primary data / Meta-analysis / Expert opinion] | [1], [2], [3] | High / Medium / Low |
-| C2 | [Second major claim] | [Evidence type] | [4], [5], [6] | High / Medium / Low |
-| C3 | [Third major claim] | [Evidence type] | [7], [8] | High / Medium / Low |
+| Claim ID | Major Claim | Evidence Type | Supporting Sources | Support Status |
+|----------|-------------|---------------|-------------------|----------------|
+| C1 | [First major claim from findings] | [Primary data / Meta-analysis / Expert opinion] | [1], [2], [3] | supported |
+| C2 | [Second major claim] | [Evidence type] | [4], [5], [6] | supported |
+| C3 | [Third major claim] | [Evidence type] | [7], [8] | partial |
 | ... | [Continue for all major claims] | ... | ... | ... |
 
-**Confidence Levels:**
-- **High**: 3+ independent sources, consistent findings, strong methodology
-- **Medium**: 2 sources OR single high-quality source with minor contradictions
-- **Low**: Single source OR significant contradictions in evidence
+**Support Status** — these are the values emitted by `verify_claim_support.py` into
+`claims.jsonl` (schema: `schemas/claim.schema.json`). Populate this table from that file
+rather than judging by eye:
+
+- **supported**: claim is backed by persisted evidence spans from cited sources
+- **partial**: some support found, but weaker or narrower than the claim as stated
+- **unsupported**: no backing evidence — **BLOCKS DELIVERY.** Retrieve evidence, or soften/remove the claim
+- **needs_review**: ambiguous match; a human should look
+- **unverified**: not yet checked (claim extracted but verification not run)
+
+Generate with:
+```bash
+python scripts/extract_claims.py --report [path] --dir [folder]
+python scripts/verify_claim_support.py --dir [folder]
+```
 
 ---
 

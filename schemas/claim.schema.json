@@ -38,11 +38,24 @@
     "support_status": {
       "type": "string",
       "enum": ["unverified", "supported", "partial", "unsupported", "needs_review"],
-      "description": "Set by verify_claim_support.py (PR5)"
+      "description": "Set by verify_claim_support.py. 'unsupported' blocks delivery in deep/ultradeep."
     },
     "extracted_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "_citation_numbers": {
+      "type": "array",
+      "items": { "type": "integer" },
+      "description": "Display-number citations [N] found on this claim in the draft. Written by extract_claims.py; underscore-prefixed because display numbers are render-time state, not stable identity."
+    },
+    "_support_score": {
+      "type": "number",
+      "description": "Lexical overlap between claim text and its best-matching evidence span (0-1). Written by verify_claim_support.py; diagnostic only."
+    },
+    "_support_notes": {
+      "type": "string",
+      "description": "Human-readable rationale for the support_status. Written by verify_claim_support.py."
     }
   },
   "additionalProperties": false

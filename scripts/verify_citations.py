@@ -11,32 +11,55 @@ Catches fabricated citations by checking:
 
 Usage:
     python verify_citations.py --report [path]
-    python verify_citations.py --report [path] --strict  # Fail on any unverified
+    python verify_citations.py --report [path] --offline  # No network: local checks only
+    python verify_citations.py --report [path] --strict   # Fail on any unverified
 
 Does NOT require API keys - uses free DOI resolver and heuristics.
+
+Cost policy: network verification (DOI resolution + URL reachability) is the
+expensive part. It runs concurrently across a thread pool, results are cached
+per-run so retry cycles never re-fetch the same DOI/URL, and `--offline` skips
+it entirely. quick/standard research modes should pass --offline; deep and
+ultradeep run the full network pass. See reference/quality-gates.md.
 """
+
+from __future__ import annotations
 
 import sys
 import argparse
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Dict, Tuple
 from urllib import request, error
 from urllib.parse import quote
 import json
-import time
 from datetime import datetime
+
+# Concurrency for the network pass. Modest: we are hitting doi.org and arbitrary
+# publisher hosts, and politeness matters more than shaving the last second.
+MAX_WORKERS = 8
+NETWORK_TIMEOUT = 10
+
 
 class CitationVerifier:
     """Verify citations in research report"""
 
-    def __init__(self, report_path: Path, strict_mode: bool = False):
+    def __init__(self, report_path: Path, strict_mode: bool = False, offline: bool = False):
         self.report_path = report_path
         self.strict_mode = strict_mode
+        self.offline = offline
         self.content = self._read_report()
         self.suspicious = []
         self.verified = []
         self.errors = []
+
+        # Per-run caches: a DOI or URL is fetched at most once even across the
+        # up-to-3 validation retry cycles in quality-gates.md.
+        self._doi_cache: Dict[str, Tuple[bool, Dict]] = {}
+        self._url_cache: Dict[str, Tuple[bool, str]] = {}
+        self._cache_lock = threading.Lock()
 
         # Hallucination detection patterns (2025 CiteGuard enhancement)
         self.suspicious_patterns = [
@@ -112,21 +135,36 @@ class CitationVerifier:
 
         return entries
 
+    def extract_body_citations(self) -> set:
+        """Citation numbers [N] used in the report body (everything before Bibliography)."""
+        body = re.split(r'##\s*Bibliography', self.content, flags=re.IGNORECASE)[0]
+        return {int(n) for n in re.findall(r'\[(\d+)\]', body)}
+
     def verify_doi(self, doi: str) -> Tuple[bool, Dict]:
         """
-        Verify DOI exists and get metadata.
+        Verify DOI exists and get metadata. Cached per run.
         Returns (success, metadata_dict)
         """
         if not doi:
             return False, {}
 
+        with self._cache_lock:
+            if doi in self._doi_cache:
+                return self._doi_cache[doi]
+
+        result = self._fetch_doi(doi)
+        with self._cache_lock:
+            self._doi_cache[doi] = result
+        return result
+
+    def _fetch_doi(self, doi: str) -> Tuple[bool, Dict]:
         try:
             # Use content negotiation to get JSON metadata
             url = f"https://doi.org/{quote(doi)}"
             req = request.Request(url)
             req.add_header('Accept', 'application/vnd.citationstyles.csl+json')
 
-            with request.urlopen(req, timeout=10) as response:
+            with request.urlopen(req, timeout=NETWORK_TIMEOUT) as response:
                 data = json.loads(response.read().decode('utf-8'))
 
                 return True, {
@@ -147,18 +185,28 @@ class CitationVerifier:
 
     def verify_url(self, url: str) -> Tuple[bool, str]:
         """
-        Verify URL is accessible (2025 CiteGuard enhancement).
+        Verify URL is accessible (2025 CiteGuard enhancement). Cached per run.
         Returns (accessible, status_message)
         """
         if not url:
             return False, "No URL"
 
+        with self._cache_lock:
+            if url in self._url_cache:
+                return self._url_cache[url]
+
+        result = self._fetch_url(url)
+        with self._cache_lock:
+            self._url_cache[url] = result
+        return result
+
+    def _fetch_url(self, url: str) -> Tuple[bool, str]:
         try:
             # HEAD request to check accessibility without downloading
             req = request.Request(url, method='HEAD')
             req.add_header('User-Agent', 'Mozilla/5.0 (Research Citation Verifier)')
 
-            with request.urlopen(req, timeout=10) as response:
+            with request.urlopen(req, timeout=NETWORK_TIMEOUT) as response:
                 if response.status == 200:
                     return True, "URL accessible"
                 else:
@@ -237,7 +285,11 @@ class CitationVerifier:
         return overlap / total if total > 0 else 0.0
 
     def verify_entry(self, entry: Dict) -> Dict:
-        """Verify a single bibliography entry (Enhanced 2025 with CiteGuard)"""
+        """Verify a single bibliography entry (Enhanced 2025 with CiteGuard).
+
+        Thread-safe: performs no printing, so it can run inside a thread pool.
+        In offline mode only local heuristics run - zero network calls.
+        """
         result = {
             'num': entry['num'],
             'status': 'unknown',
@@ -246,21 +298,34 @@ class CitationVerifier:
             'verification_methods': []
         }
 
-        # STEP 1: Run hallucination detection (CiteGuard 2025)
+        # STEP 1: Hallucination detection (CiteGuard 2025) - always local.
         hallucination_issues = self.detect_hallucination_patterns(entry)
         if hallucination_issues:
             result['issues'].extend(hallucination_issues)
             result['status'] = 'suspicious'
 
-        # STEP 2: Has DOI?
+        # STEP 2: No verification method at all is suspicious in any mode.
+        if not entry['doi'] and not entry['url']:
+            result['issues'].append("No DOI or URL - cannot verify")
+            result['status'] = 'suspicious'
+            return result
+
+        # OFFLINE: stop here. The entry is well-formed (has a DOI or a URL) and
+        # cleared the local heuristics; we simply cannot confirm that it resolves.
+        if self.offline:
+            if result['status'] != 'suspicious':
+                result['status'] = 'format_ok'
+            result['verification_methods'].append('local-only')
+            return result
+
+        # STEP 3: Has DOI?
         if entry['doi']:
-            print(f"  [{entry['num']}] Checking DOI {entry['doi']}...", end=' ')
             success, metadata = self.verify_doi(entry['doi'])
 
             if success:
                 result['metadata'] = metadata
                 result['status'] = 'verified'
-                print("")
+                result['verification_methods'].append('DOI')
 
                 # Check title similarity if we have both
                 if entry['title'] and metadata.get('title'):
@@ -284,66 +349,96 @@ class CitationVerifier:
                         result['status'] = 'suspicious'
 
             else:
-                print(f"✗ {metadata.get('error', 'Failed')}")
                 result['status'] = 'unverified'
-                result['issues'].append(f"DOI resolution failed: {metadata.get('error', 'unknown')}")
+                result['issues'].append(
+                    f"DOI resolution failed: {metadata.get('error', 'unknown')}"
+                )
 
-        # STEP 3: Check URL accessibility (if no DOI or DOI failed)
+        # STEP 4: Check URL accessibility (if no DOI, or the DOI failed)
         if entry['url'] and result['status'] != 'verified':
             url_ok, url_status = self.verify_url(entry['url'])
             if url_ok:
                 result['verification_methods'].append('URL')
-                # Upgrade status if URL verifies
                 if result['status'] in ['unknown', 'no_doi', 'unverified']:
                     result['status'] = 'url_verified'
-                print(f"  [{entry['num']}] URL accessible ✓")
             else:
                 result['issues'].append(f"URL check failed: {url_status}")
 
-        # STEP 4: Final fallback - no verification method
-        if not entry['doi'] and not entry['url']:
-            if 'No DOI provided' not in ' '.join(result['issues']):
-                result['issues'].append("No DOI or URL - cannot verify")
-            result['status'] = 'suspicious'
-
         return result
 
+    def check_citation_coverage(self, entries: List[Dict]) -> List[str]:
+        """Local cross-check: every [N] in the body has a bibliography entry, and vice versa."""
+        issues = []
+        body_nums = self.extract_body_citations()
+        bib_nums = {int(e['num']) for e in entries}
+
+        dangling = sorted(body_nums - bib_nums)
+        if dangling:
+            issues.append(
+                "Cited in body but missing from bibliography: "
+                + ', '.join(f'[{n}]' for n in dangling)
+            )
+
+        orphaned = sorted(bib_nums - body_nums)
+        if orphaned:
+            issues.append(
+                "In bibliography but never cited in body: "
+                + ', '.join(f'[{n}]' for n in orphaned)
+            )
+
+        return issues
+
     def verify_all(self):
-        """Verify all bibliography entries"""
+        """Verify all bibliography entries."""
+        mode_label = (
+            "OFFLINE (local checks only)" if self.offline
+            else f"NETWORK ({MAX_WORKERS} workers)"
+        )
         print(f"\n{'='*60}")
         print(f"CITATION VERIFICATION: {self.report_path.name}")
+        print(f"Mode: {mode_label}")
         print(f"{'='*60}\n")
 
         entries = self.extract_bibliography()
 
         if not entries:
-            print("L No bibliography entries found\n")
+            print("FAIL: No bibliography entries found\n")
             return False
 
         print(f"Found {len(entries)} citations\n")
 
-        results = []
-        for entry in entries:
-            result = self.verify_entry(entry)
-            results.append(result)
+        # Local cross-check: free, and catches the most common real defect.
+        coverage_issues = self.check_citation_coverage(entries)
+        if coverage_issues:
+            print("CITATION COVERAGE ISSUES:")
+            for issue in coverage_issues:
+                print(f"  - {issue}")
+            print()
 
-            # Rate limiting
-            time.sleep(0.5)
+        if self.offline:
+            results = [self.verify_entry(e) for e in entries]
+        else:
+            # Network pass runs concurrently; the caches dedupe repeated DOIs/URLs.
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+                results = list(pool.map(self.verify_entry, entries))
 
-        # Summarize
-        print(f"\n{'='*60}")
-        print(f"VERIFICATION SUMMARY")
+        print(f"{'='*60}")
+        print("VERIFICATION SUMMARY")
         print(f"{'='*60}\n")
 
         verified = [r for r in results if r['status'] == 'verified']
         url_verified = [r for r in results if r['status'] == 'url_verified']
+        format_ok = [r for r in results if r['status'] == 'format_ok']
         suspicious = [r for r in results if r['status'] == 'suspicious']
         unverified = [r for r in results if r['status'] in ['unverified', 'no_doi', 'unknown']]
 
-        print(f'DOI Verified: {len(verified)}/{len(results)}')
-        print(f'URL Verified: {len(url_verified)}/{len(results)}')
+        if self.offline:
+            print(f'Well-formed (not network-verified): {len(format_ok)}/{len(results)}')
+        else:
+            print(f'DOI Verified: {len(verified)}/{len(results)}')
+            print(f'URL Verified: {len(url_verified)}/{len(results)}')
+            print(f'Unverified: {len(unverified)}/{len(results)}')
         print(f'Suspicious: {len(suspicious)}/{len(results)}')
-        print(f'Unverified: {len(unverified)}/{len(results)}')
         print()
 
         if suspicious:
@@ -354,33 +449,39 @@ class CitationVerifier:
                     print(f"    - {issue}")
             print()
 
-        if unverified and len(unverified) > 0:
+        if unverified:
             print('UNVERIFIED CITATIONS (Could not check):')
             for r in unverified:
                 print(f"  [{r['num']}] {r['issues'][0] if r['issues'] else 'Unknown'}")
             print()
 
-        # Decision (Enhanced 2025 - includes URL-verified as acceptable)
-        total_verified = len(verified) + len(url_verified)
+        # Decision. Coverage problems are structural: they fail in strict mode.
+        if coverage_issues and self.strict_mode:
+            print('STRICT MODE: Failing due to citation coverage issues')
+            return False
 
         if suspicious:
             print('WARNING: Suspicious citations detected')
             if self.strict_mode:
                 print('  STRICT MODE: Failing due to suspicious citations')
                 return False
-            else:
-                print('  (Continuing in non-strict mode)')
+            print('  (Continuing in non-strict mode)')
+
+        if self.offline:
+            # Nothing was network-checked, so a verified-ratio gate is meaningless.
+            print('OFFLINE CITATION CHECK PASSED (formatting + heuristics only)')
+            return True
 
         if self.strict_mode and unverified:
             print('STRICT MODE: Unverified citations found')
             return False
 
+        total_verified = len(verified) + len(url_verified)
         if total_verified / len(results) < 0.5:
             print('WARNING: Less than 50% citations verified')
             return True  # Pass with warning
-        else:
-            print('CITATION VERIFICATION PASSED')
-            return True
+        print('CITATION VERIFICATION PASSED')
+        return True
 
 
 def main():
@@ -409,6 +510,13 @@ Uses free DOI resolver - no API key needed.
         help='Strict mode: fail on any unverified or suspicious citations'
     )
 
+    parser.add_argument(
+        '--offline',
+        action='store_true',
+        help='Skip all network calls (DOI + URL). Local heuristics and citation '
+             'coverage checks only. Use for quick/standard research modes.'
+    )
+
     args = parser.parse_args()
     report_path = Path(args.report)
 
@@ -416,7 +524,7 @@ Uses free DOI resolver - no API key needed.
         print(f"ERROR: Report file not found: {report_path}")
         sys.exit(1)
 
-    verifier = CitationVerifier(report_path, strict_mode=args.strict)
+    verifier = CitationVerifier(report_path, strict_mode=args.strict, offline=args.offline)
     passed = verifier.verify_all()
 
     sys.exit(0 if passed else 1)

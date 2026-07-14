@@ -1,14 +1,77 @@
 #!/usr/bin/env python3
 """
 Source Credibility Evaluator
-Assesses source quality, credibility, and potential biases
+Assesses source quality, credibility, and potential biases.
+
+This is the skill's re-ranker: search providers return SERP order, and everything
+downstream (Triangulate, Critique, which sources anchor major claims) ranks on the
+scores produced here.
+
+CLI:
+    # Score a batch of sources (one JSON object per line: url, title, date, author)
+    python source_evaluator.py score --jsonl-file sources.jsonl
+
+    # Score a single source
+    python source_evaluator.py score --url https://... --title "..." --date 2026-01-15
+
+User-extensible domain tiers:
+    Put your recurring research domains in ~/.deep-research/domains.json (or point
+    $DEEP_RESEARCH_DOMAINS at another file):
+
+        {"high": ["mytrustedjournal.org"], "moderate": ["someblog.dev"], "low": ["contentfarm.io"]}
+
+    These merge OVER the built-in tiers, so unknown-but-trusted domains in your niche
+    stop flattening to the 55/100 default.
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from dataclasses import dataclass, asdict
+from pathlib import Path
 from typing import List, Dict, Optional
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
-import re
+
+# Where user-defined domain tiers live. Env var wins, then the dotfile.
+USER_DOMAINS_ENV = 'DEEP_RESEARCH_DOMAINS'
+USER_DOMAINS_PATH = Path.home() / '.deep-research' / 'domains.json'
+
+
+def load_user_domains() -> Dict[str, set]:
+    """Load user domain tier overrides. Returns {'high': set, 'moderate': set, 'low': set}.
+
+    Never raises: a malformed config warns on stderr and is ignored, because a bad
+    dotfile must not take down a research run.
+    """
+    empty = {'high': set(), 'moderate': set(), 'low': set()}
+
+    path_str = os.environ.get(USER_DOMAINS_ENV)
+    path = Path(path_str) if path_str else USER_DOMAINS_PATH
+    if not path.exists():
+        return empty
+
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as e:
+        print(f"warning: ignoring malformed {path}: {e}", file=sys.stderr)
+        return empty
+
+    if not isinstance(data, dict):
+        print(f"warning: ignoring {path}: expected a JSON object", file=sys.stderr)
+        return empty
+
+    out = {}
+    for tier in ('high', 'moderate', 'low'):
+        vals = data.get(tier, [])
+        if not isinstance(vals, list):
+            print(f"warning: ignoring '{tier}' in {path}: expected a list", file=sys.stderr)
+            vals = []
+        out[tier] = {str(d).lower().lstrip('.') for d in vals}
+    return out
 
 
 @dataclass
@@ -65,8 +128,26 @@ class SourceEvaluator:
         'blogspot.com', 'wordpress.com', 'wix.com', 'substack.com'
     ]
 
-    def __init__(self):
-        pass
+    def __init__(self, user_domains: Optional[Dict[str, set]] = None):
+        """Merge user tier overrides over the built-ins.
+
+        User entries take precedence: a domain listed in the user's 'low' tier is low
+        even if the built-ins call it high.
+        """
+        user = user_domains if user_domains is not None else load_user_domains()
+        self.user_high = user.get('high', set())
+        self.user_moderate = user.get('moderate', set())
+        self.user_low = user.get('low', set())
+
+        self.high_domains = self.HIGH_AUTHORITY_DOMAINS | self.user_high
+        self.moderate_domains = self.MODERATE_AUTHORITY_DOMAINS | self.user_moderate
+
+    @staticmethod
+    def _domain_in(domain: str, tier: set) -> bool:
+        """Exact match, or a subdomain of a tier entry (news.nature.com -> nature.com)."""
+        if domain in tier:
+            return True
+        return any(domain.endswith('.' + entry) for entry in tier)
 
     def evaluate_source(
         self,
@@ -121,16 +202,27 @@ class SourceEvaluator:
         return domain
 
     def _evaluate_domain_authority(self, domain: str) -> float:
-        """Evaluate domain authority (0-100)"""
-        if domain in self.HIGH_AUTHORITY_DOMAINS:
-            return 90.0
-        elif domain in self.MODERATE_AUTHORITY_DOMAINS:
-            return 70.0
-        elif any(indicator in domain for indicator in self.LOW_AUTHORITY_INDICATORS):
+        """Evaluate domain authority (0-100).
+
+        User tiers are checked first so an explicit local override always wins over
+        the built-in lists. Matching accepts subdomains (news.nature.com -> nature.com).
+        """
+        # User overrides win outright.
+        if self._domain_in(domain, self.user_low):
             return 40.0
-        else:
-            # Unknown domain - moderate skepticism
-            return 55.0
+        if self._domain_in(domain, self.user_high):
+            return 90.0
+        if self._domain_in(domain, self.user_moderate):
+            return 70.0
+
+        if self._domain_in(domain, self.high_domains):
+            return 90.0
+        if self._domain_in(domain, self.moderate_domains):
+            return 70.0
+        if any(indicator in domain for indicator in self.LOW_AUTHORITY_INDICATORS):
+            return 40.0
+        # Unknown domain - moderate skepticism
+        return 55.0
 
     def _evaluate_recency(self, publication_date: Optional[str]) -> float:
         """Evaluate information recency (0-100)"""
@@ -260,33 +352,88 @@ class SourceEvaluator:
             return "verify"
 
 
-# Example usage
-if __name__ == '__main__':
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def _score_record(evaluator: SourceEvaluator, rec: dict) -> dict:
+    """Score one source record. Accepts the loose shape emitted by bd_search/WebSearch."""
+    url = rec.get('url') or rec.get('raw_url') or ''
+    title = rec.get('title') or ''
+    # `date` is what the search wrappers emit; `publication_date` is the long form.
+    pub_date = rec.get('publication_date') or rec.get('date')
+
+    score = evaluator.evaluate_source(
+        url=url,
+        title=title,
+        content=rec.get('content') or rec.get('snippet'),
+        publication_date=pub_date,
+        author=rec.get('author'),
+    )
+    out = dict(rec)
+    out['credibility'] = asdict(score)
+    return out
+
+
+def cmd_score(args: argparse.Namespace) -> None:
     evaluator = SourceEvaluator()
 
-    # Test sources
-    test_sources = [
-        {
-            'url': 'https://www.nature.com/articles/s41586-2025-12345',
-            'title': 'Breakthrough in Quantum Computing',
-            'publication_date': '2025-10-15'
-        },
-        {
-            'url': 'https://someblog.wordpress.com/shocking-discovery',
-            'title': 'SHOCKING! You Won\'t Believe This Discovery!',
-            'publication_date': '2020-01-01'
-        },
-        {
-            'url': 'https://docs.python.org/3/library/asyncio.html',
-            'title': 'asyncio — Asynchronous I/O',
-            'publication_date': '2025-11-01'
-        }
-    ]
+    if args.jsonl_file:
+        records = []
+        with open(args.jsonl_file) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    records.append(json.loads(line))
+    elif args.url:
+        records = [{'url': args.url, 'title': args.title or '', 'date': args.date}]
+    else:
+        print('error: one of --jsonl-file or --url is required', file=sys.stderr)
+        sys.exit(1)
 
-    for source in test_sources:
-        score = evaluator.evaluate_source(**source)
-        print(f"\nSource: {source['title']}")
-        print(f"URL: {source['url']}")
-        print(f"Overall Score: {score.overall_score}/100")
-        print(f"Recommendation: {score.recommendation}")
-        print(f"Factors: {score.factors}")
+    scored = [_score_record(evaluator, r) for r in records]
+    scored.sort(key=lambda r: r['credibility']['overall_score'], reverse=True)
+
+    if args.format == 'jsonl':
+        for r in scored:
+            print(json.dumps(r, ensure_ascii=False))
+    elif args.format == 'json':
+        print(json.dumps(scored, indent=2, ensure_ascii=False))
+    else:  # table
+        print(f"{'SCORE':>6}  {'TRUST':<15} {'DOMAIN':<28} TITLE")
+        for r in scored:
+            c = r['credibility']
+            domain = urlparse(r.get('url') or r.get('raw_url') or '').netloc.replace('www.', '')
+            title = (r.get('title') or '')[:50]
+            print(f"{c['overall_score']:>6.1f}  {c['recommendation']:<15} {domain:<28} {title}")
+
+    if args.min_score is not None:
+        kept = [r for r in scored if r['credibility']['overall_score'] >= args.min_score]
+        print(
+            f"\n{len(kept)}/{len(scored)} sources at or above min-score {args.min_score}",
+            file=sys.stderr,
+        )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog='source_evaluator',
+        description='Deterministic source credibility scoring (the deep-research re-ranker)',
+    )
+    sub = parser.add_subparsers(dest='command', required=True)
+
+    p_score = sub.add_parser('score', help='Score one source or a batch of sources')
+    p_score.add_argument('--jsonl-file', help='File with one source JSON object per line')
+    p_score.add_argument('--url', help='Score a single URL')
+    p_score.add_argument('--title', default='', help='Title for the single-URL form')
+    p_score.add_argument('--date', default=None, help='ISO publication date (improves recency score)')
+    p_score.add_argument('--format', default='table', choices=['table', 'json', 'jsonl'])
+    p_score.add_argument('--min-score', type=float, default=None,
+                         help='Report how many sources meet this threshold')
+
+    args = parser.parse_args()
+    {'score': cmd_score}[args.command](args)
+
+
+if __name__ == '__main__':
+    main()

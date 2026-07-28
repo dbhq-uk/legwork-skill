@@ -19,7 +19,8 @@ def run_ec(*args: str) -> dict | list:
     """Run extract_claims.py with args."""
     result = subprocess.run(
         [sys.executable, SCRIPT, *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         raise RuntimeError(f'Exit {result.returncode}: {result.stderr}')
@@ -110,11 +111,13 @@ class TestAdd(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_add_and_dedup(self):
-        claim = json.dumps({
-            'section_id': 'finding_1',
-            'text': 'Quantum computers can break RSA encryption.',
-            'claim_type': 'factual',
-        })
+        claim = json.dumps(
+            {
+                'section_id': 'finding_1',
+                'text': 'Quantum computers can break RSA encryption.',
+                'claim_type': 'factual',
+            }
+        )
         out1 = run_ec('add', '--json', claim, '--dir', self.tmpdir)
         self.assertEqual(out1['status'], 'added')
         self.assertEqual(len(out1['claim_id']), 16)
@@ -123,13 +126,15 @@ class TestAdd(unittest.TestCase):
         self.assertEqual(out2['status'], 'duplicate')
 
     def test_add_with_sources(self):
-        claim = json.dumps({
-            'section_id': 'finding_1',
-            'text': 'NIST standardized CRYSTALS-Kyber in 2024.',
-            'claim_type': 'factual',
-            'cited_source_ids': ['abcdef0123456789'],
-            'evidence_ids': ['1234567890abcdef'],
-        })
+        claim = json.dumps(
+            {
+                'section_id': 'finding_1',
+                'text': 'NIST standardized CRYSTALS-Kyber in 2024.',
+                'claim_type': 'factual',
+                'cited_source_ids': ['abcdef0123456789'],
+                'evidence_ids': ['1234567890abcdef'],
+            }
+        )
         out = run_ec('add', '--json', claim, '--dir', self.tmpdir)
         self.assertEqual(out['status'], 'added')
 
@@ -145,9 +150,19 @@ class TestListAndStats(unittest.TestCase):
             ('synthesis', 'Overall, atmospheric optics explains most visual phenomena.', 'synthesis'),
             ('recommendations', 'Researchers should investigate polarization effects further.', 'recommendation'),
         ]:
-            run_ec('add', '--json', json.dumps({
-                'section_id': sec, 'text': text, 'claim_type': ctype,
-            }), '--dir', self.tmpdir)
+            run_ec(
+                'add',
+                '--json',
+                json.dumps(
+                    {
+                        'section_id': sec,
+                        'text': text,
+                        'claim_type': ctype,
+                    }
+                ),
+                '--dir',
+                self.tmpdir,
+            )
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -179,6 +194,7 @@ class TestClaimID(unittest.TestCase):
     def setUpClass(cls):
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
         from extract_claims import classify_claim, compute_claim_id
+
         cls.compute_id = staticmethod(compute_claim_id)
         cls.classify = staticmethod(classify_claim)
 

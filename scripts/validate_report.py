@@ -71,9 +71,9 @@ class ReportValidator:
 
     def validate(self) -> bool:
         """Run all validation checks"""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"VALIDATING {self.format.upper()}: {self.report_path.name}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         checks = [
             ("Required Sections", self._check_required_sections),
@@ -143,9 +143,7 @@ class ReportValidator:
                 missing_recommended.append(section)
 
         if missing_recommended:
-            self.warnings.append(
-                f"Missing recommended sections: {', '.join(missing_recommended)}"
-            )
+            self.warnings.append(f"Missing recommended sections: {', '.join(missing_recommended)}")
 
         return True
 
@@ -241,26 +239,28 @@ class ReportValidator:
         # entry is, in practice, a fabricated citation.
         missing_in_bib = body_citations - bib_citations
         if missing_in_bib:
-            self.errors.append(
-                f"Citations missing from bibliography: {sorted(int(n) for n in missing_in_bib)}"
-            )
+            self.errors.append(f"Citations missing from bibliography: {sorted(int(n) for n in missing_in_bib)}")
             return False
 
         # Entries nobody cites: usually a leftover from an edited draft.
         unused = bib_citations - body_citations
         if unused:
-            self.warnings.append(
-                f"Unused bibliography entries: {sorted(int(n) for n in unused)}"
-            )
+            self.warnings.append(f"Unused bibliography entries: {sorted(int(n) for n in unused)}")
 
         return True
 
     def _check_placeholders(self) -> bool:
         """Check for placeholder text that shouldn't be in final report"""
         placeholders = [
-            'TBD', 'TODO', 'FIXME', 'XXX',
-            '[citation needed]', '[needs citation]',
-            '[placeholder]', '[TODO]', '[TBD]'
+            'TBD',
+            'TODO',
+            'FIXME',
+            'XXX',
+            '[citation needed]',
+            '[needs citation]',
+            '[placeholder]',
+            '[TODO]',
+            '[TBD]',
         ]
 
         found_placeholders = []
@@ -300,8 +300,7 @@ class ReportValidator:
 
         if word_count < floor:
             self.warnings.append(
-                f"{self.format.capitalize()} is very short: {word_count} words "
-                f"(expected at least {floor})"
+                f"{self.format.capitalize()} is very short: {word_count} words (expected at least {floor})"
             )
         # No upper limit: word targets are ceilings, not quotas, and progressive
         # assembly supports long reports.
@@ -348,9 +347,9 @@ class ReportValidator:
 
     def _print_summary(self):
         """Print validation summary"""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("VALIDATION SUMMARY")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         if self.errors:
             print(f"❌ ERRORS ({len(self.errors)}):")
@@ -380,22 +379,18 @@ def main():
 Examples:
   python validate_report.py --report report.md                  # full report format
   python validate_report.py --report memo.md --format brief     # findings-memo format
-        """
+        """,
     )
 
-    parser.add_argument(
-        '--report', '-r',
-        type=str,
-        required=True,
-        help='Path to the research deliverable (markdown)'
-    )
+    parser.add_argument('--report', '-r', type=str, required=True, help='Path to the research deliverable (markdown)')
 
     parser.add_argument(
-        '--format', '-f',
+        '--format',
+        '-f',
         default='report',
         choices=['report', 'brief'],
         help='Deliverable format. "brief" = findings memo (quick/standard default); '
-             '"report" = full 8-section report (deep/ultradeep default)'
+        '"report" = full 8-section report (deep/ultradeep default)',
     )
 
     args = parser.parse_args()

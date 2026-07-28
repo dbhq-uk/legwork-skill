@@ -18,7 +18,8 @@ def run_vcs(*args: str, expect_fail: bool = False) -> dict | str:
     """Run verify_claim_support.py."""
     result = subprocess.run(
         [sys.executable, SCRIPT, *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0 and not expect_fail:
         raise RuntimeError(f'Exit {result.returncode}: {result.stderr}\n{result.stdout}')
@@ -40,30 +41,39 @@ class TestVerifySupported(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         # Sources
-        write_jsonl(os.path.join(self.tmpdir, 'sources.jsonl'), [
-            {'source_id': 'src_quantum_001', 'title': 'Quantum Computing 2024'},
-        ])
+        write_jsonl(
+            os.path.join(self.tmpdir, 'sources.jsonl'),
+            [
+                {'source_id': 'src_quantum_001', 'title': 'Quantum Computing 2024'},
+            ],
+        )
         # Evidence with clear overlap to the claim
-        write_jsonl(os.path.join(self.tmpdir, 'evidence.jsonl'), [
-            {
-                'evidence_id': 'ev_shor_001',
-                'source_id': 'src_quantum_001',
-                'quote': "Shor's algorithm can factor large integers exponentially faster than any known classical algorithm, threatening RSA-2048 encryption.",
-                'evidence_type': 'direct_quote',
-            },
-        ])
+        write_jsonl(
+            os.path.join(self.tmpdir, 'evidence.jsonl'),
+            [
+                {
+                    'evidence_id': 'ev_shor_001',
+                    'source_id': 'src_quantum_001',
+                    'quote': "Shor's algorithm can factor large integers exponentially faster than any known classical algorithm, threatening RSA-2048 encryption.",
+                    'evidence_type': 'direct_quote',
+                },
+            ],
+        )
         # Claim that matches the evidence
-        write_jsonl(os.path.join(self.tmpdir, 'claims.jsonl'), [
-            {
-                'claim_id': 'clm_factor_001',
-                'section_id': 'finding_1',
-                'text': "Shor's algorithm can factor large numbers exponentially faster than classical methods, threatening RSA-2048.",
-                'claim_type': 'factual',
-                'cited_source_ids': ['src_quantum_001'],
-                'evidence_ids': ['ev_shor_001'],
-                'support_status': 'unverified',
-            },
-        ])
+        write_jsonl(
+            os.path.join(self.tmpdir, 'claims.jsonl'),
+            [
+                {
+                    'claim_id': 'clm_factor_001',
+                    'section_id': 'finding_1',
+                    'text': "Shor's algorithm can factor large numbers exponentially faster than classical methods, threatening RSA-2048.",
+                    'claim_type': 'factual',
+                    'cited_source_ids': ['src_quantum_001'],
+                    'evidence_ids': ['ev_shor_001'],
+                    'support_status': 'unverified',
+                },
+            ],
+        )
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -88,17 +98,20 @@ class TestVerifyUnsupported(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp()
         write_jsonl(os.path.join(self.tmpdir, 'sources.jsonl'), [])
         write_jsonl(os.path.join(self.tmpdir, 'evidence.jsonl'), [])
-        write_jsonl(os.path.join(self.tmpdir, 'claims.jsonl'), [
-            {
-                'claim_id': 'clm_no_ev_001',
-                'section_id': 'finding_1',
-                'text': 'The population of Mars is 500 million as of 2025.',
-                'claim_type': 'factual',
-                'cited_source_ids': [],
-                'evidence_ids': [],
-                'support_status': 'unverified',
-            },
-        ])
+        write_jsonl(
+            os.path.join(self.tmpdir, 'claims.jsonl'),
+            [
+                {
+                    'claim_id': 'clm_no_ev_001',
+                    'section_id': 'finding_1',
+                    'text': 'The population of Mars is 500 million as of 2025.',
+                    'claim_type': 'factual',
+                    'cited_source_ids': [],
+                    'evidence_ids': [],
+                    'support_status': 'unverified',
+                },
+            ],
+        )
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -120,26 +133,29 @@ class TestVerifyMixed(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp()
         write_jsonl(os.path.join(self.tmpdir, 'sources.jsonl'), [])
         write_jsonl(os.path.join(self.tmpdir, 'evidence.jsonl'), [])
-        write_jsonl(os.path.join(self.tmpdir, 'claims.jsonl'), [
-            {
-                'claim_id': 'clm_spec_001',
-                'section_id': 'finding_1',
-                'text': 'Quantum computers might eventually solve protein folding in real time.',
-                'claim_type': 'speculation',
-                'cited_source_ids': [],
-                'evidence_ids': [],
-                'support_status': 'unverified',
-            },
-            {
-                'claim_id': 'clm_rec_001',
-                'section_id': 'recommendations',
-                'text': 'Organizations should begin PQC migration planning immediately.',
-                'claim_type': 'recommendation',
-                'cited_source_ids': [],
-                'evidence_ids': [],
-                'support_status': 'unverified',
-            },
-        ])
+        write_jsonl(
+            os.path.join(self.tmpdir, 'claims.jsonl'),
+            [
+                {
+                    'claim_id': 'clm_spec_001',
+                    'section_id': 'finding_1',
+                    'text': 'Quantum computers might eventually solve protein folding in real time.',
+                    'claim_type': 'speculation',
+                    'cited_source_ids': [],
+                    'evidence_ids': [],
+                    'support_status': 'unverified',
+                },
+                {
+                    'claim_id': 'clm_rec_001',
+                    'section_id': 'recommendations',
+                    'text': 'Organizations should begin PQC migration planning immediately.',
+                    'claim_type': 'recommendation',
+                    'cited_source_ids': [],
+                    'evidence_ids': [],
+                    'support_status': 'unverified',
+                },
+            ],
+        )
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -160,29 +176,38 @@ class TestVerifyPartial(unittest.TestCase):
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        write_jsonl(os.path.join(self.tmpdir, 'sources.jsonl'), [
-            {'source_id': 'src_nist_001', 'title': 'NIST PQC Standards'},
-        ])
-        write_jsonl(os.path.join(self.tmpdir, 'evidence.jsonl'), [
-            {
-                'evidence_id': 'ev_nist_001',
-                'source_id': 'src_nist_001',
-                'quote': 'NIST announced the standardization of CRYSTALS-Kyber for key encapsulation.',
-                'evidence_type': 'direct_quote',
-            },
-        ])
+        write_jsonl(
+            os.path.join(self.tmpdir, 'sources.jsonl'),
+            [
+                {'source_id': 'src_nist_001', 'title': 'NIST PQC Standards'},
+            ],
+        )
+        write_jsonl(
+            os.path.join(self.tmpdir, 'evidence.jsonl'),
+            [
+                {
+                    'evidence_id': 'ev_nist_001',
+                    'source_id': 'src_nist_001',
+                    'quote': 'NIST announced the standardization of CRYSTALS-Kyber for key encapsulation.',
+                    'evidence_type': 'direct_quote',
+                },
+            ],
+        )
         # Claim mentions NIST but adds unverified detail about timeline
-        write_jsonl(os.path.join(self.tmpdir, 'claims.jsonl'), [
-            {
-                'claim_id': 'clm_nist_time',
-                'section_id': 'finding_2',
-                'text': 'NIST standardized four lattice-based algorithms in 2024, covering both encryption and signatures.',
-                'claim_type': 'factual',
-                'cited_source_ids': ['src_nist_001'],
-                'evidence_ids': ['ev_nist_001'],
-                'support_status': 'unverified',
-            },
-        ])
+        write_jsonl(
+            os.path.join(self.tmpdir, 'claims.jsonl'),
+            [
+                {
+                    'claim_id': 'clm_nist_time',
+                    'section_id': 'finding_2',
+                    'text': 'NIST standardized four lattice-based algorithms in 2024, covering both encryption and signatures.',
+                    'claim_type': 'factual',
+                    'cited_source_ids': ['src_nist_001'],
+                    'evidence_ids': ['ev_nist_001'],
+                    'support_status': 'unverified',
+                },
+            ],
+        )
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -204,6 +229,7 @@ class TestSupportScore(unittest.TestCase):
     def setUpClass(cls):
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
         from verify_claim_support import compute_support_score
+
         cls.score = staticmethod(compute_support_score)
 
     def test_identical_text(self):

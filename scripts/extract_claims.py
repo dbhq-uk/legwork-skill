@@ -50,6 +50,7 @@ def compute_claim_id(section_id: str, text: str) -> str:
 # JSONL helpers
 # ---------------------------------------------------------------------------
 
+
 def append_jsonl(path: str, obj: dict) -> None:
     with open(path, 'a') as f:
         f.write(json.dumps(obj, ensure_ascii=False) + '\n')
@@ -101,14 +102,17 @@ def classify_claim(text: str, section_id: str) -> str:
         return 'recommendation'
 
     # Speculation indicators
-    if any(w in lower for w in ['might', 'could potentially', 'it is possible', 'may eventually',
-                                 'hypothetically', 'speculatively']):
+    if any(
+        w in lower
+        for w in ['might', 'could potentially', 'it is possible', 'may eventually', 'hypothetically', 'speculatively']
+    ):
         return 'speculation'
 
     # Synthesis indicators (often in synthesis/conclusion sections)
     if section_id in ('synthesis', 'conclusion', 'limitations'):
-        if any(w in lower for w in ['overall', 'taken together', 'collectively',
-                                     'the evidence suggests', 'this implies']):
+        if any(
+            w in lower for w in ['overall', 'taken together', 'collectively', 'the evidence suggests', 'this implies']
+        ):
             return 'synthesis'
 
     # Default: factual
@@ -163,6 +167,7 @@ def extract_sentences(text: str) -> list[str]:
 # Subcommands
 # ---------------------------------------------------------------------------
 
+
 def cmd_extract(args: argparse.Namespace) -> None:
     """Extract atomic claims from a markdown report."""
     report_path = args.report
@@ -211,12 +216,16 @@ def cmd_extract(args: argparse.Namespace) -> None:
             existing_ids.add(claim_id)
             added += 1
 
-    print(json.dumps({
-        'status': 'ok',
-        'claims_added': added,
-        'claims_skipped': skipped,
-        'total_claims': len(existing_ids),
-    }))
+    print(
+        json.dumps(
+            {
+                'status': 'ok',
+                'claims_added': added,
+                'claims_skipped': skipped,
+                'total_claims': len(existing_ids),
+            }
+        )
+    )
 
 
 def cmd_add(args: argparse.Namespace) -> None:
@@ -305,17 +314,23 @@ def cmd_stats(args: argparse.Namespace) -> None:
         by_status[s] = by_status.get(s, 0) + 1
         by_section[sec] = by_section.get(sec, 0) + 1
 
-    print(json.dumps({
-        'total': len(unique),
-        'by_type': by_type,
-        'by_status': by_status,
-        'by_section': by_section,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                'total': len(unique),
+                'by_type': by_type,
+                'by_status': by_status,
+                'by_section': by_section,
+            },
+            indent=2,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(

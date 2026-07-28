@@ -34,7 +34,7 @@ import sys
 SERP_MODES = {"general", "news", "academic", "scholar", "patents", "people", "images"}
 CONTENT_MODES = {"extract", "scrape"}
 PIPELINE_MODES = {"reddit"}
-TIMEOUT_FAST = 90      # search + scrape
+TIMEOUT_FAST = 90  # search + scrape
 TIMEOUT_PIPELINE = 700  # `brightdata pipelines` polls (CLI default 600s + headroom)
 SETUP_HINT = "Run `brightdata login` (or set BRIGHTDATA_API_KEY) to authenticate."
 # Bright Data CLI exits 1 for every error. Map known auth/quota messages onto
@@ -139,8 +139,11 @@ def _normalize_serp(parsed: dict, count: int) -> list[dict]:
 def run_serp(args) -> None:
     cli = _cli_bin()
     cmd = [
-        cli, "search", args.query,
-        "--type", _TYPE_FOR_MODE.get(args.mode, "web"),
+        cli,
+        "search",
+        args.query,
+        "--type",
+        _TYPE_FOR_MODE.get(args.mode, "web"),
         "--json",
     ]
     if args.country:

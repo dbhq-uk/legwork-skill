@@ -18,7 +18,8 @@ def run_es(*args: str) -> dict | list:
     """Run evidence_store.py with args, return parsed JSON from stdout."""
     result = subprocess.run(
         [sys.executable, SCRIPT, *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         raise RuntimeError(f'Exit {result.returncode}: {result.stderr}')
@@ -44,13 +45,15 @@ class TestAddEvidence(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_add_and_dedup(self):
-        ev = json.dumps({
-            'source_id': 'abcdef0123456789',
-            'quote': 'FActScore decomposes generation into atomic facts.',
-            'evidence_type': 'direct_quote',
-            'locator': 'page 3',
-            'retrieval_query': 'factuality evaluation methods',
-        })
+        ev = json.dumps(
+            {
+                'source_id': 'abcdef0123456789',
+                'quote': 'FActScore decomposes generation into atomic facts.',
+                'evidence_type': 'direct_quote',
+                'locator': 'page 3',
+                'retrieval_query': 'factuality evaluation methods',
+            }
+        )
         out1 = run_es('add', '--json', ev, '--dir', self.tmpdir)
         self.assertEqual(out1['status'], 'added')
         self.assertEqual(len(out1['evidence_id']), 16)
@@ -61,16 +64,20 @@ class TestAddEvidence(unittest.TestCase):
         self.assertEqual(out2['evidence_id'], out1['evidence_id'])
 
     def test_whitespace_normalization(self):
-        ev1 = json.dumps({
-            'source_id': 'abcdef0123456789',
-            'quote': '  FActScore   decomposes   generation  into atomic facts.  ',
-            'evidence_type': 'direct_quote',
-        })
-        ev2 = json.dumps({
-            'source_id': 'abcdef0123456789',
-            'quote': 'FActScore decomposes generation into atomic facts.',
-            'evidence_type': 'direct_quote',
-        })
+        ev1 = json.dumps(
+            {
+                'source_id': 'abcdef0123456789',
+                'quote': '  FActScore   decomposes   generation  into atomic facts.  ',
+                'evidence_type': 'direct_quote',
+            }
+        )
+        ev2 = json.dumps(
+            {
+                'source_id': 'abcdef0123456789',
+                'quote': 'FActScore decomposes generation into atomic facts.',
+                'evidence_type': 'direct_quote',
+            }
+        )
         out1 = run_es('add', '--json', ev1, '--dir', self.tmpdir)
         out2 = run_es('add', '--json', ev2, '--dir', self.tmpdir)
         # Should be same ID due to normalization
@@ -78,16 +85,20 @@ class TestAddEvidence(unittest.TestCase):
         self.assertEqual(out2['status'], 'duplicate')
 
     def test_different_sources_different_ids(self):
-        ev1 = json.dumps({
-            'source_id': 'aaaaaaaaaaaaaaaa',
-            'quote': 'Same quote text.',
-            'evidence_type': 'paraphrase',
-        })
-        ev2 = json.dumps({
-            'source_id': 'bbbbbbbbbbbbbbbb',
-            'quote': 'Same quote text.',
-            'evidence_type': 'paraphrase',
-        })
+        ev1 = json.dumps(
+            {
+                'source_id': 'aaaaaaaaaaaaaaaa',
+                'quote': 'Same quote text.',
+                'evidence_type': 'paraphrase',
+            }
+        )
+        ev2 = json.dumps(
+            {
+                'source_id': 'bbbbbbbbbbbbbbbb',
+                'quote': 'Same quote text.',
+                'evidence_type': 'paraphrase',
+            }
+        )
         out1 = run_es('add', '--json', ev1, '--dir', self.tmpdir)
         out2 = run_es('add', '--json', ev2, '--dir', self.tmpdir)
         self.assertNotEqual(out1['evidence_id'], out2['evidence_id'])
@@ -104,11 +115,19 @@ class TestListAndExport(unittest.TestCase):
             ('src_aaa', 'Second quote from source A.'),
             ('src_bbb', 'Quote from source B.'),
         ]:
-            run_es('add', '--json', json.dumps({
-                'source_id': src,
-                'quote': quote,
-                'evidence_type': 'direct_quote',
-            }), '--dir', self.tmpdir)
+            run_es(
+                'add',
+                '--json',
+                json.dumps(
+                    {
+                        'source_id': src,
+                        'quote': quote,
+                        'evidence_type': 'direct_quote',
+                    }
+                ),
+                '--dir',
+                self.tmpdir,
+            )
 
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -144,6 +163,7 @@ class TestEvidenceID(unittest.TestCase):
     def setUpClass(cls):
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
         from evidence_store import compute_evidence_id, normalize_quote
+
         cls.compute_id = staticmethod(compute_evidence_id)
         cls.normalize = staticmethod(normalize_quote)
 

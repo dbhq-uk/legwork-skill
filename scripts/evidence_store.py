@@ -46,6 +46,7 @@ def compute_evidence_id(source_id: str, quote: str, locator: str | None) -> str:
 # JSONL helpers (shared pattern with citation_manager)
 # ---------------------------------------------------------------------------
 
+
 def append_jsonl(path: str, obj: dict) -> None:
     with open(path, 'a') as f:
         f.write(json.dumps(obj, ensure_ascii=False) + '\n')
@@ -66,6 +67,7 @@ def read_jsonl(path: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Subcommands
 # ---------------------------------------------------------------------------
+
 
 def cmd_init(args: argparse.Namespace) -> None:
     """Create empty evidence.jsonl if it doesn't exist."""
@@ -94,10 +96,14 @@ def cmd_add(args: argparse.Namespace) -> None:
     existing = read_jsonl(evidence_path)
     for row in existing:
         if row.get('evidence_id') == evidence_id:
-            print(json.dumps({
-                'status': 'duplicate',
-                'evidence_id': evidence_id,
-            }))
+            print(
+                json.dumps(
+                    {
+                        'status': 'duplicate',
+                        'evidence_id': evidence_id,
+                    }
+                )
+            )
             return
 
     valid_types = {'direct_quote', 'paraphrase', 'data_point', 'figure_reference', 'methodology'}
@@ -115,15 +121,23 @@ def cmd_add(args: argparse.Namespace) -> None:
         'captured_at': datetime.now(timezone.utc).isoformat(),
     }
     append_jsonl(evidence_path, row)
-    print(json.dumps({
-        'status': 'added',
-        'evidence_id': evidence_id,
-        'source_id': source_id,
-    }))
+    print(
+        json.dumps(
+            {
+                'status': 'added',
+                'evidence_id': evidence_id,
+                'source_id': source_id,
+            }
+        )
+    )
 
 
 VALID_EVIDENCE_TYPES = {
-    'direct_quote', 'paraphrase', 'data_point', 'figure_reference', 'methodology',
+    'direct_quote',
+    'paraphrase',
+    'data_point',
+    'figure_reference',
+    'methodology',
 }
 
 
@@ -159,12 +173,10 @@ def cmd_add_batch(args: argparse.Namespace) -> None:
     elif args.json:
         records = json.loads(args.json)
         if not isinstance(records, list):
-            print(json.dumps({'error': '--json must be a JSON array of evidence objects'}),
-                  file=sys.stderr)
+            print(json.dumps({'error': '--json must be a JSON array of evidence objects'}), file=sys.stderr)
             sys.exit(1)
     else:
-        print(json.dumps({'error': 'one of --jsonl-file or --json is required'}),
-              file=sys.stderr)
+        print(json.dumps({'error': 'one of --jsonl-file or --json is required'}), file=sys.stderr)
         sys.exit(1)
 
     evidence_path = os.path.join(args.dir, 'evidence.jsonl')
@@ -225,10 +237,16 @@ def cmd_list(args: argparse.Namespace) -> None:
             seen.add(eid)
             unique.append(r)
 
-    print(json.dumps({
-        'count': len(unique),
-        'evidence': unique,
-    }, indent=2, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                'count': len(unique),
+                'evidence': unique,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
 
 
 def cmd_export(args: argparse.Namespace) -> None:
@@ -252,6 +270,7 @@ def cmd_export(args: argparse.Namespace) -> None:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog='evidence_store',
@@ -265,7 +284,9 @@ def main() -> None:
 
     # add
     p_add = sub.add_parser('add', help='Append evidence row')
-    p_add.add_argument('--json', required=True, help='JSON with source_id, quote, locator, evidence_type, retrieval_query')
+    p_add.add_argument(
+        '--json', required=True, help='JSON with source_id, quote, locator, evidence_type, retrieval_query'
+    )
     p_add.add_argument('--dir', required=True, help='Run directory containing evidence.jsonl')
 
     # add-batch

@@ -54,22 +54,34 @@ class TestUserDomainTiers(unittest.TestCase):
     """The mechanism that makes this useful for a specific person's research niche."""
 
     def test_user_can_promote_unknown_domain(self):
-        ev = SourceEvaluator(user_domains={
-            'high': {'obscure-journal.example'}, 'moderate': set(), 'low': set(),
-        })
+        ev = SourceEvaluator(
+            user_domains={
+                'high': {'obscure-journal.example'},
+                'moderate': set(),
+                'low': set(),
+            }
+        )
         self.assertEqual(ev._evaluate_domain_authority('obscure-journal.example'), 90.0)
 
     def test_user_can_demote_builtin_domain(self):
         """A user override beats the built-in tier outright."""
-        ev = SourceEvaluator(user_domains={
-            'high': set(), 'moderate': set(), 'low': {'nature.com'},
-        })
+        ev = SourceEvaluator(
+            user_domains={
+                'high': set(),
+                'moderate': set(),
+                'low': {'nature.com'},
+            }
+        )
         self.assertEqual(ev._evaluate_domain_authority('nature.com'), 40.0)
 
     def test_user_promotion_applies_to_subdomains(self):
-        ev = SourceEvaluator(user_domains={
-            'high': {'mylab.example'}, 'moderate': set(), 'low': set(),
-        })
+        ev = SourceEvaluator(
+            user_domains={
+                'high': {'mylab.example'},
+                'moderate': set(),
+                'low': set(),
+            }
+        )
         self.assertEqual(ev._evaluate_domain_authority('papers.mylab.example'), 90.0)
 
 
@@ -161,13 +173,16 @@ class TestCLI(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / 'sources.jsonl'
             src.write_text(
-                json.dumps({'url': 'https://www.nature.com/a', 'title': 'A'}) + '\n'
-                + json.dumps({'url': 'https://x.wordpress.com/b', 'title': 'B'}) + '\n'
+                json.dumps({'url': 'https://www.nature.com/a', 'title': 'A'})
+                + '\n'
+                + json.dumps({'url': 'https://x.wordpress.com/b', 'title': 'B'})
+                + '\n'
             )
             result = subprocess.run(
-                [sys.executable, str(SCRIPT), 'score', '--jsonl-file', str(src),
-                 '--format', 'json'],
-                capture_output=True, text=True, env={**os.environ, 'DEEP_RESEARCH_DOMAINS': str(Path(tmp) / 'none.json')},
+                [sys.executable, str(SCRIPT), 'score', '--jsonl-file', str(src), '--format', 'json'],
+                capture_output=True,
+                text=True,
+                env={**os.environ, 'DEEP_RESEARCH_DOMAINS': str(Path(tmp) / 'none.json')},
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             scored = json.loads(result.stdout)
@@ -182,9 +197,19 @@ class TestCLI(unittest.TestCase):
     def test_single_url_scoring(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = subprocess.run(
-                [sys.executable, str(SCRIPT), 'score', '--url', 'https://arxiv.org/abs/1',
-                 '--title', 'A paper', '--format', 'json'],
-                capture_output=True, text=True,
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    'score',
+                    '--url',
+                    'https://arxiv.org/abs/1',
+                    '--title',
+                    'A paper',
+                    '--format',
+                    'json',
+                ],
+                capture_output=True,
+                text=True,
                 env={**os.environ, 'DEEP_RESEARCH_DOMAINS': str(Path(tmp) / 'none.json')},
             )
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -195,7 +220,8 @@ class TestCLI(unittest.TestCase):
     def test_cli_requires_an_input(self):
         result = subprocess.run(
             [sys.executable, str(SCRIPT), 'score'],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         self.assertEqual(result.returncode, 1)
 

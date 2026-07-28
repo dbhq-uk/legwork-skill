@@ -15,7 +15,8 @@ def run_cm(*args: str) -> dict:
     """Run citation_manager.py with args, return parsed JSON from stdout."""
     result = subprocess.run(
         [sys.executable, SCRIPT, *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         raise RuntimeError(f'Exit {result.returncode}: {result.stderr}')
@@ -51,15 +52,18 @@ class TestRegisterSource(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_register_and_dedup(self):
-        src = json.dumps({
-            'raw_url': 'https://arxiv.org/abs/2305.14251',
-            'title': 'FActScore',
-            'source_type': 'academic',
-            'year': '2023',
-        })
+        src = json.dumps(
+            {
+                'raw_url': 'https://arxiv.org/abs/2305.14251',
+                'title': 'FActScore',
+                'source_type': 'academic',
+                'year': '2023',
+            }
+        )
         out1 = run_cm('register-source', '--json', src, '--dir', self.tmpdir)
         self.assertEqual(out1['status'], 'registered')
         self.assertEqual(len(out1['source_id']), 16)
@@ -71,22 +75,28 @@ class TestRegisterSource(unittest.TestCase):
         self.assertEqual(out2['source_id'], out1['source_id'])
 
     def test_doi_canonicalization(self):
-        src = json.dumps({
-            'raw_url': 'https://doi.org/10.1038/s41586-023-06745-9',
-            'title': 'Some Nature paper',
-        })
+        src = json.dumps(
+            {
+                'raw_url': 'https://doi.org/10.1038/s41586-023-06745-9',
+                'title': 'Some Nature paper',
+            }
+        )
         out = run_cm('register-source', '--json', src, '--dir', self.tmpdir)
         self.assertTrue(out['canonical_locator'].startswith('doi:10.1038/'))
 
     def test_url_normalization(self):
-        src1 = json.dumps({
-            'raw_url': 'https://Example.Com/article?utm_source=google&id=42',
-            'title': 'Test',
-        })
-        src2 = json.dumps({
-            'raw_url': 'https://example.com/article?id=42&utm_medium=email',
-            'title': 'Test duplicate',
-        })
+        src1 = json.dumps(
+            {
+                'raw_url': 'https://Example.Com/article?utm_source=google&id=42',
+                'title': 'Test',
+            }
+        )
+        src2 = json.dumps(
+            {
+                'raw_url': 'https://example.com/article?id=42&utm_medium=email',
+                'title': 'Test duplicate',
+            }
+        )
         out1 = run_cm('register-source', '--json', src1, '--dir', self.tmpdir)
         out2 = run_cm('register-source', '--json', src2, '--dir', self.tmpdir)
         # Both should resolve to same canonical locator -> same source_id
@@ -100,9 +110,18 @@ class TestAssignDisplayNumbers(unittest.TestCase):
             run_cm('init-run', '--out-dir', d, '--query', 'test')
 
             for i, url in enumerate(['https://a.com/1', 'https://b.com/2', 'https://c.com/3']):
-                run_cm('register-source', '--json', json.dumps({
-                    'raw_url': url, 'title': f'Source {i+1}',
-                }), '--dir', d)
+                run_cm(
+                    'register-source',
+                    '--json',
+                    json.dumps(
+                        {
+                            'raw_url': url,
+                            'title': f'Source {i + 1}',
+                        }
+                    ),
+                    '--dir',
+                    d,
+                )
 
             mapping = run_cm('assign-display-numbers', '--dir', d)
             self.assertEqual(len(mapping), 3)
@@ -114,13 +133,21 @@ class TestExportBibliography(unittest.TestCase):
     def test_markdown_export(self):
         with tempfile.TemporaryDirectory() as d:
             run_cm('init-run', '--out-dir', d, '--query', 'test')
-            run_cm('register-source', '--json', json.dumps({
-                'raw_url': 'https://arxiv.org/abs/2305.14251',
-                'title': 'FActScore',
-                'authors': ['Min, S.', 'Krishna, K.'],
-                'year': '2023',
-                'source_type': 'academic',
-            }), '--dir', d)
+            run_cm(
+                'register-source',
+                '--json',
+                json.dumps(
+                    {
+                        'raw_url': 'https://arxiv.org/abs/2305.14251',
+                        'title': 'FActScore',
+                        'authors': ['Min, S.', 'Krishna, K.'],
+                        'year': '2023',
+                        'source_type': 'academic',
+                    }
+                ),
+                '--dir',
+                d,
+            )
 
             out = run_cm('export-bibliography', '--dir', d, '--style', 'markdown')
             self.assertIn('[1]', out)
@@ -130,10 +157,18 @@ class TestExportBibliography(unittest.TestCase):
     def test_json_export(self):
         with tempfile.TemporaryDirectory() as d:
             run_cm('init-run', '--out-dir', d, '--query', 'test')
-            run_cm('register-source', '--json', json.dumps({
-                'raw_url': 'https://example.com/paper',
-                'title': 'Test Paper',
-            }), '--dir', d)
+            run_cm(
+                'register-source',
+                '--json',
+                json.dumps(
+                    {
+                        'raw_url': 'https://example.com/paper',
+                        'title': 'Test Paper',
+                    }
+                ),
+                '--dir',
+                d,
+            )
 
             out = run_cm('export-bibliography', '--dir', d, '--style', 'json')
             self.assertEqual(len(out), 1)
@@ -148,6 +183,7 @@ class TestCanonicalization(unittest.TestCase):
     def setUpClass(cls):
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
         from citation_manager import canonicalize_locator, compute_source_id
+
         cls.canonicalize = staticmethod(canonicalize_locator)
         cls.compute_id = staticmethod(compute_source_id)
 

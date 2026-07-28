@@ -56,28 +56,13 @@ def _convert_content_section(markdown: str) -> str:
 
     # Convert headers
     # ## Section Title → <div class="section"><h2 class="section-title">Section Title</h2></div>
-    html = re.sub(
-        r'^## (.+)$',
-        r'<div class="section"><h2 class="section-title">\1</h2>',
-        html,
-        flags=re.MULTILINE
-    )
+    html = re.sub(r'^## (.+)$', r'<div class="section"><h2 class="section-title">\1</h2>', html, flags=re.MULTILINE)
 
     # ### Subsection → <h3 class="subsection-title">Subsection</h3>
-    html = re.sub(
-        r'^### (.+)$',
-        r'<h3 class="subsection-title">\1</h3>',
-        html,
-        flags=re.MULTILINE
-    )
+    html = re.sub(r'^### (.+)$', r'<h3 class="subsection-title">\1</h3>', html, flags=re.MULTILINE)
 
     # #### Subsubsection → <h4 class="subsubsection-title">Title</h4>
-    html = re.sub(
-        r'^#### (.+)$',
-        r'<h4 class="subsubsection-title">\1</h4>',
-        html,
-        flags=re.MULTILINE
-    )
+    html = re.sub(r'^#### (.+)$', r'<h4 class="subsubsection-title">\1</h4>', html, flags=re.MULTILINE)
 
     # Convert **bold** text
     html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
@@ -103,15 +88,11 @@ def _convert_content_section(markdown: str) -> str:
     # Wrap executive summary if present
     html = html.replace(
         '<h2 class="section-title">Executive Summary</h2>',
-        '<div class="executive-summary"><h2 class="section-title">Executive Summary</h2>'
+        '<div class="executive-summary"><h2 class="section-title">Executive Summary</h2>',
     )
     if '<div class="executive-summary">' in html:
         # Close executive summary at the next section
-        html = html.replace(
-            '</h2>\n<div class="section">',
-            '</h2></div>\n<div class="section">',
-            1
-        )
+        html = html.replace('</h2>\n<div class="section">', '</h2></div>\n<div class="section">', 1)
 
     return html
 
@@ -128,7 +109,7 @@ def _convert_bibliography_section(markdown: str) -> str:
     html = re.sub(
         r'\[(\d+)\]\s*(.+?)\s*-\s*(https?://[^\s\)]+)',
         r'<div class="bib-entry"><span class="bib-number">[\1]</span> <a href="\3" target="_blank">\2</a></div>',
-        html
+        html,
     )
 
     # Convert any remaining **bold** sections
@@ -255,11 +236,19 @@ def _convert_paragraphs(html: str) -> str:
             continue
 
         # Skip lines that are already HTML tags
-        if (stripped.startswith('<') and stripped.endswith('>')) or \
-           stripped.startswith('</') or \
-           '<h' in stripped or '<div' in stripped or '<ul' in stripped or \
-           '<ol' in stripped or '<li' in stripped or '<table' in stripped or \
-           '</div>' in stripped or '</ul>' in stripped or '</ol>' in stripped:
+        if (
+            (stripped.startswith('<') and stripped.endswith('>'))
+            or stripped.startswith('</')
+            or '<h' in stripped
+            or '<div' in stripped
+            or '<ul' in stripped
+            or '<ol' in stripped
+            or '<li' in stripped
+            or '<table' in stripped
+            or '</div>' in stripped
+            or '</ul>' in stripped
+            or '</ol>' in stripped
+        ):
             if in_paragraph:
                 result.append('</p>')
                 in_paragraph = False

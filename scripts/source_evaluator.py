@@ -76,6 +76,7 @@ def load_user_domains() -> dict[str, set]:
 @dataclass
 class CredibilityScore:
     """Represents source credibility assessment"""
+
     overall_score: float  # 0-100
     domain_authority: float  # 0-100
     recency: float  # 0-100
@@ -91,41 +92,68 @@ class SourceEvaluator:
     # Domain reputation tiers
     HIGH_AUTHORITY_DOMAINS = {
         # Academic & Research
-        'arxiv.org', 'nature.com', 'science.org', 'cell.com', 'nejm.org',
-        'thelancet.com', 'springer.com', 'sciencedirect.com', 'plos.org',
-        'ieee.org', 'acm.org', 'pubmed.ncbi.nlm.nih.gov',
-
+        'arxiv.org',
+        'nature.com',
+        'science.org',
+        'cell.com',
+        'nejm.org',
+        'thelancet.com',
+        'springer.com',
+        'sciencedirect.com',
+        'plos.org',
+        'ieee.org',
+        'acm.org',
+        'pubmed.ncbi.nlm.nih.gov',
         # Government & International Organizations
-        'nih.gov', 'cdc.gov', 'who.int', 'fda.gov', 'nasa.gov',
-        'gov.uk', 'europa.eu', 'un.org',
-
+        'nih.gov',
+        'cdc.gov',
+        'who.int',
+        'fda.gov',
+        'nasa.gov',
+        'gov.uk',
+        'europa.eu',
+        'un.org',
         # Established Tech Documentation
-        'docs.python.org', 'developer.mozilla.org', 'docs.microsoft.com',
-        'cloud.google.com', 'aws.amazon.com', 'kubernetes.io',
-
+        'docs.python.org',
+        'developer.mozilla.org',
+        'docs.microsoft.com',
+        'cloud.google.com',
+        'aws.amazon.com',
+        'kubernetes.io',
         # Reputable News (Fact-check verified)
-        'reuters.com', 'apnews.com', 'bbc.com', 'economist.com',
-        'nature.com/news', 'scientificamerican.com'
+        'reuters.com',
+        'apnews.com',
+        'bbc.com',
+        'economist.com',
+        'nature.com/news',
+        'scientificamerican.com',
     }
 
     MODERATE_AUTHORITY_DOMAINS = {
         # Tech News & Analysis
-        'techcrunch.com', 'theverge.com', 'arstechnica.com', 'wired.com',
-        'zdnet.com', 'cnet.com',
-
+        'techcrunch.com',
+        'theverge.com',
+        'arstechnica.com',
+        'wired.com',
+        'zdnet.com',
+        'cnet.com',
         # Industry Publications
-        'forbes.com', 'bloomberg.com', 'wsj.com', 'ft.com',
-
+        'forbes.com',
+        'bloomberg.com',
+        'wsj.com',
+        'ft.com',
         # Educational
-        'wikipedia.org', 'britannica.com', 'khanacademy.org',
-
+        'wikipedia.org',
+        'britannica.com',
+        'khanacademy.org',
         # Tech Blogs (established)
-        'medium.com', 'dev.to', 'stackoverflow.com', 'github.com'
+        'medium.com',
+        'dev.to',
+        'stackoverflow.com',
+        'github.com',
     }
 
-    LOW_AUTHORITY_INDICATORS = [
-        'blogspot.com', 'wordpress.com', 'wix.com', 'substack.com'
-    ]
+    LOW_AUTHORITY_INDICATORS = ['blogspot.com', 'wordpress.com', 'wix.com', 'substack.com']
 
     def __init__(self, user_domains: dict[str, set] | None = None):
         """Merge user tier overrides over the built-ins.
@@ -154,7 +182,7 @@ class SourceEvaluator:
         title: str,
         content: str | None = None,
         publication_date: str | None = None,
-        author: str | None = None
+        author: str | None = None,
     ) -> CredibilityScore:
         """Evaluate source credibility"""
 
@@ -167,17 +195,10 @@ class SourceEvaluator:
         bias_score = self._evaluate_bias(domain, title, content)
 
         # Calculate overall score (weighted average)
-        overall = (
-            domain_score * 0.35 +
-            recency_score * 0.20 +
-            expertise_score * 0.25 +
-            bias_score * 0.20
-        )
+        overall = domain_score * 0.35 + recency_score * 0.20 + expertise_score * 0.25 + bias_score * 0.20
 
         # Determine factors
-        factors = self._identify_factors(
-            domain, domain_score, recency_score, expertise_score, bias_score
-        )
+        factors = self._identify_factors(domain, domain_score, recency_score, expertise_score, bias_score)
 
         # Generate recommendation
         recommendation = self._generate_recommendation(overall)
@@ -189,7 +210,7 @@ class SourceEvaluator:
             expertise=round(expertise_score, 2),
             bias_score=round(bias_score, 2),
             factors=factors,
-            recommendation=recommendation
+            recommendation=recommendation,
         )
 
     def _extract_domain(self, url: str) -> str:
@@ -247,12 +268,7 @@ class SourceEvaluator:
         except Exception:
             return 50.0
 
-    def _evaluate_expertise(
-        self,
-        domain: str,
-        title: str,
-        author: str | None
-    ) -> float:
+    def _evaluate_expertise(self, domain: str, title: str, author: str | None) -> float:
         """Evaluate source expertise (0-100)"""
         score = 50.0
 
@@ -275,19 +291,18 @@ class SourceEvaluator:
 
         return min(score, 100.0)
 
-    def _evaluate_bias(
-        self,
-        domain: str,
-        title: str,
-        content: str | None
-    ) -> float:
+    def _evaluate_bias(self, domain: str, title: str, content: str | None) -> float:
         """Evaluate potential bias (0-100, higher = more neutral)"""
         score = 70.0  # Start neutral
 
         # Check for sensationalism in title
         sensational_indicators = [
-            '!', 'shocking', 'unbelievable', 'you won\'t believe',
-            'secret', 'they don\'t want you to know'
+            '!',
+            'shocking',
+            'unbelievable',
+            'you won\'t believe',
+            'secret',
+            'they don\'t want you to know',
         ]
         title_lower = title.lower()
         if any(indicator in title_lower for indicator in sensational_indicators):
@@ -307,12 +322,7 @@ class SourceEvaluator:
         return min(max(score, 0), 100.0)
 
     def _identify_factors(
-        self,
-        domain: str,
-        domain_score: float,
-        recency_score: float,
-        expertise_score: float,
-        bias_score: float
+        self, domain: str, domain_score: float, recency_score: float, expertise_score: float, bias_score: float
     ) -> dict[str, str]:
         """Identify key credibility factors"""
         factors = {}
@@ -354,6 +364,7 @@ class SourceEvaluator:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _score_record(evaluator: SourceEvaluator, rec: dict) -> dict:
     """Score one source record. Accepts the loose shape emitted by bd_search/WebSearch."""
@@ -427,8 +438,7 @@ def main() -> None:
     p_score.add_argument('--title', default='', help='Title for the single-URL form')
     p_score.add_argument('--date', default=None, help='ISO publication date (improves recency score)')
     p_score.add_argument('--format', default='table', choices=['table', 'json', 'jsonl'])
-    p_score.add_argument('--min-score', type=float, default=None,
-                         help='Report how many sources meet this threshold')
+    p_score.add_argument('--min-score', type=float, default=None, help='Report how many sources meet this threshold')
 
     args = parser.parse_args()
     {'score': cmd_score}[args.command](args)

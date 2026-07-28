@@ -34,10 +34,21 @@ DOI_RE = re.compile(r'(?:https?://(?:dx\.)?doi\.org/|doi:)(10\.\d{4,}/\S+)', re.
 ARXIV_RE = re.compile(r'(?:https?://arxiv\.org/abs/|arxiv:)(\d{4}\.\d{4,}(?:v\d+)?)', re.IGNORECASE)
 
 # URL query params that are tracking noise, not content identifiers
-TRACKING_PARAMS = frozenset([
-    'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-    'ref', 'source', 'fbclid', 'gclid', 'mc_cid', 'mc_eid',
-])
+TRACKING_PARAMS = frozenset(
+    [
+        'utm_source',
+        'utm_medium',
+        'utm_campaign',
+        'utm_term',
+        'utm_content',
+        'ref',
+        'source',
+        'fbclid',
+        'gclid',
+        'mc_cid',
+        'mc_eid',
+    ]
+)
 
 
 def canonicalize_locator(raw_url: str) -> str:
@@ -82,6 +93,7 @@ def compute_source_id(canonical_locator: str) -> str:
 # JSONL helpers
 # ---------------------------------------------------------------------------
 
+
 def append_jsonl(path: str, obj: dict) -> None:
     with open(path, 'a') as f:
         f.write(json.dumps(obj, ensure_ascii=False) + '\n')
@@ -103,6 +115,7 @@ def read_jsonl(path: str) -> list[dict]:
 # Subcommands
 # ---------------------------------------------------------------------------
 
+
 def cmd_init_run(args: argparse.Namespace) -> None:
     """Create run_manifest.json and empty JSONL artifact files."""
     out_dir = os.path.abspath(args.out_dir)
@@ -123,8 +136,8 @@ def cmd_init_run(args: argparse.Namespace) -> None:
         'finished_at': None,
         'assumptions': [],
         'provider_config': {
-            'primary': 'websearch',      # built-in WebSearch/WebFetch (free)
-            'fallback': 'brightdata',    # paid: blocked pages, Reddit, geo/vertical SERP
+            'primary': 'websearch',  # built-in WebSearch/WebFetch (free)
+            'fallback': 'brightdata',  # paid: blocked pages, Reddit, geo/vertical SERP
             'scholarly': None,
         },
         'report_dir': out_dir,
@@ -163,11 +176,15 @@ def cmd_register_source(args: argparse.Namespace) -> None:
     existing = read_jsonl(sources_path)
     for row in existing:
         if row.get('source_id') == source_id:
-            print(json.dumps({
-                'status': 'duplicate',
-                'source_id': source_id,
-                'canonical_locator': canonical,
-            }))
+            print(
+                json.dumps(
+                    {
+                        'status': 'duplicate',
+                        'source_id': source_id,
+                        'canonical_locator': canonical,
+                    }
+                )
+            )
             return
 
     source = {
@@ -182,11 +199,15 @@ def cmd_register_source(args: argparse.Namespace) -> None:
         'registered_at': datetime.now(timezone.utc).isoformat(),
     }
     append_jsonl(sources_path, source)
-    print(json.dumps({
-        'status': 'registered',
-        'source_id': source_id,
-        'canonical_locator': canonical,
-    }))
+    print(
+        json.dumps(
+            {
+                'status': 'registered',
+                'source_id': source_id,
+                'canonical_locator': canonical,
+            }
+        )
+    )
 
 
 def _build_source_row(data: dict, canonical: str, source_id: str) -> dict:
@@ -220,12 +241,10 @@ def cmd_register_sources(args: argparse.Namespace) -> None:
     elif args.json:
         records = json.loads(args.json)
         if not isinstance(records, list):
-            print(json.dumps({'error': '--json must be a JSON array of source objects'}),
-                  file=sys.stderr)
+            print(json.dumps({'error': '--json must be a JSON array of source objects'}), file=sys.stderr)
             sys.exit(1)
     else:
-        print(json.dumps({'error': 'one of --jsonl-file or --json is required'}),
-              file=sys.stderr)
+        print(json.dumps({'error': 'one of --jsonl-file or --json is required'}), file=sys.stderr)
         sys.exit(1)
 
     sources_path = os.path.join(args.dir, 'sources.jsonl')
@@ -322,15 +341,17 @@ def cmd_export_bibliography(args: argparse.Namespace) -> None:
     elif style == 'json':
         out = []
         for i, src in enumerate(unique, 1):
-            out.append({
-                'display_number': i,
-                'source_id': src['source_id'],
-                'canonical_locator': src['canonical_locator'],
-                'title': src.get('title', ''),
-                'authors': src.get('authors'),
-                'year': src.get('year'),
-                'raw_url': src.get('raw_url', ''),
-            })
+            out.append(
+                {
+                    'display_number': i,
+                    'source_id': src['source_id'],
+                    'canonical_locator': src['canonical_locator'],
+                    'title': src.get('title', ''),
+                    'authors': src.get('authors'),
+                    'year': src.get('year'),
+                    'raw_url': src.get('raw_url', ''),
+                }
+            )
         print(json.dumps(out, indent=2, ensure_ascii=False))
 
     else:
@@ -341,6 +362,7 @@ def cmd_export_bibliography(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(

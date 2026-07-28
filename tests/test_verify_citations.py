@@ -25,7 +25,8 @@ FIXTURES = Path(__file__).parent / 'fixtures'
 def run_verify(report: Path, *flags: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(SCRIPT), '--report', str(report), *flags],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -180,8 +181,7 @@ class TestHallucinationHeuristics(unittest.TestCase):
 
     def test_well_formed_entry_is_not_flagged(self):
         r = self._verify_entry(
-            'Okafor, N. (2025). "Benchmarking pgvector against dedicated engines". '
-            'Example Blog. https://example.com/x'
+            'Okafor, N. (2025). "Benchmarking pgvector against dedicated engines". Example Blog. https://example.com/x'
         )
         self.assertEqual(r['status'], 'format_ok')
 

@@ -21,7 +21,9 @@ ES = Path(__file__).parent.parent / 'scripts' / 'evidence_store.py'
 
 def run(script: Path, *args: str) -> dict:
     result = subprocess.run(
-        [sys.executable, str(script), *args], capture_output=True, text=True,
+        [sys.executable, str(script), *args],
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         raise AssertionError(f'{script.name} failed: {result.stderr}')
@@ -47,33 +49,45 @@ class TestRegisterSourcesBatch(unittest.TestCase):
         return p
 
     def test_registers_many_sources_in_one_call(self):
-        batch = self._batch_file([
-            {'raw_url': 'https://a.example/1', 'title': 'A'},
-            {'raw_url': 'https://b.example/2', 'title': 'B'},
-            {'raw_url': 'https://c.example/3', 'title': 'C'},
-        ])
+        batch = self._batch_file(
+            [
+                {'raw_url': 'https://a.example/1', 'title': 'A'},
+                {'raw_url': 'https://b.example/2', 'title': 'B'},
+                {'raw_url': 'https://c.example/3', 'title': 'C'},
+            ]
+        )
         out = run(CM, 'register-sources', '--jsonl-file', str(batch), '--dir', str(self.dir))
         self.assertEqual(out['registered'], 3)
         self.assertEqual(out['duplicates'], 0)
         self.assertEqual(len(read_jsonl(self.dir / 'sources.jsonl')), 3)
 
     def test_dedupes_within_the_batch(self):
-        batch = self._batch_file([
-            {'raw_url': 'https://a.example/1', 'title': 'A'},
-            {'raw_url': 'https://a.example/1', 'title': 'A again'},
-        ])
+        batch = self._batch_file(
+            [
+                {'raw_url': 'https://a.example/1', 'title': 'A'},
+                {'raw_url': 'https://a.example/1', 'title': 'A again'},
+            ]
+        )
         out = run(CM, 'register-sources', '--jsonl-file', str(batch), '--dir', str(self.dir))
         self.assertEqual(out['registered'], 1)
         self.assertEqual(out['duplicates'], 1)
         self.assertEqual(len(read_jsonl(self.dir / 'sources.jsonl')), 1)
 
     def test_dedupes_against_already_registered_sources(self):
-        run(CM, 'register-source', '--json', json.dumps(
-            {'raw_url': 'https://a.example/1', 'title': 'A'}), '--dir', str(self.dir))
-        batch = self._batch_file([
-            {'raw_url': 'https://a.example/1', 'title': 'A'},
-            {'raw_url': 'https://new.example/2', 'title': 'New'},
-        ])
+        run(
+            CM,
+            'register-source',
+            '--json',
+            json.dumps({'raw_url': 'https://a.example/1', 'title': 'A'}),
+            '--dir',
+            str(self.dir),
+        )
+        batch = self._batch_file(
+            [
+                {'raw_url': 'https://a.example/1', 'title': 'A'},
+                {'raw_url': 'https://new.example/2', 'title': 'New'},
+            ]
+        )
         out = run(CM, 'register-sources', '--jsonl-file', str(batch), '--dir', str(self.dir))
         self.assertEqual(out['registered'], 1)
         self.assertEqual(out['duplicates'], 1)
@@ -91,19 +105,30 @@ class TestRegisterSourcesBatch(unittest.TestCase):
         self.assertEqual(single['source_id'], batched['sources'][0]['source_id'])
 
     def test_bad_record_is_reported_not_fatal(self):
-        batch = self._batch_file([
-            {'raw_url': 'https://a.example/1', 'title': 'A'},
-            {'title': 'no url at all'},
-        ])
+        batch = self._batch_file(
+            [
+                {'raw_url': 'https://a.example/1', 'title': 'A'},
+                {'title': 'no url at all'},
+            ]
+        )
         out = run(CM, 'register-sources', '--jsonl-file', str(batch), '--dir', str(self.dir))
         self.assertEqual(out['registered'], 1)
         self.assertEqual(out['errors'], 1)
 
     def test_json_array_form(self):
-        out = run(CM, 'register-sources', '--json', json.dumps([
-            {'raw_url': 'https://a.example/1', 'title': 'A'},
-            {'raw_url': 'https://b.example/2', 'title': 'B'},
-        ]), '--dir', str(self.dir))
+        out = run(
+            CM,
+            'register-sources',
+            '--json',
+            json.dumps(
+                [
+                    {'raw_url': 'https://a.example/1', 'title': 'A'},
+                    {'raw_url': 'https://b.example/2', 'title': 'B'},
+                ]
+            ),
+            '--dir',
+            str(self.dir),
+        )
         self.assertEqual(out['registered'], 2)
 
 
@@ -112,8 +137,14 @@ class TestEvidenceAddBatch(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self._tmp.name)
         run(CM, 'init-run', '--out-dir', str(self.dir), '--query', 'q', '--mode', 'standard')
-        self.sid = run(CM, 'register-source', '--json', json.dumps(
-            {'raw_url': 'https://a.example/1', 'title': 'A'}), '--dir', str(self.dir))['source_id']
+        self.sid = run(
+            CM,
+            'register-source',
+            '--json',
+            json.dumps({'raw_url': 'https://a.example/1', 'title': 'A'}),
+            '--dir',
+            str(self.dir),
+        )['source_id']
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -124,20 +155,24 @@ class TestEvidenceAddBatch(unittest.TestCase):
         return p
 
     def test_adds_many_spans_in_one_call(self):
-        batch = self._batch_file([
-            {'source_id': self.sid, 'quote': 'first span', 'locator': 'p1'},
-            {'source_id': self.sid, 'quote': 'second span', 'locator': 'p2'},
-            {'source_id': self.sid, 'quote': 'third span', 'locator': 'p3'},
-        ])
+        batch = self._batch_file(
+            [
+                {'source_id': self.sid, 'quote': 'first span', 'locator': 'p1'},
+                {'source_id': self.sid, 'quote': 'second span', 'locator': 'p2'},
+                {'source_id': self.sid, 'quote': 'third span', 'locator': 'p3'},
+            ]
+        )
         out = run(ES, 'add-batch', '--jsonl-file', str(batch), '--dir', str(self.dir))
         self.assertEqual(out['added'], 3)
         self.assertEqual(len(read_jsonl(self.dir / 'evidence.jsonl')), 3)
 
     def test_dedupes_identical_spans(self):
-        batch = self._batch_file([
-            {'source_id': self.sid, 'quote': 'same span', 'locator': 'p1'},
-            {'source_id': self.sid, 'quote': 'same span', 'locator': 'p1'},
-        ])
+        batch = self._batch_file(
+            [
+                {'source_id': self.sid, 'quote': 'same span', 'locator': 'p1'},
+                {'source_id': self.sid, 'quote': 'same span', 'locator': 'p1'},
+            ]
+        )
         out = run(ES, 'add-batch', '--jsonl-file', str(batch), '--dir', str(self.dir))
         self.assertEqual(out['added'], 1)
         self.assertEqual(out['duplicates'], 1)
@@ -155,18 +190,22 @@ class TestEvidenceAddBatch(unittest.TestCase):
         self.assertEqual(single['evidence_id'], batched['evidence'][0]['evidence_id'])
 
     def test_invalid_evidence_type_falls_back(self):
-        batch = self._batch_file([
-            {'source_id': self.sid, 'quote': 'q', 'evidence_type': 'nonsense'},
-        ])
+        batch = self._batch_file(
+            [
+                {'source_id': self.sid, 'quote': 'q', 'evidence_type': 'nonsense'},
+            ]
+        )
         run(ES, 'add-batch', '--jsonl-file', str(batch), '--dir', str(self.dir))
         rows = read_jsonl(self.dir / 'evidence.jsonl')
         self.assertEqual(rows[0]['evidence_type'], 'direct_quote')
 
     def test_missing_quote_is_reported_not_fatal(self):
-        batch = self._batch_file([
-            {'source_id': self.sid, 'quote': 'good'},
-            {'source_id': self.sid},
-        ])
+        batch = self._batch_file(
+            [
+                {'source_id': self.sid, 'quote': 'good'},
+                {'source_id': self.sid},
+            ]
+        )
         out = run(ES, 'add-batch', '--jsonl-file', str(batch), '--dir', str(self.dir))
         self.assertEqual(out['added'], 1)
         self.assertEqual(out['errors'], 1)

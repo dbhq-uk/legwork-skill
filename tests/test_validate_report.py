@@ -85,8 +85,10 @@ class TestBriefFormat(unittest.TestCase):
             self.assertIn('Findings', result.stdout)
 
     def test_brief_rejects_placeholders(self):
-        content = (FIXTURES / 'valid_brief.md').read_text().replace(
-            'At our current corpus size', 'TODO: write this. At our current corpus size'
+        content = (
+            (FIXTURES / 'valid_brief.md')
+            .read_text()
+            .replace('At our current corpus size', 'TODO: write this. At our current corpus size')
         )
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / 'placeholder.md'
@@ -119,8 +121,10 @@ class TestRigorChecks(unittest.TestCase):
             self.assertIn('truncation placeholder', result.stdout.lower())
 
     def test_content_truncation_is_fatal(self):
-        content = (FIXTURES / 'valid_brief.md').read_text().replace(
-            '## So What', '## So What\n\nContent continues in the full version.\n'
+        content = (
+            (FIXTURES / 'valid_brief.md')
+            .read_text()
+            .replace('## So What', '## So What\n\nContent continues in the full version.\n')
         )
         with tempfile.TemporaryDirectory() as tmp:
             result = run_validate(self._write(tmp, content), fmt='brief')
@@ -129,8 +133,8 @@ class TestRigorChecks(unittest.TestCase):
 
     def test_citation_without_bibliography_entry_is_fatal(self):
         """A [99] in the body with no [99] in the bibliography = fabricated citation."""
-        content = (FIXTURES / 'valid_brief.md').read_text().replace(
-            'within our 100ms budget', 'within our 100ms budget [99]'
+        content = (
+            (FIXTURES / 'valid_brief.md').read_text().replace('within our 100ms budget', 'within our 100ms budget [99]')
         )
         with tempfile.TemporaryDirectory() as tmp:
             result = run_validate(self._write(tmp, content), fmt='brief')
@@ -138,7 +142,9 @@ class TestRigorChecks(unittest.TestCase):
             self.assertIn('99', result.stdout)
 
     def test_no_citations_at_all_is_fatal(self):
-        content = "# Title\n\n## Findings\n\nSome unsourced prose.\n\n## Limitations\n\nMany.\n\n## Bibliography\n\n[1] x\n"
+        content = (
+            "# Title\n\n## Findings\n\nSome unsourced prose.\n\n## Limitations\n\nMany.\n\n## Bibliography\n\n[1] x\n"
+        )
         with tempfile.TemporaryDirectory() as tmp:
             result = run_validate(self._write(tmp, content), fmt='brief')
             self.assertEqual(result.returncode, 1)

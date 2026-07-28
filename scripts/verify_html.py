@@ -27,9 +27,9 @@ class HTMLVerifier:
         Returns:
             True if all checks pass, False otherwise
         """
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("HTML REPORT VERIFICATION")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         print(f"HTML File: {self.html_path}")
         print(f"MD File: {self.md_path}\n")
@@ -87,9 +87,16 @@ class HTMLVerifier:
     def _check_no_placeholders(self, html: str):
         """Check for common placeholders that shouldn't be in final report"""
         placeholders = [
-            '{{TITLE}}', '{{DATE}}', '{{CONTENT}}', '{{BIBLIOGRAPHY}}',
-            '{{METRICS_DASHBOARD}}', '{{SOURCE_COUNT}}', 'TODO', 'TBD',
-            'PLACEHOLDER', 'FIXME'
+            '{{TITLE}}',
+            '{{DATE}}',
+            '{{CONTENT}}',
+            '{{BIBLIOGRAPHY}}',
+            '{{METRICS_DASHBOARD}}',
+            '{{SOURCE_COUNT}}',
+            'TODO',
+            'TBD',
+            'PLACEHOLDER',
+            'FIXME',
         ]
 
         found = []
@@ -105,14 +112,14 @@ class HTMLVerifier:
         # Common emoji patterns
         emoji_pattern = re.compile(
             "["
-            "\U0001F600-\U0001F64F"  # emoticons
-            "\U0001F300-\U0001F5FF"  # symbols & pictographs
-            "\U0001F680-\U0001F6FF"  # transport & map symbols
-            "\U0001F1E0-\U0001F1FF"  # flags
-            "\U00002702-\U000027B0"
-            "\U000024C2-\U0001F251"
+            "\U0001f600-\U0001f64f"  # emoticons
+            "\U0001f300-\U0001f5ff"  # symbols & pictographs
+            "\U0001f680-\U0001f6ff"  # transport & map symbols
+            "\U0001f1e0-\U0001f1ff"  # flags
+            "\U00002702-\U000027b0"
+            "\U000024c2-\U0001f251"
             "]+",
-            flags=re.UNICODE
+            flags=re.UNICODE,
         )
 
         emojis = emoji_pattern.findall(html)
@@ -141,9 +148,7 @@ class HTMLVerifier:
         close_divs = html.count('</div>')
 
         if abs(open_divs - close_divs) > 2:  # Allow small discrepancy
-            self.warnings.append(
-                f"Possible unclosed divs: {open_divs} opening tags, {close_divs} closing tags"
-            )
+            self.warnings.append(f"Possible unclosed divs: {open_divs} opening tags, {close_divs} closing tags")
 
     def _check_citations(self, html: str, md: str):
         """Verify citations are present"""
@@ -158,9 +163,7 @@ class HTMLVerifier:
             self.errors.append("No citations found in HTML content (but present in MD)")
 
         if len(md_citations) > len(html_citations) * 1.5:  # Allow some variation
-            self.warnings.append(
-                f"Fewer citations in HTML ({len(html_citations)}) than MD ({len(md_citations)})"
-            )
+            self.warnings.append(f"Fewer citations in HTML ({len(html_citations)}) than MD ({len(md_citations)})")
 
     def _check_bibliography(self, html: str, md: str):
         """Verify bibliography is present and formatted"""
@@ -172,9 +175,9 @@ class HTMLVerifier:
 
     def _print_results(self):
         """Print verification results"""
-        print(f"\n{'-'*60}")
+        print(f"\n{'-' * 60}")
         print("VERIFICATION RESULTS")
-        print(f"{'-'*60}\n")
+        print(f"{'-' * 60}\n")
 
         if self.errors:
             print(f"❌ ERRORS ({len(self.errors)}):")
@@ -192,7 +195,7 @@ class HTMLVerifier:
             print("✅ All checks passed! HTML report is valid.")
             print()
 
-        print(f"{'-'*60}\n")
+        print(f"{'-' * 60}\n")
 
 
 def main():

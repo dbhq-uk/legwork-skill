@@ -63,13 +63,19 @@ class CitationVerifier:
         # Hallucination detection patterns (2025 CiteGuard enhancement)
         self.suspicious_patterns = [
             # Generic academic-sounding but fake patterns
-            (r'^(A |An |The )?(Study|Analysis|Review|Survey|Investigation) (of|on|into)',
-             "Generic academic title pattern"),
-            (r'^(Recent|Current|Modern|Contemporary) (Advances|Developments|Trends) in',
-             "Generic 'advances' title pattern"),
+            (
+                r'^(A |An |The )?(Study|Analysis|Review|Survey|Investigation) (of|on|into)',
+                "Generic academic title pattern",
+            ),
+            (
+                r'^(Recent|Current|Modern|Contemporary) (Advances|Developments|Trends) in',
+                "Generic 'advances' title pattern",
+            ),
             # Too perfect, templated titles
-            (r'^[A-Z][a-z]+ [A-Z][a-z]+: A (Comprehensive|Complete|Systematic) (Review|Analysis|Guide)$',
-             "Too perfect, templated structure"),
+            (
+                r'^[A-Z][a-z]+ [A-Z][a-z]+: A (Comprehensive|Complete|Systematic) (Review|Analysis|Guide)$',
+                "Too perfect, templated structure",
+            ),
         ]
 
     def _read_report(self) -> str:
@@ -123,7 +129,7 @@ class CitationVerifier:
                     'year': year_match.group(1) if year_match else None,
                     'title': title_match.group(1) if title_match else None,
                     'doi': doi_match.group(1) if doi_match else None,
-                    'url': url_match.group(0) if url_match else None
+                    'url': url_match.group(0) if url_match else None,
                 }
             elif current_entry:
                 # Multi-line entry, append to raw
@@ -169,11 +175,8 @@ class CitationVerifier:
                 return True, {
                     'title': data.get('title', ''),
                     'year': data.get('issued', {}).get('date-parts', [[None]])[0][0],
-                    'authors': [
-                        f"{a.get('family', '')} {a.get('given', '')}"
-                        for a in data.get('author', [])
-                    ],
-                    'venue': data.get('container-title', '')
+                    'authors': [f"{a.get('family', '')} {a.get('given', '')}" for a in data.get('author', [])],
+                    'venue': data.get('container-title', ''),
                 }
         except error.HTTPError as e:
             if e.code == 404:
@@ -289,13 +292,7 @@ class CitationVerifier:
         Thread-safe: performs no printing, so it can run inside a thread pool.
         In offline mode only local heuristics run - zero network calls.
         """
-        result = {
-            'num': entry['num'],
-            'status': 'unknown',
-            'issues': [],
-            'metadata': {},
-            'verification_methods': []
-        }
+        result = {'num': entry['num'], 'status': 'unknown', 'issues': [], 'metadata': {}, 'verification_methods': []}
 
         # STEP 1: Hallucination detection (CiteGuard 2025) - always local.
         hallucination_issues = self.detect_hallucination_patterns(entry)
@@ -328,15 +325,10 @@ class CitationVerifier:
 
                 # Check title similarity if we have both
                 if entry['title'] and metadata.get('title'):
-                    similarity = self.check_title_similarity(
-                        entry['title'],
-                        metadata['title']
-                    )
+                    similarity = self.check_title_similarity(entry['title'], metadata['title'])
 
                     if similarity < 0.5:
-                        result['issues'].append(
-                            f"Title mismatch (similarity: {similarity:.1%})"
-                        )
+                        result['issues'].append(f"Title mismatch (similarity: {similarity:.1%})")
                         result['status'] = 'suspicious'
 
                 # Check year match
@@ -349,9 +341,7 @@ class CitationVerifier:
 
             else:
                 result['status'] = 'unverified'
-                result['issues'].append(
-                    f"DOI resolution failed: {metadata.get('error', 'unknown')}"
-                )
+                result['issues'].append(f"DOI resolution failed: {metadata.get('error', 'unknown')}")
 
         # STEP 4: Check URL accessibility (if no DOI, or the DOI failed)
         if entry['url'] and result['status'] != 'verified':
@@ -373,30 +363,21 @@ class CitationVerifier:
 
         dangling = sorted(body_nums - bib_nums)
         if dangling:
-            issues.append(
-                "Cited in body but missing from bibliography: "
-                + ', '.join(f'[{n}]' for n in dangling)
-            )
+            issues.append("Cited in body but missing from bibliography: " + ', '.join(f'[{n}]' for n in dangling))
 
         orphaned = sorted(bib_nums - body_nums)
         if orphaned:
-            issues.append(
-                "In bibliography but never cited in body: "
-                + ', '.join(f'[{n}]' for n in orphaned)
-            )
+            issues.append("In bibliography but never cited in body: " + ', '.join(f'[{n}]' for n in orphaned))
 
         return issues
 
     def verify_all(self):
         """Verify all bibliography entries."""
-        mode_label = (
-            "OFFLINE (local checks only)" if self.offline
-            else f"NETWORK ({MAX_WORKERS} workers)"
-        )
-        print(f"\n{'='*60}")
+        mode_label = "OFFLINE (local checks only)" if self.offline else f"NETWORK ({MAX_WORKERS} workers)"
+        print(f"\n{'=' * 60}")
         print(f"CITATION VERIFICATION: {self.report_path.name}")
         print(f"Mode: {mode_label}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         entries = self.extract_bibliography()
 
@@ -421,9 +402,9 @@ class CitationVerifier:
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
                 results = list(pool.map(self.verify_entry, entries))
 
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print("VERIFICATION SUMMARY")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
         verified = [r for r in results if r['status'] == 'verified']
         url_verified = [r for r in results if r['status'] == 'url_verified']
@@ -493,27 +474,20 @@ Examples:
 
 Note: Requires internet connection to check DOIs.
 Uses free DOI resolver - no API key needed.
-        """
+        """,
     )
 
-    parser.add_argument(
-        '--report', '-r',
-        type=str,
-        required=True,
-        help='Path to research report markdown file'
-    )
+    parser.add_argument('--report', '-r', type=str, required=True, help='Path to research report markdown file')
 
     parser.add_argument(
-        '--strict',
-        action='store_true',
-        help='Strict mode: fail on any unverified or suspicious citations'
+        '--strict', action='store_true', help='Strict mode: fail on any unverified or suspicious citations'
     )
 
     parser.add_argument(
         '--offline',
         action='store_true',
         help='Skip all network calls (DOI + URL). Local heuristics and citation '
-             'coverage checks only. Use for quick/standard research modes.'
+        'coverage checks only. Use for quick/standard research modes.',
     )
 
     args = parser.parse_args()

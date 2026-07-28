@@ -154,7 +154,7 @@ CI runs the suite across Python 3.9-3.13, plus an end-to-end smoke job that push
 
 ## Development
 
-See [`docs/dev-setup.md`](docs/dev-setup.md). Design rationale for the rework is in [`docs/design-notes.md`](docs/design-notes.md).
+See [`docs/dev-setup.md`](docs/dev-setup.md). Design rationale is in [`docs/design-notes.md`](docs/design-notes.md).
 
 ## License
 

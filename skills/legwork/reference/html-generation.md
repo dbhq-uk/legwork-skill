@@ -24,7 +24,7 @@ Extract 3-4 key quantitative findings for dashboard display at top.
 
 Use Python script:
 ```bash
-cd ~/.claude/skills/deep-research
+cd ${CLAUDE_SKILL_DIR}
 python scripts/md_to_html.py [markdown_report_path]
 ```
 
@@ -100,4 +100,4 @@ open [html_path]
 
 **Option B: generating-pdf Skill**
 
-Use Task tool with general-purpose agent on the cheaper `haiku` model (`model="haiku"` — HTML→PDF conversion is mechanical), invoke generating-pdf skill.
+Use Task tool with general-purpose agent on the cheaper `haiku` model (`model="haiku"` - HTML→PDF conversion is mechanical), invoke generating-pdf skill.

@@ -1,0 +1,213 @@
+name: Validate plugin
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate plugin manifest is valid JSON
+        run: jq empty .claude-plugin/plugin.json
+
+      - name: Check shell scripts parse
+        run: |
+          fail=0
+          while IFS= read -r s; do
+            bash -n "$s" || { echo "Syntax error: $s"; fail=1; }
+          done < <({ find . -maxdepth 1 -name '*.sh'; find skills -name '*.sh'; })
+          exit $fail
+
+      - name: Check SKILL.md frontmatter
+        run: |
+          python3 - <<'PY'
+          import sys, pathlib, re
+          ok = True
+          for skill in sorted(pathlib.Path("skills").glob("*/SKILL.md")):
+              text = skill.read_text(encoding="utf-8")
+              m = re.match(r"^---\n(.*?)\n---", text, re.S)
+              if not m:
+                  print(f"{skill}: missing YAML frontmatter"); ok = False; continue
+              fm = m.group(1)
+              name = re.search(r"^name:\s*(.+)$", fm, re.M)
+              desc = re.search(r"^description:\s*(.+)$", fm, re.M)
+              if not name:
+                  print(f"{skill}: missing 'name'"); ok = False
+              else:
+                  name = name.group(1).strip()
+                  if name != skill.parent.name:
+                      print(f"{skill}: name '{name}' != directory '{skill.parent.name}'"); ok = False
+                  if not re.fullmatch(r"[a-z0-9-]{1,64}", name):
+                      print(f"{skill}: name must be lowercase alphanumeric/hyphen, <=64 chars"); ok = False
+              if not desc:
+                  print(f"{skill}: missing 'description'"); ok = False
+              elif len(desc.group(1).strip()) > 1024:
+                  print(f"{skill}: description exceeds 1024 chars"); ok = False
+          sys.exit(0 if ok else 1)
+          PY
+
+      # The whole point of this skill is that it ships no dependencies. If an
+      # import creeps in, the "no virtualenv required" claim in the README and
+      # the installers silently becomes false - so assert it rather than trust it.
+      - name: Scripts import nothing outside the standard library
+        run: |
+          python3 - <<'PY'
+          import ast, pathlib, sys
+          STDLIB = set(sys.stdlib_module_names)
+          LOCAL = {p.stem for p in pathlib.Path("skills/legwork/scripts").glob("*.py")}
+          # weasyprint is an optional extra for PDF output and is imported lazily.
+          ALLOWED_OPTIONAL = {"weasyprint"}
+          bad = []
+          for f in sorted(pathlib.Path("skills/legwork/scripts").glob("*.py")):
+              for node in ast.walk(ast.parse(f.read_text())):
+                  mods = []
+                  if isinstance(node, ast.Import):
+                      mods = [a.name.split(".")[0] for a in node.names]
+                  elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                      mods = [node.module.split(".")[0]]
+                  for m in mods:
+                      if m not in STDLIB and m not in LOCAL and m not in ALLOWED_OPTIONAL:
+                          bad.append(f"{f}: imports third-party '{m}'")
+          print("\n".join(bad) if bad else "All imports are stdlib, local, or a known optional extra.")
+          sys.exit(1 if bad else 0)
+          PY
+
+  tests:
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the floor: every script carries `from __future__ import
+        # annotations`, so PEP 604 syntax parses there. 3.13 is the ceiling.
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        # pytest is only needed to RUN the tests - the tests themselves are
+        # plain unittest, and the scripts under test are stdlib-only.
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Run test suite
+        working-directory: skills/legwork
+        # Hermetic: the tests must never touch the network (the offline citation
+        # path is asserted explicitly).
+        run: python -m pytest tests/ -v -p no:cacheprovider
+
+      - name: Verify every script parses on this version
+        working-directory: skills/legwork
+        run: |
+          for f in scripts/*.py; do
+            python -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$f" || exit 1
+          done
+          echo "All scripts parse cleanly on Python ${{ matrix.python-version }}"
+
+  smoke:
+    name: end-to-end smoke (no network)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate the shipped fixtures with the real gates
+        working-directory: skills/legwork
+        run: |
+          set -e
+          echo "--- report format ---"
+          python scripts/validate_report.py --report tests/fixtures/valid_report.md --format report
+          python scripts/verify_citations.py --report tests/fixtures/valid_report.md --offline
+
+          echo "--- brief format ---"
+          python scripts/validate_report.py --report tests/fixtures/valid_brief.md --format brief
+          python scripts/verify_citations.py --report tests/fixtures/valid_brief.md --offline
+
+          echo "--- invalid report must FAIL ---"
+          if python scripts/validate_report.py --report tests/fixtures/invalid_report.md; then
+            echo "ERROR: invalid_report.md passed validation but should have failed"
+            exit 1
+          fi
+          echo "OK: invalid report correctly rejected"
+
+      - name: Full run lifecycle (init -> batch register -> batch evidence -> bibliography)
+        working-directory: skills/legwork
+        run: |
+          set -e
+          RUN=$(mktemp -d)
+          python scripts/citation_manager.py init-run --out-dir "$RUN" --query "smoke test" --mode standard
+
+          cat > "$RUN/sources_batch.jsonl" <<'EOF'
+          {"raw_url": "https://www.nature.com/articles/x", "title": "A Paper", "year": "2026", "source_type": "academic"}
+          {"raw_url": "https://arxiv.org/abs/2501.00001", "title": "A Preprint", "year": "2026", "source_type": "academic"}
+          EOF
+          python scripts/citation_manager.py register-sources --jsonl-file "$RUN/sources_batch.jsonl" --dir "$RUN"
+
+          SID=$(python -c "import json;print(json.loads(open('$RUN/sources.jsonl').readline())['source_id'])")
+          cat > "$RUN/evidence_batch.jsonl" <<EOF
+          {"source_id": "$SID", "quote": "the measured latency fell by 34%", "locator": "p4", "evidence_type": "data_point"}
+          EOF
+          python scripts/evidence_store.py add-batch --jsonl-file "$RUN/evidence_batch.jsonl" --dir "$RUN"
+
+          python scripts/citation_manager.py assign-display-numbers --dir "$RUN"
+          python scripts/citation_manager.py export-bibliography --dir "$RUN"
+          python scripts/source_evaluator.py score --jsonl-file "$RUN/sources.jsonl"
+
+          test -s "$RUN/sources.jsonl"
+          test -s "$RUN/evidence.jsonl"
+          echo "OK: full lifecycle completed"
+
+      - name: setup.sh must succeed WITHOUT the Bright Data CLI
+        working-directory: skills/legwork
+        # Bright Data is a fallback provider, not a requirement: the skill runs
+        # on the host's built-in WebSearch/WebFetch. Setup must therefore exit 0
+        # even with no CLI installed (runners have none).
+        run: |
+          set -e
+          if command -v brightdata >/dev/null 2>&1; then
+            echo "note: brightdata unexpectedly present; skipping the absent-CLI assertion"
+            exit 0
+          fi
+          ./setup.sh --no-prompt
+          echo "OK: setup.sh succeeded without the Bright Data CLI"
+
+  install:
+    name: install.sh works end to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The installer is how everyone who does not use the plugin marketplace
+      # gets the skill, and it was never exercised before this job existed.
+      - name: Claude install symlinks the skill
+        run: |
+          set -e
+          ./install.sh
+          test -L "$HOME/.claude/skills/legwork"
+          test -f "$HOME/.claude/skills/legwork/SKILL.md"
+          echo "OK: Claude install"
+
+      - name: Codex install rewrites the skill path
+        run: |
+          set -e
+          ./install-codex.sh
+          test -f "$HOME/.codex/skills/legwork/SKILL.md"
+          if grep -q 'CLAUDE_SKILL_DIR' "$HOME/.codex/skills/legwork/SKILL.md"; then
+            echo "ERROR: \${CLAUDE_SKILL_DIR} survived the Codex rewrite"
+            exit 1
+          fi
+          test -L "$HOME/.codex/skills/legwork/scripts"
+          test -L "$HOME/.codex/skills/legwork/reference"
+          test -L "$HOME/.codex/skills/legwork/templates"
+          echo "OK: Codex install"

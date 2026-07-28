@@ -1,14 +1,14 @@
-# [Question as a statement — the answer, not the topic]
+# [Question as a statement - the answer, not the topic]
 
 <!--
-BRIEF FORMAT — the default deliverable for quick and standard modes.
+BRIEF FORMAT - the default deliverable for quick and standard modes.
 
 WHAT THIS IS: a findings memo, 800-2,500 words. It answers the question and shows its
 receipts. It is NOT a shrunken formal report: it drops the Executive Summary /
 Introduction / Methodology-Appendix scaffolding entirely, because at this length the
 scaffolding IS the content.
 
-WHAT IT KEEPS (non-negotiable — brief drops ceremony, never rigor):
+WHAT IT KEEPS (non-negotiable - brief drops ceremony, never rigor):
   - Every factual claim carries an immediate [N] citation
   - Complete bibliography: every [N] used, no ranges, no placeholders, no truncation
   - Honest limitations
@@ -46,7 +46,7 @@ support a confident answer, say that here rather than burying it in Limitations.
 
 [150-400 words of prose. Lead with the specific claim, then the evidence that supports
 it. Exact numbers, embedded in sentences: "throughput fell 34% above 500 concurrent
-connections [3]" — not "performance degraded significantly". Every factual sentence
+connections [3]" - not "performance degraded significantly". Every factual sentence
 gets its [N] in the same sentence.
 
 Where sources disagree, say so and say which you weight more heavily and why. A finding
@@ -60,7 +60,7 @@ that names its own uncertainty is worth more than one that hides it.]
 
 [...]
 
-<!-- 3-6 findings. If you have more than 6, you're probably writing a report — switch
+<!-- 3-6 findings. If you have more than 6, you're probably writing a report - switch
      formats. If you have fewer than 3, say so honestly rather than padding. -->
 
 ---
@@ -73,7 +73,7 @@ that names its own uncertainty is worth more than one that hides it.]
 - What should they do, and what would change that recommendation?
 - What's the second-order implication nobody in the sources states outright?
 
-This is your synthesis, not the sources' — so mark it as such. "This suggests..." /
+This is your synthesis, not the sources' - so mark it as such. "This suggests..." /
 "On the evidence above, the reasonable move is..." Distinguish clearly between what the
 sources say and what you conclude from them.]
 

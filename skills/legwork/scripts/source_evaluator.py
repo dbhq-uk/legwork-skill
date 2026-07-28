@@ -15,8 +15,8 @@ CLI:
     python source_evaluator.py score --url https://... --title "..." --date 2026-01-15
 
 User-extensible domain tiers:
-    Put your recurring research domains in ~/.deep-research/domains.json (or point
-    $DEEP_RESEARCH_DOMAINS at another file):
+    Put your recurring research domains in ~/.legwork/domains.json (or point
+    $LEGWORK_DOMAINS at another file):
 
         {"high": ["mytrustedjournal.org"], "moderate": ["someblog.dev"], "low": ["contentfarm.io"]}
 
@@ -36,8 +36,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 # Where user-defined domain tiers live. Env var wins, then the dotfile.
-USER_DOMAINS_ENV = 'DEEP_RESEARCH_DOMAINS'
-USER_DOMAINS_PATH = Path.home() / '.deep-research' / 'domains.json'
+USER_DOMAINS_ENV = 'LEGWORK_DOMAINS'
+USER_DOMAINS_PATH = Path.home() / '.legwork' / 'domains.json'
 
 
 def load_user_domains() -> dict[str, set]:
@@ -428,7 +428,7 @@ def cmd_score(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog='source_evaluator',
-        description='Deterministic source credibility scoring (the deep-research re-ranker)',
+        description='Deterministic source credibility scoring (the legwork re-ranker)',
     )
     sub = parser.add_subparsers(dest='command', required=True)
 

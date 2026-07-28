@@ -1,4 +1,4 @@
-# Deep Research Methodology: 8-Phase Pipeline
+# Legwork Methodology: 8-Phase Pipeline
 
 ## Overview
 
@@ -71,30 +71,30 @@ Use the returned year for all date-filtered queries and recency checks. Do NOT a
 
 **CRITICAL: Use correct tool and parameters to avoid errors**
 
-**Primary: WebSearch + WebFetch (built-in, free — always use first)**
+**Primary: WebSearch + WebFetch (built-in, free - always use first)**
 - `WebSearch` for all query-based retrieval: `query` (required), optional `allowed_domains`, `blocked_domains`
 - `WebFetch` for reading specific pages surfaced by search
 - Fire all query variants concurrently in a single message
 - Prefer snippets over full-page fetches where a snippet establishes the claim (see SKILL.md Token Efficiency Policy)
 
-**Fallback: bd_search.py — Bright Data SERP API + Web Unlocker (paid — use only when built-ins fail)**
+**Fallback: bd_search.py - Bright Data SERP API + Web Unlocker (paid - use only when built-ins fail)**
 
-Use when: `WebFetch` is blocked/paywalled on a needed page, the URL is a Reddit thread, you need geo/vertical SERP (`--country`, news, images), or WebSearch coverage stays thin after 2-3 query variants. Every call is billed — never use it where a built-in would have worked.
+Use when: `WebFetch` is blocked/paywalled on a needed page, the URL is a Reddit thread, you need geo/vertical SERP (`--country`, news, images), or WebSearch coverage stays thin after 2-3 query variants. Every call is billed - never use it where a built-in would have worked.
 
-- Single Python wrapper bundled with this skill. Invoke by absolute path via the Bash tool — do NOT rely on a `search` binary on $PATH
-- Wrapper path: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py`
-- JSON output for structured processing: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "query" --json`
+- Single Python wrapper bundled with this skill. Invoke by absolute path via the Bash tool - do NOT rely on a `search` binary on $PATH
+- Wrapper path: `python3 ${CLAUDE_SKILL_DIR}/scripts/bd_search.py`
+- JSON output for structured processing: `python3 ${CLAUDE_SKILL_DIR}/scripts/bd_search.py "query" --json`
 - Search modes (SERP API): general, news, academic, scholar, patents, people, images
 - Content modes (Web Unlocker): extract, scrape (positional arg MUST be a URL, not a query)
 - Pipeline mode (Bright Data structured datasets, billed per record): `reddit` (URL must contain reddit.com)
-- Example: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "quantum computing 2026" -m academic --json -c 15`
-- For page content: `~/.claude/skills/deep-research/.venv/bin/python ~/.claude/skills/deep-research/scripts/bd_search.py "https://example.com/article" -m scrape --json`
+- Example: `python3 ${CLAUDE_SKILL_DIR}/scripts/bd_search.py "quantum computing 2026" -m academic --json -c 15`
+- For page content: `python3 ${CLAUDE_SKILL_DIR}/scripts/bd_search.py "https://example.com/article" -m scrape --json`
 - **Reddit URLs:** use `-m reddit` instead of `-m scrape`. The default Unlocker zone blocks reddit.com under robots.txt; the `reddit_posts` pipeline returns structured JSON (post + comments + scores) and is the only path that works without an account-manager unlock. Slower (10-60s typical, can be minutes) and billed per record, so prefer top-relevance threads and don't dump entire subreddits.
-- **Trustpilot URLs:** do NOT scrape — same Unlocker block, and there is no pipeline equivalent. Use SERP snippets (`-m general "site:trustpilot.com <query>"`) to capture general sentiment; quote only what the snippet shows.
-- Result ordering = Google SERP rank. Final relevance ranking is applied DOWNSTREAM by `source_evaluator.py` (deterministic credibility scoring) — no neural/semantic ranker is required
+- **Trustpilot URLs:** do NOT scrape - same Unlocker block, and there is no pipeline equivalent. Use SERP snippets (`-m general "site:trustpilot.com <query>"`) to capture general sentiment; quote only what the snippet shows.
+- Result ordering = Google SERP rank. Final relevance ranking is applied DOWNSTREAM by `source_evaluator.py` (deterministic credibility scoring) - no neural/semantic ranker is required
 - Credentials: handled by the Bright Data CLI itself (`brightdata login`, or `BRIGHTDATA_API_KEY` env var). The wrapper just shells out.
 - On any non-zero exit, the wrapper has failed cleanly: return to the built-in WebSearch/WebFetch path
-- **If the wrapper's stderr JSON contains an auth/quota error** (exit code 2, or a message about authentication / API key / quota / Web Unlocker zone), tell the user to run `brightdata login` (or `~/.claude/skills/deep-research/setup.sh --reset`) before retrying Bright Data. The built-ins keep the run going in the meantime.
+- **If the wrapper's stderr JSON contains an auth/quota error** (exit code 2, or a message about authentication / API key / quota / Web Unlocker zone), tell the user to run `brightdata login` (or `${CLAUDE_SKILL_DIR}/setup.sh --reset`) before retrying Bright Data. The built-ins keep the run going in the meantime.
 - Cap scraped content with `--max-chars 8000` unless more is specifically needed
 
 **Optional: Exa MCP (if configured, for semantic/neural search)**
@@ -112,7 +112,7 @@ Use Task tool with general-purpose agents (3-5 agents) for:
 - Repository analysis (code examples, implementations)
 - Specialized domain research (requires multi-step investigation)
 
-**Model:** spawn every deep-dive agent on the cheaper `haiku` model (`model="haiku"`). These agents fetch pages and extract structured evidence — mechanical, high-volume work that does not need the premium orchestrator model. Do not let them inherit the main-session model.
+**Model:** spawn every deep-dive agent on the cheaper `haiku` model (`model="haiku"`). These agents fetch pages and extract structured evidence - mechanical, high-volume work that does not need the premium orchestrator model. Do not let them inherit the main-session model.
 
 **Sub-agent output format:** Require all sub-agents to return structured evidence, not free text:
 ```json
@@ -128,7 +128,7 @@ python scripts/citation_manager.py register-source --json '{"raw_url": "...", "t
 # Then persist each evidence span from that source
 python scripts/evidence_store.py add --json '{"source_id": "...", "quote": "exact text", "evidence_type": "direct_quote", "locator": "page 5"}' --dir [folder]
 ```
-Evidence must not live only in model context — it must be persisted to `evidence.jsonl` before synthesis begins. This ensures continuation agents and claim-support verification can access the full evidence trail.
+Evidence must not live only in model context - it must be persisted to `evidence.jsonl` before synthesis begins. This ensures continuation agents and claim-support verification can access the full evidence trail.
 
 **Example parallel execution (built-in tools, default path):**
 ```
@@ -193,7 +193,7 @@ As results arrive:
 **Techniques:**
 - Use WebSearch for all searches (primary, free) and WebFetch for deep dives into specific sources
 - Fall back to bd_search.py (Bright Data, paid) when WebFetch is blocked, the target is Reddit, geo/vertical SERP is needed, or WebSearch coverage stays thin
-- Semantic/neural exploration is OPTIONAL, not required — ranking is handled by source_evaluator.py downstream
+- Semantic/neural exploration is OPTIONAL, not required - ranking is handled by source_evaluator.py downstream
 - Use Grep/Read for local documentation
 - Execute code for computational analysis (when needed)
 - Use Task tool to spawn parallel retrieval agents (3-5 agents) on the cheaper `haiku` model (`model="haiku"`)
@@ -354,11 +354,11 @@ As results arrive:
 
 **Persona-Based Critique (Deep/UltraDeep only):**
 Simulate 2-3 specific critic personas relevant to the topic:
-- "Skeptical Practitioner" — Would someone doing this daily trust these findings?
-- "Adversarial Reviewer" — What would a peer reviewer reject?
-- "Implementation Engineer" — Can these recommendations actually be executed?
+- "Skeptical Practitioner" - Would someone doing this daily trust these findings?
+- "Adversarial Reviewer" - What would a peer reviewer reject?
+- "Implementation Engineer" - Can these recommendations actually be executed?
 
-**Claim-Support Verification (Deep/UltraDeep only — this is the phase that runs it):**
+**Claim-Support Verification (Deep/UltraDeep only - this is the phase that runs it):**
 
 Deep and ultradeep runs must mechanically verify that every factual claim in the draft
 is backed by a persisted evidence span, not just by a citation marker:
@@ -370,7 +370,7 @@ python scripts/verify_claim_support.py --dir [folder]             # -> support_s
 
 Any claim coming back `unsupported` is a blocker: either retrieve + persist the missing
 evidence (delta-query, below) or soften/remove the claim. Re-run until clean. Quick and
-standard modes skip this entirely — see reference/quality-gates.md for the mode policy.
+standard modes skip this entirely - see reference/quality-gates.md for the mode policy.
 
 **Critical Gap Loop-Back:**
 If critique identifies a critical knowledge gap (not just a writing issue), return to Phase 3 with targeted "delta-queries" before proceeding to Phase 7. Time-box to 3-5 minutes. This prevents publishing reports with known blind spots. An `unsupported` claim from the check above is exactly such a gap.
@@ -423,7 +423,7 @@ Rather than linear thinking, branch into multiple reasoning paths:
 
 ### Parallel Agent Deployment
 
-Use Task tool to spawn sub-agents (on the cheaper `haiku` model — `model="haiku"`) for:
+Use Task tool to spawn sub-agents (on the cheaper `haiku` model - `model="haiku"`) for:
 - Parallel source retrieval
 - Independent verification paths
 - Competing hypothesis evaluation

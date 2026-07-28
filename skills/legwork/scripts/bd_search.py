@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-bd_search.py - Bright Data backend for the deep-research skill.
+bd_search.py - Bright Data backend for the legwork skill.
 
 Shells out to the official Bright Data CLI (`brightdata` / `bdata`,
 package `@brightdata/cli`). Preserves the historical invocation surface so

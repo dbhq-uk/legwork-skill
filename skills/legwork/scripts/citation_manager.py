@@ -367,7 +367,7 @@ def cmd_export_bibliography(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog='citation_manager',
-        description='Stable source identity and run manifest management for deep-research v3.0',
+        description='Stable source identity and run manifest management for legwork v3.0',
     )
     sub = parser.add_subparsers(dest='command', required=True)
 

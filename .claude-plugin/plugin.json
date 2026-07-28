@@ -1,0 +1,20 @@
+{
+  "name": "legwork",
+  "description": "Multi-source research for Claude Code and Codex - citation-tracked findings with evidence persistence, source credibility scoring and claim-level verification gates. Built-in WebSearch first (free); Bright Data CLI only as a fallback for blocked pages, Reddit and geo SERP. Brief by default, with quick/standard/deep/ultradeep modes that scale cost to the question.",
+  "version": "1.0.0",
+  "author": {
+    "name": "DBHQ",
+    "email": "dan@dbhq.uk"
+  },
+  "homepage": "https://dbhq.uk",
+  "repository": "https://github.com/dbhq-uk/legwork",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "citations",
+    "evidence",
+    "web-search",
+    "report-generation",
+    "fact-checking"
+  ]
+}

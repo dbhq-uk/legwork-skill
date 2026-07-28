@@ -390,13 +390,13 @@ CITATION TRACKING (CRITICAL):
 | C3 | [Third major claim] | [Evidence type] | [7], [8] | partial |
 | ... | [Continue for all major claims] | ... | ... | ... |
 
-**Support Status** — these are the values emitted by `verify_claim_support.py` into
+**Support Status** - these are the values emitted by `verify_claim_support.py` into
 `claims.jsonl` (schema: `schemas/claim.schema.json`). Populate this table from that file
 rather than judging by eye:
 
 - **supported**: claim is backed by persisted evidence spans from cited sources
 - **partial**: some support found, but weaker or narrower than the claim as stated
-- **unsupported**: no backing evidence — **BLOCKS DELIVERY.** Retrieve evidence, or soften/remove the claim
+- **unsupported**: no backing evidence - **BLOCKS DELIVERY.** Retrieve evidence, or soften/remove the claim
 - **needs_review**: ambiguous match; a human should look
 - **unverified**: not yet checked (claim extracted but verification not run)
 

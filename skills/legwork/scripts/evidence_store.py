@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Evidence Store — append-only evidence persistence for deep-research v3.0.
+Evidence Store — append-only evidence persistence for legwork v3.0.
 
 CLI subcommands:
   init         Create empty evidence.jsonl in a run directory
@@ -274,7 +274,7 @@ def cmd_export(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog='evidence_store',
-        description='Append-only evidence persistence for deep-research v3.0',
+        description='Append-only evidence persistence for legwork v3.0',
     )
     sub = parser.add_subparsers(dest='command', required=True)
 

@@ -330,7 +330,7 @@ def cmd_report(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog='verify_claim_support',
-        description='Claim-support verification for deep-research v3.0',
+        description='Claim-support verification for legwork v3.0',
     )
     sub = parser.add_subparsers(dest='command', required=True)
 

@@ -335,7 +335,7 @@ def cmd_stats(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog='extract_claims',
-        description='Atomic claim extraction and ledger for deep-research v3.0',
+        description='Atomic claim extraction and ledger for legwork v3.0',
     )
     sub = parser.add_subparsers(dest='command', required=True)
 

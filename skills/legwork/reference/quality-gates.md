@@ -14,7 +14,7 @@ earn them.
 | `extract_claims.py` → `verify_claim_support.py` | - | - | Y | Y |
 
 Rationale: a 5-minute question does not warrant a multi-minute network pass over every
-bibliography entry. The offline check still catches the defects that actually occur —
+bibliography entry. The offline check still catches the defects that actually occur -
 fabricated-looking titles, entries with no DOI *or* URL, body citations with no
 bibliography entry, and vice versa.
 
@@ -43,10 +43,10 @@ citation formatting `[N]`, bibliography ↔ citation cross-match, no placeholder
 ### Citation Verification
 
 ```bash
-# quick / standard — local only, sub-second, zero network
+# quick / standard - local only, sub-second, zero network
 python scripts/verify_citations.py --report [path] --offline
 
-# deep / ultradeep — full network verification (concurrent, cached)
+# deep / ultradeep - full network verification (concurrent, cached)
 python scripts/verify_citations.py --report [path]
 ```
 
@@ -71,7 +71,7 @@ against the persisted `evidence.jsonl` spans. **No claim with `support_status:
 unsupported` ships.** Fix by adding the missing evidence (retrieve → persist) or by
 softening/removing the claim, then re-run.
 
-Skip entirely in quick/standard — there, inline `[N]` citations plus the bibliography
+Skip entirely in quick/standard - there, inline `[N]` citations plus the bibliography
 are the evidence trail.
 
 ### Validation Loop Protocol
@@ -79,8 +79,8 @@ are the evidence trail.
 **After generating any deliverable, run the gates for your mode (table above):**
 
 1. `validate_report.py` (always)
-2. `verify_citations.py` — with `--offline` in quick/standard, without in deep/ultradeep
-3. Claim-support pair — deep/ultradeep only
+2. `verify_citations.py` - with `--offline` in quick/standard, without in deep/ultradeep
+3. Claim-support pair - deep/ultradeep only
 4. If ANY fails: read the output, fix the specific issues, re-run the failed gate
 5. Maximum 3 retry cycles. If still failing: STOP and report issues to the user.
 

@@ -1,31 +1,24 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# Virtual environments
-venv/
-ENV/
-env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
+# OS cruft
 .DS_Store
 Thumbs.db
 
-# Research output (kept local)
-*.json
-!schemas/*.json
+# Editors
+.vscode/
+.idea/
+*.swp
 
-# Test output
+# Local agent tooling state
+.serena/
+
+# Python
+__pycache__/
+*.pyc
 .pytest_cache/
-.coverage
-htmlcov/
+
+# The skill needs no virtualenv (stdlib only), but do not commit one if a
+# contributor makes one anyway.
+.venv/
+
+# Research output: the skill's default output base is <git-root>/docs/research,
+# so a run inside this repo would otherwise try to commit its own deliverables.
+/docs/research/

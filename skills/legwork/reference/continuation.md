@@ -69,22 +69,22 @@ Trigger auto-continuation when report exceeds 18,000 words in single run.
 
 ## Spawning Continuation Agent
 
-Use Task tool. **Model:** spawn continuation agents on `sonnet` (`model="sonnet"`) — they write report prose, which is quality-sensitive, so use Sonnet rather than the cheapest tier (but still not the premium orchestrator model). Every recursively-spawned "next agent" below uses the same `sonnet` override.
+Use Task tool. **Model:** spawn continuation agents on `sonnet` (`model="sonnet"`) - they write report prose, which is quality-sensitive, so use Sonnet rather than the cheapest tier (but still not the premium orchestrator model). Every recursively-spawned "next agent" below uses the same `sonnet` override.
 
 ```
 Task(
   subagent_type="general-purpose",
   model="sonnet",
-  description="Continue deep-research report generation",
+  description="Continue legwork report generation",
   prompt="""
-CONTINUATION TASK: Continue existing deep-research report.
+CONTINUATION TASK: Continue existing legwork report.
 
 CRITICAL INSTRUCTIONS:
 1. Read continuation state: ~/.claude/research_output/continuation_state_[report_id].json
 2. Read existing report: [file_path from state]
 3. Read LAST 3 completed sections for flow/style
 4. Load research context: themes, narrative arc, writing style
-5. Load source registry from state.artifacts.sources_path — use stable source_ids, assign display numbers via citation_manager.py
+5. Load source registry from state.artifacts.sources_path - use stable source_ids, assign display numbers via citation_manager.py
 6. Maintain quality metrics (avg words, citation density, prose ratio)
 
 YOUR TASK:

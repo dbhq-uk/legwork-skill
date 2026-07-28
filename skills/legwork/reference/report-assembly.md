@@ -10,11 +10,11 @@
 | ultradeep | report | [report_template.md](../templates/report_template.md) |
 
 The user overrides freely ("brief" / "full report"). Brief drops scaffolding sections,
-never rigor — same citation discipline, same complete bibliography.
+never rigor - same citation discipline, same complete bibliography.
 
 ## Length Requirements
 
-**Brief format** (quick/standard default): 800–2,500 words total.
+**Brief format** (quick/standard default): 800-2,500 words total.
 Answer (2-4 sentences) → Findings (3-6 × 150-400 words) → So What (200-500) →
 Limitations (2-4 sentences) → Bibliography.
 
@@ -27,7 +27,7 @@ Limitations (2-4 sentences) → Bibliography.
 | Deep | 8,000-15,000 | Thorough investigation |
 | UltraDeep | 15,000-20,000+ | Maximum rigor (at output limit) |
 
-**These are ceilings, not quotas.** Stop when the question is answered — never pad findings to reach a length band (see SKILL.md Token Efficiency Policy). A standard-mode question fully answered in 1,200 words ships at 1,200 words.
+**These are ceilings, not quotas.** Stop when the question is answered - never pad findings to reach a length band (see SKILL.md Token Efficiency Policy). A standard-mode question fully answered in 1,200 words ships at 1,200 words.
 
 ---
 
@@ -50,10 +50,10 @@ Limitations (2-4 sentences) → Bibliography.
 
 ```bash
 # Resolve the output base:
-#   $DEEP_RESEARCH_OUTPUT if set,
+#   $LEGWORK_OUTPUT if set,
 #   else <git-root-of-cwd>/docs/research,
 #   else $PWD/docs/research (when not in a git repo).
-OUTPUT_BASE="${DEEP_RESEARCH_OUTPUT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/docs/research}"
+OUTPUT_BASE="${LEGWORK_OUTPUT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/docs/research}"
 FOLDER="$OUTPUT_BASE/[TopicName]_Research_$(date +%Y%m%d)"
 mkdir -p "$FOLDER"
 
@@ -66,7 +66,7 @@ mkdir -p "$FOLDER"
 **Pattern:** Generate section -> Write/Edit to file -> Move to next section
 Each Write/Edit call contains ONE section (<=2,000 words per call)
 
-**Initialize research run (standard/deep/ultradeep — quick mode skips this entirely):**
+**Initialize research run (standard/deep/ultradeep - quick mode skips this entirely):**
 ```bash
 # Create run manifest and artifact files using citation_manager CLI
 python scripts/citation_manager.py init-run --out-dir [folder] --query "[question]" --mode [mode]
@@ -102,8 +102,8 @@ python scripts/evidence_store.py add-batch --jsonl-file [evidence_batch.jsonl] -
 | `source_title` | `register-sources` | `title` |
 | (returned source_id) | `add-batch` | `source_id` |
 | `evidence_quote` | `add-batch` | `quote` |
-| `claim` | the draft (and `claims.jsonl` in deep/ultra) | — |
-| `confidence` | not persisted — it's the subagent's self-estimate, not evidence | — |
+| `claim` | the draft (and `claims.jsonl` in deep/ultra) | - |
+| `confidence` | not persisted - it's the subagent's self-estimate, not evidence | - |
 
 **Assign display numbers after all sources registered:**
 ```bash
@@ -156,7 +156,7 @@ Source identity is stable across edits and continuation. Display numbers are der
 ## File Organization
 
 **1. Create dedicated folder:**
-- Location: `<output-base>/[TopicName]_Research_[YYYYMMDD]/` where `<output-base>` is `$DEEP_RESEARCH_OUTPUT` if set, else `<git-root-of-cwd>/docs/research`, else `$PWD/docs/research` when not in a git repo (see Phase 8.1 above for the one-liner).
+- Location: `<output-base>/[TopicName]_Research_[YYYYMMDD]/` where `<output-base>` is `$LEGWORK_OUTPUT` if set, else `<git-root-of-cwd>/docs/research`, else `$PWD/docs/research` when not in a git repo (see Phase 8.1 above for the one-liner).
 - Clean topic name (remove special chars, use underscores)
 
 **2. File naming convention:**

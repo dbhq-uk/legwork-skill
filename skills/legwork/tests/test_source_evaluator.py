@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for source_evaluator.py — the deep-research re-ranker.
+"""Tests for source_evaluator.py — the legwork re-ranker.
 
 Covers the scoring behaviour that determines which sources anchor major claims, plus
 the user-extensible domain tiers that let recurring research topics get their trusted
@@ -88,35 +88,35 @@ class TestUserDomainTiers(unittest.TestCase):
 class TestUserDomainConfigLoading(unittest.TestCase):
     def test_missing_config_returns_empty_tiers(self):
         with tempfile.TemporaryDirectory() as tmp:
-            os.environ['DEEP_RESEARCH_DOMAINS'] = str(Path(tmp) / 'nonexistent.json')
+            os.environ['LEGWORK_DOMAINS'] = str(Path(tmp) / 'nonexistent.json')
             try:
                 self.assertEqual(load_user_domains(), NO_USER_DOMAINS)
             finally:
-                del os.environ['DEEP_RESEARCH_DOMAINS']
+                del os.environ['LEGWORK_DOMAINS']
 
     def test_malformed_config_is_ignored_not_fatal(self):
         """A bad dotfile must never take down a research run."""
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / 'domains.json'
             p.write_text('{ this is not json')
-            os.environ['DEEP_RESEARCH_DOMAINS'] = str(p)
+            os.environ['LEGWORK_DOMAINS'] = str(p)
             try:
                 self.assertEqual(load_user_domains(), NO_USER_DOMAINS)
             finally:
-                del os.environ['DEEP_RESEARCH_DOMAINS']
+                del os.environ['LEGWORK_DOMAINS']
 
     def test_valid_config_is_loaded(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / 'domains.json'
             p.write_text(json.dumps({'high': ['a.example'], 'low': ['b.example']}))
-            os.environ['DEEP_RESEARCH_DOMAINS'] = str(p)
+            os.environ['LEGWORK_DOMAINS'] = str(p)
             try:
                 loaded = load_user_domains()
                 self.assertEqual(loaded['high'], {'a.example'})
                 self.assertEqual(loaded['low'], {'b.example'})
                 self.assertEqual(loaded['moderate'], set())
             finally:
-                del os.environ['DEEP_RESEARCH_DOMAINS']
+                del os.environ['LEGWORK_DOMAINS']
 
 
 class TestRecency(unittest.TestCase):
@@ -182,7 +182,7 @@ class TestCLI(unittest.TestCase):
                 [sys.executable, str(SCRIPT), 'score', '--jsonl-file', str(src), '--format', 'json'],
                 capture_output=True,
                 text=True,
-                env={**os.environ, 'DEEP_RESEARCH_DOMAINS': str(Path(tmp) / 'none.json')},
+                env={**os.environ, 'LEGWORK_DOMAINS': str(Path(tmp) / 'none.json')},
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             scored = json.loads(result.stdout)
@@ -210,7 +210,7 @@ class TestCLI(unittest.TestCase):
                 ],
                 capture_output=True,
                 text=True,
-                env={**os.environ, 'DEEP_RESEARCH_DOMAINS': str(Path(tmp) / 'none.json')},
+                env={**os.environ, 'LEGWORK_DOMAINS': str(Path(tmp) / 'none.json')},
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             scored = json.loads(result.stdout)

@@ -42,8 +42,8 @@ Ask a real question, get a findings memo where every factual claim carries an in
 ### Local install (Claude Code or Codex)
 
 ```bash
-git clone https://github.com/dbhq-uk/legwork.git
-cd legwork
+git clone https://github.com/dbhq-uk/legwork-skill.git
+cd legwork-skill
 ./install.sh          # Claude Code: symlinks into ~/.claude/skills (edits are live)
 ./install-codex.sh    # Codex: installs into ~/.codex/skills
 ```

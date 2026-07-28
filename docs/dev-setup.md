@@ -11,7 +11,7 @@ Set the skill up from source with a **live symlink install**, so your edits are 
 ## 1. Clone
 
 ```bash
-git clone https://github.com/dbhq-uk/legwork.git ~/dbhq-legwork
+git clone https://github.com/dbhq-uk/legwork-skill.git ~/dbhq-legwork
 cd ~/dbhq-legwork
 ```
 

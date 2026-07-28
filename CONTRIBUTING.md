@@ -4,14 +4,14 @@ Thanks for your interest - contributions are welcome.
 
 ## Ways to help
 
-- Report a bug or request a feature via [issues](https://github.com/dbhq-uk/legwork/issues)
+- Report a bug or request a feature via [issues](https://github.com/dbhq-uk/legwork-skill/issues)
 - Improve the skill instructions, scripts or reference docs via a pull request
 
 ## Local development
 
 ```bash
-git clone https://github.com/dbhq-uk/legwork.git
-cd legwork
+git clone https://github.com/dbhq-uk/legwork-skill.git
+cd legwork-skill
 ./install.sh          # symlinks into ~/.claude/skills (edits are live)
 ```
 

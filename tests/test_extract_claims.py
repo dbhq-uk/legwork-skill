@@ -178,7 +178,7 @@ class TestClaimID(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-        from extract_claims import compute_claim_id, classify_claim
+        from extract_claims import classify_claim, compute_claim_id
         cls.compute_id = staticmethod(compute_claim_id)
         cls.classify = staticmethod(classify_claim)
 

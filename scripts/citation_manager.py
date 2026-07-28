@@ -26,7 +26,6 @@ import sys
 from datetime import datetime, timezone
 from urllib.parse import urlparse, urlunparse
 
-
 # ---------------------------------------------------------------------------
 # Canonical locator normalization
 # ---------------------------------------------------------------------------

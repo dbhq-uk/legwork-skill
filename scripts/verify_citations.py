@@ -25,17 +25,16 @@ ultradeep run the full network pass. See reference/quality-gates.md.
 
 from __future__ import annotations
 
-import sys
 import argparse
+import json
 import re
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-from typing import List, Dict, Tuple
-from urllib import request, error
-from urllib.parse import quote
-import json
 from datetime import datetime
+from pathlib import Path
+from urllib import error, request
+from urllib.parse import quote
 
 # Concurrency for the network pass. Modest: we are hitting doi.org and arbitrary
 # publisher hosts, and politeness matters more than shaving the last second.
@@ -57,8 +56,8 @@ class CitationVerifier:
 
         # Per-run caches: a DOI or URL is fetched at most once even across the
         # up-to-3 validation retry cycles in quality-gates.md.
-        self._doi_cache: Dict[str, Tuple[bool, Dict]] = {}
-        self._url_cache: Dict[str, Tuple[bool, str]] = {}
+        self._doi_cache: dict[str, tuple[bool, dict]] = {}
+        self._url_cache: dict[str, tuple[bool, str]] = {}
         self._cache_lock = threading.Lock()
 
         # Hallucination detection patterns (2025 CiteGuard enhancement)
@@ -76,13 +75,13 @@ class CitationVerifier:
     def _read_report(self) -> str:
         """Read report file"""
         try:
-            with open(self.report_path, 'r', encoding='utf-8') as f:
+            with open(self.report_path, encoding='utf-8') as f:
                 return f.read()
         except Exception as e:
             print(f"L ERROR: Cannot read report: {e}")
             sys.exit(1)
 
-    def extract_bibliography(self) -> List[Dict]:
+    def extract_bibliography(self) -> list[dict]:
         """Extract bibliography entries from report"""
         pattern = r'## Bibliography(.*?)(?=##|\Z)'
         match = re.search(pattern, self.content, re.DOTALL | re.IGNORECASE)
@@ -140,7 +139,7 @@ class CitationVerifier:
         body = re.split(r'##\s*Bibliography', self.content, flags=re.IGNORECASE)[0]
         return {int(n) for n in re.findall(r'\[(\d+)\]', body)}
 
-    def verify_doi(self, doi: str) -> Tuple[bool, Dict]:
+    def verify_doi(self, doi: str) -> tuple[bool, dict]:
         """
         Verify DOI exists and get metadata. Cached per run.
         Returns (success, metadata_dict)
@@ -157,7 +156,7 @@ class CitationVerifier:
             self._doi_cache[doi] = result
         return result
 
-    def _fetch_doi(self, doi: str) -> Tuple[bool, Dict]:
+    def _fetch_doi(self, doi: str) -> tuple[bool, dict]:
         try:
             # Use content negotiation to get JSON metadata
             url = f"https://doi.org/{quote(doi)}"
@@ -183,7 +182,7 @@ class CitationVerifier:
         except Exception as e:
             return False, {'error': str(e)}
 
-    def verify_url(self, url: str) -> Tuple[bool, str]:
+    def verify_url(self, url: str) -> tuple[bool, str]:
         """
         Verify URL is accessible (2025 CiteGuard enhancement). Cached per run.
         Returns (accessible, status_message)
@@ -200,7 +199,7 @@ class CitationVerifier:
             self._url_cache[url] = result
         return result
 
-    def _fetch_url(self, url: str) -> Tuple[bool, str]:
+    def _fetch_url(self, url: str) -> tuple[bool, str]:
         try:
             # HEAD request to check accessibility without downloading
             req = request.Request(url, method='HEAD')
@@ -218,7 +217,7 @@ class CitationVerifier:
         except Exception as e:
             return False, f"Connection error: {str(e)[:50]}"
 
-    def detect_hallucination_patterns(self, entry: Dict) -> List[str]:
+    def detect_hallucination_patterns(self, entry: dict) -> list[str]:
         """
         Detect common LLM hallucination patterns in citations (2025 CiteGuard).
         Returns list of detected issues.
@@ -284,7 +283,7 @@ class CitationVerifier:
 
         return overlap / total if total > 0 else 0.0
 
-    def verify_entry(self, entry: Dict) -> Dict:
+    def verify_entry(self, entry: dict) -> dict:
         """Verify a single bibliography entry (Enhanced 2025 with CiteGuard).
 
         Thread-safe: performs no printing, so it can run inside a thread pool.
@@ -366,7 +365,7 @@ class CitationVerifier:
 
         return result
 
-    def check_citation_coverage(self, entries: List[Dict]) -> List[str]:
+    def check_citation_coverage(self, entries: list[dict]) -> list[str]:
         """Local cross-check: every [N] in the body has a bibliography entry, and vice versa."""
         issues = []
         body_nums = self.extract_body_citations()

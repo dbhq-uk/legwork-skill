@@ -30,18 +30,17 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import dataclass, asdict
-from pathlib import Path
-from typing import List, Dict, Optional
-from urllib.parse import urlparse
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
+from urllib.parse import urlparse
 
 # Where user-defined domain tiers live. Env var wins, then the dotfile.
 USER_DOMAINS_ENV = 'DEEP_RESEARCH_DOMAINS'
 USER_DOMAINS_PATH = Path.home() / '.deep-research' / 'domains.json'
 
 
-def load_user_domains() -> Dict[str, set]:
+def load_user_domains() -> dict[str, set]:
     """Load user domain tier overrides. Returns {'high': set, 'moderate': set, 'low': set}.
 
     Never raises: a malformed config warns on stderr and is ignored, because a bad
@@ -82,7 +81,7 @@ class CredibilityScore:
     recency: float  # 0-100
     expertise: float  # 0-100
     bias_score: float  # 0-100 (higher = more neutral)
-    factors: Dict[str, str]
+    factors: dict[str, str]
     recommendation: str  # "high_trust", "moderate_trust", "low_trust", "verify"
 
 
@@ -128,7 +127,7 @@ class SourceEvaluator:
         'blogspot.com', 'wordpress.com', 'wix.com', 'substack.com'
     ]
 
-    def __init__(self, user_domains: Optional[Dict[str, set]] = None):
+    def __init__(self, user_domains: dict[str, set] | None = None):
         """Merge user tier overrides over the built-ins.
 
         User entries take precedence: a domain listed in the user's 'low' tier is low
@@ -153,9 +152,9 @@ class SourceEvaluator:
         self,
         url: str,
         title: str,
-        content: Optional[str] = None,
-        publication_date: Optional[str] = None,
-        author: Optional[str] = None
+        content: str | None = None,
+        publication_date: str | None = None,
+        author: str | None = None
     ) -> CredibilityScore:
         """Evaluate source credibility"""
 
@@ -224,7 +223,7 @@ class SourceEvaluator:
         # Unknown domain - moderate skepticism
         return 55.0
 
-    def _evaluate_recency(self, publication_date: Optional[str]) -> float:
+    def _evaluate_recency(self, publication_date: str | None) -> float:
         """Evaluate information recency (0-100)"""
         if not publication_date:
             return 50.0  # Unknown date
@@ -252,7 +251,7 @@ class SourceEvaluator:
         self,
         domain: str,
         title: str,
-        author: Optional[str]
+        author: str | None
     ) -> float:
         """Evaluate source expertise (0-100)"""
         score = 50.0
@@ -280,7 +279,7 @@ class SourceEvaluator:
         self,
         domain: str,
         title: str,
-        content: Optional[str]
+        content: str | None
     ) -> float:
         """Evaluate potential bias (0-100, higher = more neutral)"""
         score = 70.0  # Start neutral
@@ -314,7 +313,7 @@ class SourceEvaluator:
         recency_score: float,
         expertise_score: float,
         bias_score: float
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """Identify key credibility factors"""
         factors = {}
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
-from typing import List, Tuple
 
 
 class HTMLVerifier:
@@ -29,7 +28,7 @@ class HTMLVerifier:
             True if all checks pass, False otherwise
         """
         print(f"\n{'='*60}")
-        print(f"HTML REPORT VERIFICATION")
+        print("HTML REPORT VERIFICATION")
         print(f"{'='*60}\n")
 
         print(f"HTML File: {self.html_path}")

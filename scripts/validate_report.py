@@ -21,7 +21,6 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import List, Tuple, Dict
 
 # Section requirements per format. Brief keeps the substance, drops the ceremony.
 REQUIRED_SECTIONS = {
@@ -58,13 +57,13 @@ class ReportValidator:
         self.report_path = report_path
         self.format = fmt
         self.content = self._read_report()
-        self.errors: List[str] = []
-        self.warnings: List[str] = []
+        self.errors: list[str] = []
+        self.warnings: list[str] = []
 
     def _read_report(self) -> str:
         """Read report file"""
         try:
-            with open(self.report_path, 'r', encoding='utf-8') as f:
+            with open(self.report_path, encoding='utf-8') as f:
                 return f.read()
         except Exception as e:
             print(f"❌ ERROR: Cannot read report: {e}")
@@ -212,7 +211,7 @@ class ReportValidator:
         for pattern_re, description in truncation_patterns:
             if re.search(pattern_re, bib_section, re.IGNORECASE):
                 self.errors.append(f"⚠️ CRITICAL: Bibliography contains truncation placeholder: {description}")
-                self.errors.append(f"   This makes the report UNUSABLE - complete bibliography required")
+                self.errors.append("   This makes the report UNUSABLE - complete bibliography required")
                 return False
 
         # Count bibliography entries [1], [2], etc.
@@ -289,7 +288,7 @@ class ReportValidator:
         for pattern_re, description in truncation_patterns:
             if re.search(pattern_re, self.content, re.IGNORECASE):
                 self.errors.append(f"⚠️ CRITICAL: Content truncation detected: {description}")
-                self.errors.append(f"   Report is INCOMPLETE and UNUSABLE - regenerate with progressive assembly")
+                self.errors.append("   Report is INCOMPLETE and UNUSABLE - regenerate with progressive assembly")
                 return False
 
         return True
@@ -350,7 +349,7 @@ class ReportValidator:
     def _print_summary(self):
         """Print validation summary"""
         print(f"\n{'='*60}")
-        print(f"VALIDATION SUMMARY")
+        print("VALIDATION SUMMARY")
         print(f"{'='*60}\n")
 
         if self.errors:

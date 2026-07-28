@@ -7,11 +7,10 @@ Properly converts markdown sections to HTML while preserving structure and forma
 from __future__ import annotations
 
 import re
-from typing import Tuple
 from pathlib import Path
 
 
-def convert_markdown_to_html(markdown_text: str) -> Tuple[str, str]:
+def convert_markdown_to_html(markdown_text: str) -> tuple[str, str]:
     """
     Convert markdown to HTML in two parts: content and bibliography
 
@@ -148,7 +147,7 @@ def _convert_lists(html: str) -> str:
     in_list = False
     list_level = 0
 
-    for i, line in enumerate(lines):
+    for line in lines:
         stripped = line.strip()
 
         # Check for unordered list item
@@ -204,7 +203,7 @@ def _convert_tables(html: str) -> str:
     result = []
     in_table = False
 
-    for i, line in enumerate(lines):
+    for line in lines:
         if '|' in line and line.strip().startswith('|'):
             if not in_table:
                 result.append('<table>')
@@ -282,17 +281,13 @@ def _convert_paragraphs(html: str) -> str:
 
 def _close_sections(html: str) -> str:
     """Close all open section divs"""
-    # Count open and closed divs
-    open_divs = html.count('<div class="section">')
-    closed_divs = html.count('</div>')
-
     # Add closing divs for sections
     # Each section should be closed before the next section starts
     lines = html.split('\n')
     result = []
     section_open = False
 
-    for i, line in enumerate(lines):
+    for line in lines:
         if '<div class="section">' in line:
             if section_open:
                 result.append('</div>')  # Close previous section

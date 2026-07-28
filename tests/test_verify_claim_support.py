@@ -145,7 +145,7 @@ class TestVerifyMixed(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_speculation_passes(self):
-        out = run_vcs('verify', '--dir', self.tmpdir)
+        run_vcs('verify', '--dir', self.tmpdir)
         # Speculation doesn't need evidence
         claims = []
         with open(os.path.join(self.tmpdir, 'claims.jsonl')) as f:
@@ -188,7 +188,7 @@ class TestVerifyPartial(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_partial_support(self):
-        out = run_vcs('verify', '--dir', self.tmpdir)
+        run_vcs('verify', '--dir', self.tmpdir)
         claims = []
         with open(os.path.join(self.tmpdir, 'claims.jsonl')) as f:
             for line in f:

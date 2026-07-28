@@ -21,8 +21,6 @@ import os
 import re
 import sys
 from collections import Counter
-from datetime import datetime, timezone
-
 
 # ---------------------------------------------------------------------------
 # JSONL helpers
@@ -176,11 +174,9 @@ def cmd_verify(args: argparse.Namespace) -> None:
     """Verify all claims against evidence, update claims.jsonl."""
     claims_path = os.path.join(args.dir, 'claims.jsonl')
     evidence_path = os.path.join(args.dir, 'evidence.jsonl')
-    sources_path = os.path.join(args.dir, 'sources.jsonl')
 
     claims = read_jsonl(claims_path)
     evidence = read_jsonl(evidence_path)
-    sources = read_jsonl(sources_path)
 
     # Build evidence index by source_id
     ev_by_source: dict[str, list[str]] = {}

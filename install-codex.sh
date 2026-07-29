@@ -30,6 +30,13 @@ for src in "$SCRIPT_DIR"/skills/*/; do
   target="$SKILLS_ROOT/$name"
   echo "Installing '$name' -> $target"
   mkdir -p "$target"
+  # Clear what a previous install left before linking what this one needs.
+  # Without this, a directory removed upstream survives as a symlink to a path
+  # that no longer exists - which is exactly what happened to schemas/ when the
+  # skill was rebuilt. A dangling link fails more confusingly than a missing
+  # file, because it still looks installed. Only symlinks are removed, so a
+  # real SKILL.md is never at risk.
+  find "$target" -mindepth 1 -maxdepth 1 -type l -exec rm -f {} +
   # Every directory SKILL.md can reference, not just scripts: the reference
   # docs, templates and schemas are all addressed via ${CLAUDE_SKILL_DIR},
   # so each one has to exist under the rewritten path too.

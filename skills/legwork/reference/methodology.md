@@ -1,447 +1,197 @@
-# Legwork Methodology: 8-Phase Pipeline
+# Methodology
 
-## Overview
-
-This document contains the detailed methodology for conducting deep research. The 8 phases represent a comprehensive approach to gathering, verifying, and synthesizing information from multiple sources.
-
----
-
-## Phase 1: SCOPE - Research Framing
-
-**Objective:** Define research boundaries and success criteria
-
-**Activities:**
-1. Decompose the question into core components
-2. Identify stakeholder perspectives
-3. Define scope boundaries (what's in/out)
-4. Establish success criteria
-5. List key assumptions to validate
-
-**Ultrathink Application:** Use extended reasoning to explore multiple framings of the question before committing to scope.
-
-**Output:** Structured scope document with research boundaries
+Four phases. Read this at the start of a run; the level table in `SKILL.md` says
+which parts apply.
 
 ---
 
-## Phase 2: PLAN - Strategy Formulation
+## Phase 1: Frame
 
-**Objective:** Create an intelligent research roadmap
+Turn the request into three things. Write them down before searching, because
+everything downstream keys off them.
 
-**Activities:**
-1. Identify primary and secondary sources
-2. Map knowledge dependencies (what must be understood first)
-3. Create search query strategy with variants
-4. Plan triangulation approach
-5. Estimate time/effort per phase
-6. Define quality gates
+### 1. The decision
 
-**Graph-of-Thoughts:** Branch into multiple potential research paths, then converge on optimal strategy.
+Not the topic. The decision. "Outlook triage" is a topic; "should we build
+Outlook triage for small accounting practices, or is the gap too narrow" is a
+decision. If the user gave you a topic, infer the decision from context and state
+your inference in the Introduction rather than asking.
 
-**Output:** Research plan with prioritized investigation paths
+### 2. The sub-questions that would settle it
 
----
+Between two and eight, depending on level. Each must be answerable by evidence,
+and each becomes an **angle** recorded against every source it surfaces.
 
-## Phase 3: RETRIEVE - Parallel Information Gathering
+Good sub-questions are independent lines of enquiry, not rephrasings. "What does
+the incumbent charge" and "what do buyers say they will pay" are two angles.
+"What is the price" and "how much does it cost" are one angle asked twice, and
+counting them separately is how a run fools itself into thinking it has
+corroboration.
 
-**Objective:** Systematically collect information from multiple sources using parallel execution for maximum speed
+### 3. What would change the answer
 
-**CRITICAL: Execute ALL searches in parallel using a single message with multiple tool calls**
+Name the falsifiers explicitly. "If the platform ships this natively, the gap
+closes." "If practices already pay more than we assumed, the ceiling argument
+dies."
 
-### Query Decomposition Strategy
+This is the most valuable output of the phase. It gives Challenge something
+concrete to hunt for, and it becomes the substance of the Limitations section
+instead of generic hedging.
 
-Before launching searches, decompose the research question into 5-10 independent search angles:
-
-1. **Core topic (semantic search)** - Meaning-based exploration of main concept
-2. **Technical details (keyword search)** - Specific terms, APIs, implementations
-3. **Recent developments (date-filtered)** - What's new in last 12-18 months (use current date from Step 0)
-4. **Academic sources (domain-specific)** - Papers, research, formal analysis
-5. **Alternative perspectives (comparison)** - Competing approaches, criticisms
-6. **Statistical/data sources** - Quantitative evidence, metrics, benchmarks
-7. **Industry analysis** - Commercial applications, market trends
-8. **Critical analysis/limitations** - Known problems, failure modes, edge cases
-
-### Parallel Execution Protocol
-
-**Step 0: Get the current date**
-
-Before ANY searches, retrieve today's date using Bash: `date +%Y-%m-%d`
-Use the returned year for all date-filtered queries and recency checks. Do NOT assume a year from training data.
-
-**Step 1: Launch ALL searches concurrently (single message)**
-
-**CRITICAL: Use correct tool and parameters to avoid errors**
-
-**Primary: WebSearch + WebFetch (built-in, free - always use first)**
-- `WebSearch` for all query-based retrieval: `query` (required), optional `allowed_domains`, `blocked_domains`
-- `WebFetch` for reading specific pages surfaced by search
-- Fire all query variants concurrently in a single message
-- Prefer snippets over full-page fetches where a snippet establishes the claim (see SKILL.md Token Efficiency Policy)
-
-**Fallback: bd_search.py - Bright Data SERP API + Web Unlocker (paid - use only when built-ins fail)**
-
-Use when: `WebFetch` is blocked/paywalled on a needed page, the URL is a Reddit thread, you need geo/vertical SERP (`--country`, news, images), or WebSearch coverage stays thin after 2-3 query variants. Every call is billed - never use it where a built-in would have worked.
-
-- Single Python wrapper bundled with this skill. Invoke by absolute path via the Bash tool - do NOT rely on a `search` binary on $PATH
-- Wrapper path: `python3 ${CLAUDE_SKILL_DIR}/scripts/bd_search.py`
-- JSON output for structured processing: `python3 ${CLAUDE_SKILL_DIR}/scripts/bd_search.py "query" --json`
-- Search modes (SERP API): general, news, academic, scholar, patents, people, images
-- Content modes (Web Unlocker): extract, scrape (positional arg MUST be a URL, not a query)
-- Pipeline mode (Bright Data structured datasets, billed per record): `reddit` (URL must contain reddit.com)
-- Example: `python3 ${CLAUDE_SKILL_DIR}/scripts/bd_search.py "quantum computing 2026" -m academic --json -c 15`
-- For page content: `python3 ${CLAUDE_SKILL_DIR}/scripts/bd_search.py "https://example.com/article" -m scrape --json`
-- **Reddit URLs:** use `-m reddit` instead of `-m scrape`. The default Unlocker zone blocks reddit.com under robots.txt; the `reddit_posts` pipeline returns structured JSON (post + comments + scores) and is the only path that works without an account-manager unlock. Slower (10-60s typical, can be minutes) and billed per record, so prefer top-relevance threads and don't dump entire subreddits.
-- **Trustpilot URLs:** do NOT scrape - same Unlocker block, and there is no pipeline equivalent. Use SERP snippets (`-m general "site:trustpilot.com <query>"`) to capture general sentiment; quote only what the snippet shows.
-- Result ordering = Google SERP rank. Final relevance ranking is applied DOWNSTREAM by `source_evaluator.py` (deterministic credibility scoring) - no neural/semantic ranker is required
-- Credentials: handled by the Bright Data CLI itself (`brightdata login`, or `BRIGHTDATA_API_KEY` env var). The wrapper just shells out.
-- On any non-zero exit, the wrapper has failed cleanly: return to the built-in WebSearch/WebFetch path
-- **If the wrapper's stderr JSON contains an auth/quota error** (exit code 2, or a message about authentication / API key / quota / Web Unlocker zone), tell the user to run `brightdata login` (or `${CLAUDE_SKILL_DIR}/setup.sh --reset`) before retrying Bright Data. The built-ins keep the run going in the meantime.
-- Cap scraped content with `--max-chars 8000` unless more is specifically needed
-
-**Optional: Exa MCP (if configured, for semantic/neural search)**
-- Tool name: `mcp__Exa__exa_search`
-- Use for semantic exploration alongside bd_search.py keyword results
-
-
-**NEVER mix parameter styles** - this causes "Invalid tool parameters" errors.
-
-**Step 2: Spawn parallel deep-dive agents**
-
-Use Task tool with general-purpose agents (3-5 agents) for:
-- Academic paper analysis (PDFs, detailed extraction)
-- Documentation deep dives (technical specs, API docs)
-- Repository analysis (code examples, implementations)
-- Specialized domain research (requires multi-step investigation)
-
-**Model:** spawn every deep-dive agent on the cheaper `haiku` model (`model="haiku"`). These agents fetch pages and extract structured evidence - mechanical, high-volume work that does not need the premium orchestrator model. Do not let them inherit the main-session model.
-
-**Sub-agent output format:** Require all sub-agents to return structured evidence, not free text:
-```json
-{"claim": "specific claim text", "evidence_quote": "exact quote from source", "source_url": "https://...", "source_title": "...", "confidence": 0.85}
-```
-This prevents synthesis fatigue when merging results from 3-5 agents.
-
-**Evidence persistence (v3.0):** After each retrieval batch, persist evidence immediately:
-```bash
-# Register the source first (returns stable source_id)
-python scripts/citation_manager.py register-source --json '{"raw_url": "...", "title": "..."}' --dir [folder]
-
-# Then persist each evidence span from that source
-python scripts/evidence_store.py add --json '{"source_id": "...", "quote": "exact text", "evidence_type": "direct_quote", "locator": "page 5"}' --dir [folder]
-```
-Evidence must not live only in model context - it must be persisted to `evidence.jsonl` before synthesis begins. This ensures continuation agents and claim-support verification can access the full evidence trail.
-
-**Example parallel execution (built-in tools, default path):**
-```
-[Single message with multiple tool calls]
-- WebSearch(query="quantum computing 2026 state of the art")
-- WebSearch(query="quantum computing limitations challenges")
-- WebSearch(query="quantum computing commercial applications 2026")
-- WebSearch(query="quantum computing vs classical comparison")
-- WebSearch(query="quantum error correction research", allowed_domains=["arxiv.org", "nature.com"])
-- Task(subagent_type="general-purpose", model="haiku", description="Analyze quantum computing papers", prompt="Deep dive into quantum computing academic papers from [CURRENT_YEAR], extract key findings and methodologies")
-- Task(subagent_type="general-purpose", model="haiku", description="Industry analysis", prompt="Analyze quantum computing industry reports and market data, identify commercial applications")
-- Task(subagent_type="general-purpose", model="haiku", description="Technical challenges", prompt="Extract technical limitations and challenges from quantum computing research")
-```
-
-**Example parallel execution (using Exa MCP - if available):**
-```
-[Single message with multiple tool calls]
-- mcp__Exa__exa_search(query="quantum computing state of the art", type="neural", num_results=10, start_published_date="[use current year from Step 0]")
-- mcp__Exa__exa_search(query="quantum computing limitations", type="keyword", num_results=10)
-- mcp__Exa__exa_search(query="quantum computing commercial", type="auto", num_results=10, start_published_date="[use current year from Step 0]")
-- mcp__Exa__exa_search(query="quantum error correction", type="neural", num_results=10, include_domains=["arxiv.org"])
-- Task(subagent_type="general-purpose", model="haiku", description="Academic analysis", prompt="Analyze quantum computing academic papers")
-```
-
-**Step 3: Collect and organize results**
-
-As results arrive:
-1. Extract key passages with source metadata (title, URL, date, credibility)
-2. Track information gaps that emerge
-3. Follow promising tangents with additional targeted searches
-4. Maintain source diversity (mix academic, industry, news, technical docs)
-5. Monitor for quality threshold (see FFS pattern below)
-
-### First Finish Search (FFS) Pattern
-
-**Adaptive completion based on quality threshold:**
-
-**Quality gate:** Proceed to Phase 4 when FIRST threshold reached:
-- **Quick mode:** 10+ sources with avg credibility >60/100 OR 2 minutes elapsed
-- **Standard mode:** 15+ sources with avg credibility >60/100 OR 5 minutes elapsed
-- **Deep mode:** 25+ sources with avg credibility >70/100 OR 10 minutes elapsed
-- **UltraDeep mode:** 30+ sources with avg credibility >75/100 OR 15 minutes elapsed
-
-**Continue background searches:**
-- If threshold reached early, continue remaining parallel searches in background
-- Additional sources used in Phase 5 (SYNTHESIZE) for depth and diversity
-- Allows fast progression without sacrificing thoroughness
-
-### Quality Standards
-
-**Source diversity requirements:**
-- Minimum 3 source types (academic, industry, news, technical docs)
-- Temporal diversity (mix of recent 12-18 months + foundational older sources)
-- Perspective diversity (proponents + critics + neutral analysis)
-- Geographic diversity (not just US sources)
-
-**Credibility tracking:**
-- Score each source 0-100 using source_evaluator.py
-- Flag low-credibility sources (<40) for additional verification
-- Prioritize high-credibility sources (>80) for core claims
-
-**Techniques:**
-- Use WebSearch for all searches (primary, free) and WebFetch for deep dives into specific sources
-- Fall back to bd_search.py (Bright Data, paid) when WebFetch is blocked, the target is Reddit, geo/vertical SERP is needed, or WebSearch coverage stays thin
-- Semantic/neural exploration is OPTIONAL, not required - ranking is handled by source_evaluator.py downstream
-- Use Grep/Read for local documentation
-- Execute code for computational analysis (when needed)
-- Use Task tool to spawn parallel retrieval agents (3-5 agents) on the cheaper `haiku` model (`model="haiku"`)
-
-**Output:** Organized information repository with source tracking, credibility scores, and coverage map
+At **quick** level, skip the falsifiers. At **deep**, add second-order angles:
+who has tried this before and what happened, what the incumbent would do in
+response, what the adjacent market says.
 
 ---
 
-## Phase 4: TRIANGULATE - Cross-Reference Verification
+## Phase 2: Gather
 
-**Objective:** Validate information across multiple independent sources
+Work sub-question by sub-question. For each one:
 
-**Activities:**
-1. Identify claims requiring verification
-2. Cross-reference facts across 3+ sources
-3. Flag contradictions or uncertainties
-4. Assess source credibility
-5. Note consensus vs. debate areas
-6. Document verification status per claim
+1. Search with the built-in `WebSearch`.
+2. Decide which results are worth opening. Snippets are often enough to establish
+   a claim and a source; only fetch in full the sources that will anchor a
+   finding.
+3. `WebFetch` those. If a fetch fails and the page genuinely matters, fall back
+   to `bd_search.py`.
+4. **Log every retrieval** with `sources.py log`, giving the sub-question as
+   `--angle`, the correct `--kind`, and - for anything you intend to cite - the
+   sentence that made it worth citing as `--quote`.
 
-**Quality Standards:**
-- Core claims must have 3+ independent sources
-- Flag any single-source information
-- Note recency of information
-- Identify potential biases
+### Capture the quote as you read, not afterwards
 
-**Output:** Verified fact base with confidence levels
+The quote is the sentence you would point at if someone asked "what makes you say
+that". Take it at the moment you decide the source is worth citing; reconstructing
+it later means refetching, and in six months the page may not say the same thing
+or exist at all.
 
----
+Around half of real findings carry no figure, so for those the quote is the only
+evidence recorded. The gate fails a finding that has neither a traceable figure
+nor a quote on any of its cited sources - not because the finding is wrong, but
+because nothing about it can be checked.
 
-## Phase 4.5: OUTLINE REFINEMENT - Dynamic Evolution (WebWeaver 2025)
+### Getting the source kind right
 
-**Objective:** Adapt research direction based on evidence discovered
+`sources.py kinds` prints the vocabulary and which claims each kind suits. The
+kind is inferred from the URL when omitted, but inference returns `unknown` for
+anything it does not recognise, and `unknown` scores below commentary. Pass
+`--kind` when you know.
 
-**Problem Solved:** Prevents "locked-in" research when evidence points to different conclusions or uncovers more important angles than initially planned.
+The distinction that matters most is **vendor primary versus vendor marketing**.
+A pricing page and a "why customers love us" page are both on the vendor's
+domain; one is the best evidence available for what something costs, the other is
+the worst evidence available for whether it is any good.
 
-**When to Execute:**
-- **Standard/Deep/UltraDeep modes only** (Quick mode skips this)
-- After Phase 4 (TRIANGULATE) completes
-- Before Phase 5 (SYNTHESIZE)
+### Depth changes what you reach for, not how much you write
 
-**Activities:**
+- **quick**: SERP snippets. Fetch only to pin a specific figure.
+- **standard**: direct-fetch the top sources per finding.
+- **deep**: get a primary source for every finding. The vendor's own pricing
+  page, not the analyst's summary of it. The filing, not the article about the
+  filing. This is where Bright Data usage rises, because primary sources are
+  disproportionately the ones that block you.
 
-1. **Review Initial Scope vs. Actual Findings**
-   - Compare Phase 1 scope with Phase 3-4 discoveries
-   - Identify unexpected patterns or contradictions
-   - Note underexplored angles that emerged as critical
-   - Flag overexplored areas that proved less important
+### Stop conditions
 
-2. **Evaluate Outline Adaptation Need**
-
-   **Signals for adaptation (ANY triggers refinement):**
-   - Major findings contradict initial assumptions
-   - Evidence reveals more important angle than originally scoped
-   - Critical subtopic emerged that wasn't in original plan
-   - Original research question was too broad/narrow based on evidence
-   - Sources consistently discuss aspects not in initial outline
-
-   **Signals to keep current outline:**
-   - Evidence aligns with initial scope
-   - All key angles adequately covered
-   - No major gaps or surprises
-
-3. **Refine Outline (if needed)**
-
-   **Update structure to reflect evidence:**
-   - Add sections for unexpected but important findings
-   - Demote/remove sections with insufficient evidence
-   - Reorder sections based on evidence strength and importance
-   - Adjust scope boundaries based on what's actually discoverable
-
-   **Example adaptation:**
-   ```
-   Original outline:
-   1. Introduction
-   2. Technical Architecture
-   3. Performance Benchmarks
-   4. Conclusion
-
-   Refined after Phase 4 (evidence revealed security as critical):
-   1. Introduction
-   2. Technical Architecture
-   3. **Security Vulnerabilities (NEW - major finding)**
-   4. Performance Benchmarks (demoted - less critical than expected)
-   5. **Real-World Failure Modes (NEW - pattern emerged)**
-   6. Synthesis & Recommendations
-   ```
-
-4. **Targeted Gap Filling (if major gaps found)**
-
-   If outline refinement reveals critical knowledge gaps:
-   - Launch 2-3 targeted searches for newly identified angles
-   - Quick retrieval only (don't restart full Phase 3)
-   - Time-box to 2-5 minutes
-   - Update triangulation for new evidence only
-
-5. **Document Adaptation Rationale**
-
-   Record in methodology appendix:
-   - What changed in outline
-   - Why it changed (evidence-driven reasons)
-   - What additional research was conducted (if any)
-
-**Quality Standards:**
-- Adaptation must be evidence-driven (cite specific sources that prompted change)
-- No more than 50% outline restructuring (if more needed, scope was severely mis scoped)
-- Retain original research question core (don't drift into different topic entirely)
-- New sections must have supporting evidence already gathered
-
-**Output:** Refined outline that accurately reflects evidence landscape, ready for synthesis
-
-**Anti-Pattern Warning:**
-- ❌ DON'T adapt outline based on speculation or "what would be interesting"
-- ❌ DON'T add sections without supporting evidence already in hand
-- ❌ DON'T completely abandon original research question
-- ✅ DO adapt when evidence clearly indicates better structure
-- ✅ DO document rationale for changes
-- ✅ DO stay within original topic scope
+Stop gathering on a sub-question when a further search returns nothing new, or
+when the sub-question is answered by primary evidence. Do not gather to a quota.
 
 ---
 
-## Phase 5: SYNTHESIZE - Deep Analysis
+## Phase 3: Challenge
 
-**Objective:** Connect insights and generate novel understanding
+A finding that has only been supported has not been tested.
 
-**Activities:**
-1. Identify patterns across sources
-2. Map relationships between concepts
-3. Generate insights beyond source material
-4. Create conceptual frameworks
-5. Build argument structures
-6. Develop evidence hierarchies
+### Look for the disconfirming case
 
-**Ultrathink Integration:** Use extended reasoning to explore non-obvious connections and second-order implications.
+For each finding, run at least one search designed to find evidence **against**
+it, using the falsifiers from Phase 1. Search the negative directly: "X
+limitations", "why we stopped using X", "X alternatives", "X price increase".
 
-**Output:** Synthesized understanding with insight generation
+If disconfirming evidence exists it belongs inside the finding, not in a caveats
+paragraph at the end. A finding that survives a real attempt to break it is worth
+more than one that was never attacked, and the reader should be able to see the
+attempt.
 
----
+At **quick** level this phase is grouping only, no searches.
 
-## Phase 6: CRITIQUE - Quality Assurance
-
-**Objective:** Rigorously evaluate research quality
-
-**Activities:**
-1. Review for logical consistency
-2. Check citation completeness
-3. Identify gaps or weaknesses
-4. Assess balance and objectivity
-5. Verify claims against sources
-6. Test alternative interpretations
-
-**Red Team Questions:**
-- What's missing?
-- What could be wrong?
-- What alternative explanations exist?
-- What biases might be present?
-- What counterfactuals should be considered?
-
-**Persona-Based Critique (Deep/UltraDeep only):**
-Simulate 2-3 specific critic personas relevant to the topic:
-- "Skeptical Practitioner" - Would someone doing this daily trust these findings?
-- "Adversarial Reviewer" - What would a peer reviewer reject?
-- "Implementation Engineer" - Can these recommendations actually be executed?
-
-**Claim-Support Verification (Deep/UltraDeep only - this is the phase that runs it):**
-
-Deep and ultradeep runs must mechanically verify that every factual claim in the draft
-is backed by a persisted evidence span, not just by a citation marker:
+### Group the sources
 
 ```bash
-python scripts/extract_claims.py --report [path] --dir [folder]   # -> claims.jsonl
-python scripts/verify_claim_support.py --dir [folder]             # -> support_status per claim
+python3 ${CLAUDE_SKILL_DIR}/scripts/independence.py groups --tsv "$OUT/$BASE.tsv"
 ```
 
-Any claim coming back `unsupported` is a blocker: either retrieve + persist the missing
-evidence (delta-query, below) or soften/remove the claim. Re-run until clean. Quick and
-standard modes skip this entirely - see reference/quality-gates.md for the mode policy.
+Three things collapse into one voice: the same page reached twice, every page on
+one party's own domains, and near-duplicate headlines across outlets. What comes
+out is the number of **independent groups** actually behind the work.
 
-**Critical Gap Loop-Back:**
-If critique identifies a critical knowledge gap (not just a writing issue), return to Phase 3 with targeted "delta-queries" before proceeding to Phase 7. Time-box to 3-5 minutes. This prevents publishing reports with known blind spots. An `unsupported` claim from the check above is exactly such a gap.
+### Check corroboration per finding
 
-**Output:** Critique report with improvement recommendations; clean `claims.jsonl` (deep/ultradeep)
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/independence.py check \
+  --tsv "$OUT/$BASE.tsv" --urls "https://a.example/x,https://b.example/y" --min 2
+```
 
----
+Corroboration is the number of independent groups reached from **different
+angles**. Five sources from one line of enquiry score 1, however many distinct
+publishers they span, because our own fan-out produced all five.
 
-## Phase 7: REFINE - Iterative Improvement
+If a finding you believed was strong scores 1, that is the system working. Either
+go and find a genuinely different angle, or downgrade the confidence.
 
-**Objective:** Address gaps and strengthen weak areas
+### At deep level: the origin audit
 
-**Activities:**
-1. Conduct additional research for gaps
-2. Strengthen weak arguments
-3. Add missing perspectives
-4. Resolve contradictions
-5. Enhance clarity
-6. Verify revised content
-
-**Output:** Strengthened research with addressed deficiencies
-
----
-
-## Phase 8: PACKAGE - Report Generation
-
-**Objective:** Deliver professional, actionable research
-
-**Activities:**
-1. Structure report with clear hierarchy
-2. Write executive summary
-3. Develop detailed sections
-4. Create visualizations (tables, diagrams)
-5. Compile full bibliography
-6. Add methodology appendix
-
-**Output:** Complete research report ready for use
+For any finding claiming Strong, check whether the corroborating sources trace
+back to a single origin. Three articles citing the same analyst estimate is one
+estimate. Grouping catches near-duplicate headlines but not "everyone is quoting
+the same figure from the same place", so read the sources and see where the
+number came from.
 
 ---
 
-## Advanced Features
+## Phase 4: Write
 
-### Graph-of-Thoughts Reasoning
+Pick the format (`SKILL.md` says which per level), then write section by section,
+each write under roughly 2,000 words so no single tool call risks truncation.
 
-Rather than linear thinking, branch into multiple reasoning paths:
-- Explore alternative framings in parallel
-- Pursue tangential leads that might be relevant
-- Merge insights from different branches
-- Backtrack and revise as new information emerges
+### Findings carry their own claim
 
-### Parallel Agent Deployment
+`### Finding 3: Microsoft is the biggest risk, but the gate is 96% wide` is worth
+more than `### Finding 3: Platform risk`. State the finding in the heading; the
+section then supports it.
 
-Use Task tool to spawn sub-agents (on the cheaper `haiku` model - `model="haiku"`) for:
-- Parallel source retrieval
-- Independent verification paths
-- Competing hypothesis evaluation
-- Specialized domain analysis
+### Assign confidence honestly
 
-### Adaptive Depth Control
+The band follows from the evidence, not from how much you would like the finding
+to be true:
 
-Automatically adjust research depth based on:
-- Information complexity
-- Source availability
-- Time constraints
-- Confidence levels
+| Band | Requires |
+|---|---|
+| **Strong** | Primary-tier evidence for the central claim, and corroboration of 2 or more |
+| **Moderate** | Primary evidence but a single group, or secondary evidence with corroboration of 2 or more |
+| **Weak** | Commentary only, or everything traces to one origin |
+| Below floor | Nothing above marketing or hearsay tier, or the only voice is the subject describing itself |
 
-### Citation Intelligence
+Below-floor material does not become a finding. It can be a sentence in
+Limitations.
 
-Smart citation management:
-- Track provenance of every claim
-- Link to original sources
-- Assess source credibility
-- Handle conflicting sources
-- Generate proper bibliographies
+If **every** finding is below floor, write the "could not answer" shape described
+in `SKILL.md`. Naming the closest sub-floor signal matters: it tells the reader
+the search actually ran, and it usually suggests the narrower question that would
+work.
+
+### Citation discipline
+
+- Every factual claim carries `[N]` in the same sentence.
+- Never write "research suggests", "studies show" or "experts believe". Name the
+  source or drop the claim.
+- Label inference as inference. "This suggests" is fine; presenting it as fact is
+  not.
+- If you could not find something, say so. "No source addresses X directly" is a
+  finding. A fabricated citation is a defect the gate will catch anyway.
+- Prose first. Bullets are for genuine lists, not for delivering content.
+
+### Then gate it
+
+Run `check.py` at your level, fix what it reports, re-run. After two failed
+cycles, stop and tell the user what is wrong rather than continuing to patch.

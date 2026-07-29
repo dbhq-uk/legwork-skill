@@ -12,7 +12,7 @@ Search modes (general/news/images, plus aliases scholar/academic/patents/people
 which the CLI doesn't support natively and so fall through to web search) call
 `brightdata search`. Content modes (extract/scrape) + a URL call
 `brightdata scrape -f markdown`. The `reddit` mode + a reddit.com URL calls
-`brightdata pipelines reddit_posts` instead — required because the default
+`brightdata pipelines reddit_posts` instead - required because the default
 Unlocker zone blocks reddit.com under robots.txt. Output is always JSON on
 stdout; errors go to stderr with a non-zero exit so the skill falls back to
 built-in WebSearch.

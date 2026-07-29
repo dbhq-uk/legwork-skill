@@ -1,27 +1,16 @@
-# Research Report: Bad Report
+# A report that must not pass
 
 ## Executive Summary
 
-This is too short.
+Findings are summarised below. TODO: tighten this.
 
-**Primary Recommendation:** TBD
+## Findings
 
-**Confidence Level:** High
+### Finding 1: Something is true
 
----
+Content continues in the full version.
 
-## Introduction
+## Bibliography
 
-Missing methodology section.
-
----
-
-## Main Analysis
-
-No citations here [99].
-
----
-
-## Limitations & Caveats
-
-Some limitations TODO.
+[1] Someone (2026). "A thing". https://example.com/a
+[3-9] Additional citations would be included here.

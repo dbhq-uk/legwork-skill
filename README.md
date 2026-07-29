@@ -16,19 +16,21 @@ A free, open-source tool by [DBHQ](https://dbhq.uk)
 
 ---
 
-Ask a real question, get a findings memo where every factual claim carries an inline `[N]` and the bibliography is complete. Legwork picks a research depth, announces it, and starts - no questionnaire before it will do anything.
+Research that settles a decision. Ask a real question, get a memo where every factual claim carries an inline `[N]`, every finding states how well it is supported, and a claim that cannot be supported does not ship. Legwork picks a level, announces it, and starts - no questionnaire before it will do anything.
 
 ## What makes it different
 
+**A source is judged by the claim it backs, not by its domain.** A vendor's own pricing page is the best evidence available for what something costs and the worst evidence available for whether anyone likes it. Legwork scores fitness per claim kind rather than keeping a list of respectable websites, and recency decays at a rate set by the claim: a two-year-old price is worthless, a two-year-old filing is fine.
+
+**Three sources only count if they could have disagreed.** Pages on one vendor's domains are one voice. Syndicated copies of one wire story are one story. And because Legwork's own search fan-out inflates the number of sources behind a finding, corroboration is counted on the layer it does not amplify: independent groups reached from *different search angles*. Five sources from one query score one confirmation, however many publishers they span.
+
+**It can tell you it could not answer.** If nothing clears the evidence floor, the run says so and names the closest thing it found, rather than producing four thousand hedged words. An honest empty answer is a result.
+
 **Free by default, paid only when needed.** Retrieval runs on the host's built-in `WebSearch` and `WebFetch`. The Bright Data CLI is a *fallback*, used only where the built-ins genuinely cannot do the job - bot-blocked or paywalled pages, Reddit threads, geo-specific SERP. A run against ordinary sources makes **zero** paid calls.
 
-**It does not ask permission to begin.** It infers a mode, says which one it picked, and goes. Redirect it mid-run if it guessed wrong; that costs far less than a blocking question on every research request.
+**It does not ask permission to begin.** It infers a level, says which one it picked, and goes. Redirect it mid-run if it guessed wrong; that costs far less than a blocking question on every research request.
 
-**Cost scales with the question.** A five-minute lookup does not earn a full evidence ledger, a network validation pass, or an eight-section report. A high-stakes one gets all three.
-
-**Brief by default.** The deliverable for quick and standard modes is a findings memo of 800-2,500 words, not a formal report. Brief drops scaffolding, never rigour - every claim still carries its `[N]`.
-
-**The gates are real.** `validate_report.py` will fail a report that does not meet its structural contract, and `verify_claim_support.py` will not let an `unsupported` claim ship in deep mode. The test suite includes a fixture that is *supposed* to fail validation, so the gate is proved to bite rather than assumed to.
+**The gates are real.** `check.py` fails a report that cites a page nobody opened, quotes a figure that appears on no page that was fetched, rests a finding on nothing anyone recorded, or claims strong support from a single line of enquiry. The suite ships fixtures that are *supposed* to fail - one per failure mode - so the gate is proved to bite rather than assumed to.
 
 ## Install
 
@@ -69,30 +71,17 @@ quick: what changed in the EU AI Act in the last six months?
 
 Add `brief` or `full report` to override the deliverable format.
 
-### Modes
+### Levels
 
-| Mode | Duration | Format | Artifacts | Gates |
-|------|----------|--------|-----------|-------|
-| quick | 2-5 min | brief | report only | validate + offline citations |
-| standard **(default)** | 5-10 min | brief | + sources, evidence | validate + offline citations |
-| deep | 10-20 min | report | + claims ledger | + network citations, claim-support |
-| ultradeep | 20-45 min | report | + claims ledger | + network citations, claim-support |
+Depth raises rigour. It never raises length.
+
+| Level | Duration | Format | What the extra effort buys |
+|---|---|---|---|
+| quick | 3-5 min | brief | SERP snippets; fetch only to pin a figure |
+| standard **(default)** | 8-12 min | brief or report | Direct-fetch the top sources per finding; one disconfirming search each |
+| deep | 20-40 min | report | A primary source for every finding, a per-finding disconfirming pass, and an origin audit |
 
 Set a different default with `export LEGWORK_DEFAULT_MODE=deep`.
-
-### Tuning it to your field
-
-The credibility scorer flattens unknown domains to 55/100. Register the ones you actually trust in `~/.legwork/domains.json`:
-
-```json
-{
-  "high": ["mytrustedjournal.org", "internal-wiki.company.com"],
-  "moderate": ["someindustryblog.dev"],
-  "low": ["contentfarm.example"]
-}
-```
-
-These merge over the built-in tiers and apply to subdomains. Your entries win outright - list a built-in "high" domain under `low` and it scores low. Point `$LEGWORK_DOMAINS` elsewhere to override the path.
 
 ## Search backend
 
@@ -106,49 +95,55 @@ These merge over the built-in tiers and apply to subdomains. Your entries win ou
 
 On any failure the wrapper emits JSON to stderr and exits non-zero, and the skill falls back to the built-ins. Auth and quota failures map to exit code `2`, so you are told to re-authenticate rather than left silently degraded.
 
+Scrapes are capped at `--max-chars 8000` by policy (the wrapper's own default is 20000). A research run reads dozens of pages and almost none of them need twenty thousand characters in context to yield the sentence you are after.
+
+Retrieval subagents run on a cheaper model than the orchestrator and return structured evidence only - `{url, kind, angle, date, title, quote}` - never prose, and never a transcript pasted into the synthesis. One agent per search angle, which also keeps the angle attribution honest.
+
 ## Output
 
 Written to `<output-base>/[Topic]_Research_[YYYYMMDD]/`, where `<output-base>` is `$LEGWORK_OUTPUT`, else `<git-root>/docs/research/`, else `$PWD/docs/research/`.
 
-| File | Modes |
-|------|-------|
-| Markdown deliverable (brief or report) | all |
-| `run_manifest.json` | all |
-| `sources.jsonl` - stable source registry (sha256 IDs) | standard+ |
-| `evidence.jsonl` - append-only quotes + locators | standard+ |
-| `claims.jsonl` - claim ledger with support status | deep/ultradeep |
-| HTML / PDF | on explicit request only |
+Two files, sharing the folder's base name so they group and sort together:
 
-Source IDs are content-derived, so they survive renumbering, context compaction and continuation agents. Display numbers `[N]` are assigned at render time and never stored.
+```
+Outlook_Email_SaaS_Research_20260728/
+  Outlook_Email_SaaS_Research_20260728.md     the deliverable
+  Outlook_Email_SaaS_Research_20260728.tsv    the fetch log
+```
+
+**Markdown only.** No HTML, no PDF.
+
+The fetch log is one row per retrieval: URL, source kind, the search angle that surfaced it, how it was retrieved, the numeric tokens found on the page, and one verbatim sentence - the line that made the source worth citing.
+
+That last field earns its place twice. Around **half of real findings carry no figure at all**, so without a quote they would be backed by nothing but proof that somebody opened the page; the gate now fails a finding that has neither a traceable figure nor a quote on any source it cites. And it is the only part of the evidence that survives the page changing or going dead six months later.
 
 ## Scripts
 
 All standard library only, Python 3.9+.
 
+Four of them, all standard library only, Python 3.9+.
+
 | Script | Purpose |
 |--------|---------|
-| `validate_report.py --report P --format brief\|report` | Structural gate (local, no network) |
-| `verify_citations.py --report P [--offline]` | Citation checks. `--offline` is zero-network; the network pass is 8-way concurrent and cached |
-| `citation_manager.py` | `init-run`, `register-source(s)`, `assign-display-numbers`, `export-bibliography` |
-| `evidence_store.py` | `init`, `add`, `add-batch`, `list`, `export` |
-| `source_evaluator.py score` | Credibility scoring and re-ranking; user-extensible domain tiers |
-| `extract_claims.py` → `verify_claim_support.py` | Claim ledger + support verification (deep/ultradeep) |
+| `sources.py kinds \| log \| score` | The source-kind vocabulary, the fetch log, and fitness scoring per claim kind |
+| `independence.py groups \| check` | Collapse sources into independent voices; count angle-aware corroboration |
+| `check.py --report P --level L` | The shippability gate: structural, evidence, independence |
 | `bd_search.py` | Bright Data fallback wrapper |
-| `md_to_html.py`, `verify_html.py` | HTML rendering (on request) |
-
-**Use the batch forms** (`register-sources --jsonl-file`, `add-batch --jsonl-file`): they build the dedup index once instead of spawning a subprocess and rescanning the file per record.
 
 ## Tests
 
 ```bash
-python3 -m pytest skills/legwork/tests/ -v      # 105 tests, no network required
+python3 -m pytest skills/legwork/tests/ -v      # no network required
 ```
 
-CI runs the suite across Python 3.9-3.13, plus an end-to-end smoke job that pushes the shipped fixtures through the real gates, runs a full research lifecycle, and asserts setup succeeds with no Bright Data CLI present.
+CI runs the suite across Python 3.9-3.13, plus an end-to-end smoke job that pushes the shipped fixtures through the real gates in both directions - asserting that sound deliverables pass *and* that each broken one is rejected for its own specific reason - runs a full log-to-gate lifecycle, and asserts setup succeeds with no Bright Data CLI present.
+
+One CI job exists solely to guard the property the independence layer is for: six distinct publishers logged against a single search angle must still fail a corroboration bar of two. A unit test that calls the gate directly cannot catch a gate that never binds in production.
 
 ## Known limitations
 
-- **Publish dates are often missing** from SERP results, which flattens the recency signal to 50/100. Backfill from page meta tags where you have the page anyway.
+- **Publish dates are often missing** from SERP results. Legwork reports an unknown date rather than assuming one, but the recency signal is weaker for those sources. Backfill from page meta tags where you have the page anyway.
+- **Source kinds are inferred conservatively** when you do not pass `--kind`: an unrecognised URL is logged as `unknown` and scored below commentary, because a confident wrong guess silently moves a source between tiers.
 - **The Reddit pipeline is slow** (10-60s typical, occasionally minutes) and billed per record. Prefer top-relevance threads.
 - **Trustpilot cannot be scraped** - the Unlocker zone blocks it and there is no pipeline equivalent. Use SERP snippets and quote only what the snippet shows.
 

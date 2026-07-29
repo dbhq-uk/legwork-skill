@@ -55,7 +55,20 @@ Work sub-question by sub-question. For each one:
 3. `WebFetch` those. If a fetch fails and the page genuinely matters, fall back
    to `bd_search.py`.
 4. **Log every retrieval** with `sources.py log`, giving the sub-question as
-   `--angle` and the correct `--kind`.
+   `--angle`, the correct `--kind`, and - for anything you intend to cite - the
+   sentence that made it worth citing as `--quote`.
+
+### Capture the quote as you read, not afterwards
+
+The quote is the sentence you would point at if someone asked "what makes you say
+that". Take it at the moment you decide the source is worth citing; reconstructing
+it later means refetching, and in six months the page may not say the same thing
+or exist at all.
+
+Around half of real findings carry no figure, so for those the quote is the only
+evidence recorded. The gate fails a finding that has neither a traceable figure
+nor a quote on any of its cited sources - not because the finding is wrong, but
+because nothing about it can be checked.
 
 ### Getting the source kind right
 

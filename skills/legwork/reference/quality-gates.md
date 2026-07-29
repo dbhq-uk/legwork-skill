@@ -51,6 +51,12 @@ judgements about strength, so they inform at standard and block at deep.
   that sentence's cited sources. Bare integers below 10 are skipped as prose
   counts; decimals and percentages are always traced, because those are the
   figures that get transposed.
+- **Every finding rests on something recorded.** A finding must either quote a
+  figure that traces to a fetched page, or cite at least one source carrying a
+  quote in the fetch log. A finding with neither is backed only by proof that
+  somebody opened a page, which is why this check exists: roughly half of real
+  findings carry no figure at all, so figure tracing on its own leaves half the
+  report unchecked.
 - **Every finding states its confidence** on a line of the form
   `**Confidence: Strong|Moderate|Weak** - <one sentence>`.
 
@@ -58,6 +64,11 @@ If the gate reports a figure it cannot trace, the honest fixes are: cite the
 source that actually carries the number, correct the number, or remove it.
 Adding the page to the log without fetching it defeats the only check that
 catches invented sources.
+
+If it reports a finding with no recorded evidence, go back to the source and
+record the sentence you were relying on. Do not invent a quote to satisfy the
+gate - it is the only durable record of what the page said, and a fabricated one
+is worse than none.
 
 ## Independence
 

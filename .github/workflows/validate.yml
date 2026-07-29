@@ -148,6 +148,7 @@ jobs:
           expect_fail tests/fixtures/invalid_report.md     "truncation markers and placeholders"
           expect_fail tests/fixtures/unfetched_citation.md "cites a page that was never fetched"
           expect_fail tests/fixtures/one_origin.md         "strong claim from a single line of enquiry"
+          expect_fail tests/fixtures/no_evidence.md       "finding with neither a traceable figure nor a quote"
 
       - name: Full run lifecycle (log -> score -> group -> gate)
         working-directory: skills/legwork
@@ -160,11 +161,13 @@ jobs:
           python scripts/sources.py log --tsv "$TSV" \
             --url "https://acme.example/pricing" --kind vendor_pricing \
             --angle "what does the incumbent charge" --via webfetch \
-            --date 2026-07-01 --title "Pricing" --text-file "$RUN/page.txt"
+            --date 2026-07-01 --title "Pricing" --text-file "$RUN/page.txt" \
+            --quote "Team plan: 30 US dollars per user per month."
           python scripts/sources.py log --tsv "$TSV" \
             --url "https://forum.example/t/1" --kind community \
             --angle "what do buyers say they pay" --via brightdata \
-            --date 2026-06-01 --title "What we actually pay"
+            --date 2026-06-01 --title "What we actually pay" \
+            --quote "Nobody I know pays over 12 dollars a seat."
 
           python scripts/sources.py kinds >/dev/null
           python scripts/sources.py score --tsv "$TSV" --claim-kind price
@@ -176,6 +179,11 @@ jobs:
           # The numeric tokens must have survived the round trip, or the
           # figure-tracing check in the gate silently passes everything.
           grep -q '1600' "$TSV" || { echo "ERROR: normalised numbers missing from the log"; exit 1; }
+
+          # Around half of real findings carry no figure, so the quote is the
+          # only evidence recorded for them. If it stops round-tripping, those
+          # findings silently become uncheckable.
+          grep -q 'Team plan: 30 US dollars' "$TSV" || { echo "ERROR: quote missing from the log"; exit 1; }
           echo "OK: full lifecycle completed"
 
       - name: Corroboration does not inflate with our own fan-out

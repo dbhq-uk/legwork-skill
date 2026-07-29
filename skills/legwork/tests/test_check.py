@@ -176,3 +176,42 @@ def test_a_finding_section_stops_at_the_next_heading():
         '### Finding 1: A\n\nInside.\n\n## Synthesis\n\nOutside.\n')
     assert 'Inside' in sections[0]['text']
     assert 'Outside' not in sections[0]['text']
+
+
+# ---------------------------------------------------------------------------
+# Quotes. Roughly half of real findings carry no figure at all, so figure
+# tracing alone leaves them checked only by "somebody opened the page".
+# ---------------------------------------------------------------------------
+
+def test_a_finding_with_no_figure_and_no_quote_fails():
+    problems, _ = run('no_evidence.md', level='deep')
+    assert any('rests on no recorded evidence' in error for error in problems.errors)
+
+
+def test_a_quote_is_enough_on_its_own_for_a_qualitative_finding(tmp_path):
+    """No figure anywhere in the finding, but a cited source carries a quote."""
+    import shutil
+    report = tmp_path / 'quoted.md'
+    report.write_text(open(fixture('no_evidence.md'), encoding='utf-8').read(), encoding='utf-8')
+    log = tmp_path / 'quoted.tsv'
+    shutil.copy(fixture('no_evidence.tsv'), log)
+    text = log.read_text(encoding='utf-8').rstrip('\n')
+    log.write_text(text + 'Publishing to the official catalogue is not currently supported.\n',
+                   encoding='utf-8')
+    problems, _ = check.run(str(report), str(log), 'report', 'deep')
+    assert problems.errors == [], problems.errors
+
+
+def test_the_quote_check_is_graded_like_the_others():
+    standard, _ = run('no_evidence.md', level='standard')
+    quick, _ = run('no_evidence.md', level='quick')
+    assert any('no recorded evidence' in w for w in standard.warnings)
+    assert not standard.errors
+    assert not quick.errors
+
+
+def test_a_finding_with_a_traceable_figure_needs_no_quote():
+    """valid_report Finding 1 is carried by figures; the quote check must not
+    double-charge a finding that already traces."""
+    problems, _ = run('valid_report.md', level='deep')
+    assert not any('no recorded evidence' in e for e in problems.errors)

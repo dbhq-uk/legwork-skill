@@ -76,6 +76,11 @@ more of those attempts get blocked, so paid usage rises on its own.
 On exit code 2 (auth or quota), tell the user to run `brightdata login`. Do not
 retry.
 
+**Cap what you pull back.** Pass `--max-chars 8000` on scrape calls unless you
+have a specific reason to need more; the wrapper's own default is 20000. A
+research run reads dozens of pages and almost none of them need 20,000 characters
+in context to yield the sentence you are after.
+
 ## The fetch log
 
 Every retrieval, at every level, appends one row:
@@ -89,6 +94,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py log \
   --via webfetch \
   --date 2026-07-01 \
   --title "Pricing" \
+  --quote "Team plan: 30 US dollars per user per month, billed annually." \
   --text-file /tmp/page.txt
 ```
 
@@ -99,11 +105,37 @@ corroboration. The angle is the layer we do not amplify, so corroboration is
 counted there. **Record the angle honestly** - reusing one angle string across a
 whole run silently destroys the check.
 
+`--quote` is the sentence that made the source worth citing, verbatim, truncated
+at 300 characters. **Record one for every source you intend to cite.** Around half
+of all findings carry no figure at all, so without a quote those findings are
+backed by nothing but proof that somebody opened the page - and the gate will say
+so. It is also the only part of the evidence that survives the page changing or
+going dead six months from now.
+
 `--text-file` extracts the numeric tokens from a fetched page so the gate can
 later confirm that a figure you quote actually appeared on a page you opened. No
-page text is stored.
+page text beyond the quote is stored.
 
 Run `sources.py kinds` for the source kinds and which claims they suit.
+
+## Subagents
+
+Retrieval is the one phase worth parallelising, and it is mechanical, so it does
+not need the orchestrator's model.
+
+- **Spawn retrieval subagents on a cheaper model** (`haiku` or equivalent). Pass
+  the override explicitly every time; never let a subagent inherit the main
+  session's model. `Task(subagent_type="general-purpose", model="haiku", ...)`.
+- **They return structured evidence, never prose.** One JSON object per source:
+  `{url, kind, angle, date, title, quote}`. No narrative summaries, no
+  recommendations, no reasoning.
+- **Never paste a subagent's transcript into your synthesis.** Take its structured
+  return, log each row with `sources.py log`, and work from the log.
+- **The orchestrator keeps scoping, challenge and synthesis.** Those are
+  judgement, and they stay on the main model.
+
+One subagent per search angle is the natural split, and it keeps the angle
+attribution honest because each agent only ever writes its own angle.
 
 ## Scripts
 

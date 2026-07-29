@@ -27,7 +27,7 @@ distribution choice, competitor and pricing scans - turned up five things:
   nothing in the code enforced it, and deduplication was by URL identity, so one
   wire story across five outlets counted as five.
 
-The result is roughly a quarter of the previous line count with more checks, not
+The result is roughly a third of the previous line count with more checks, not
 fewer.
 
 ## Fitness, not authority
@@ -79,7 +79,7 @@ property end to end.
 ## The fetch log
 
 Four sidecar files became one TSV sharing the report's base name. It exists to
-make two checks possible that cannot be done after the fact:
+make three checks possible that cannot be done after the fact:
 
 **Was this cited page ever opened?** A citation to a URL absent from the log is
 fabricated. This replaced a set of heuristics that tried to spot invented
@@ -91,6 +91,40 @@ false positives on a legitimately titled vendor page.
 numeric tokens found on each page, not the page text. That is enough to catch a
 transposed or invented figure, which is the most damaging error this kind of
 research can make, and small enough that the log stays a log.
+
+**What did the page actually say?** One verbatim sentence per source, capped at
+300 characters.
+
+This column was not in the first cut, and leaving it out was the sharpest mistake
+in the redesign. Counting findings across the archived runs, **44% carry no figure
+at all** - one report of eight findings had none. For those, dropping the evidence
+store left the gate checking nothing but "somebody opened this page", where the
+old claim-support pass had done token, entity and year overlap against stored
+quotes. The capability regressed sharply even though the practice barely changed,
+because that pass ran only at deep level and exactly one archived run ever
+produced a claims ledger.
+
+One column restores both halves: a qualitative claim has something recorded behind
+it, and that record survives the page changing or going dead. It costs the log
+roughly 300 bytes a row and keeps it to one file.
+
+## Two policies that nearly went as collateral
+
+The rewrite deleted two `SKILL.md` sections that had nothing to do with the
+academic framing, and it deleted them silently, which is worse than deleting them
+on purpose. Both are back:
+
+**The scrape cap.** `--max-chars 8000` on Bright Data scrapes, against the
+wrapper's own default of 20000. A run reads dozens of pages and almost none need
+twenty thousand characters in context to yield the sentence being quoted.
+
+**The subagent policy.** Retrieval subagents on a cheaper model than the
+orchestrator, returning structured evidence only and never a transcript. This one
+could not have been restored without the quote column, because structured evidence
+had nowhere to go once the evidence store was deleted - which is a reasonable
+illustration of why the store existed in the first place. One agent per search
+angle also keeps the angle attribution honest, since each agent only ever writes
+its own.
 
 ## An honest empty answer is a result
 

@@ -18,16 +18,23 @@ cannot otherwise be answered after the fact:
 
   - was this cited URL ever actually opened?   (fabricated-citation check)
   - which search ANGLE surfaced it?            (corroboration check)
+  - what did it actually SAY?                  (qualitative-claim check)
 
-The second matters more than it looks. Legwork's Gather phase fans out across
+The angle matters more than it looks. Legwork's Gather phase fans out across
 sub-questions in order to find more sources per finding, so a raw source count
 measures our own effort rather than corroboration. The angle is the layer we do
 not amplify, so that is the layer corroboration is counted on.
 
+The quote is the one field that survives its source. Roughly half of real findings
+carry no figure at all, so without it a qualitative claim - "the marketplace has no
+submission route" - would be backed only by proof that somebody opened the page. It
+also means a claim outlives the page changing or going dead.
+
 CLI:
     sources.py kinds
     sources.py log --tsv PATH --url URL --kind KIND --angle "..." --via websearch \\
-                   [--title "..."] [--date 2026-07-01] [--text-file page.txt] [--status ok]
+                   [--quote "..."] [--title "..."] [--date 2026-07-01] \\
+                   [--text-file page.txt] [--status ok]
     sources.py score --tsv PATH --claim-kind price [--format table|json]
 
 Stdlib only. Runs on any python3 >= 3.9.
@@ -171,7 +178,12 @@ RECENCY_FLOOR = 0.55
 # above a demonstrably stale one, and is reported rather than silently assumed.
 RECENCY_UNKNOWN = 0.80
 
-TSV_COLUMNS = ('url', 'kind', 'angle', 'via', 'fetched_at', 'status', 'date', 'numbers', 'title')
+# 'quote' is last so a log written before it existed still parses positionally.
+TSV_COLUMNS = ('url', 'kind', 'angle', 'via', 'fetched_at', 'status', 'date', 'numbers', 'title', 'quote')
+
+# One sentence, not a page. Long enough to carry a qualitative claim, short
+# enough that the log stays a log.
+MAX_QUOTE_CHARS = 300
 
 VIA_VALUES = ('websearch', 'webfetch', 'brightdata')
 
@@ -450,8 +462,10 @@ def cmd_log(args):
         'date': args.date or '',
         'numbers': ','.join(numbers),
         'title': args.title or '',
+        'quote': (args.quote or '')[:MAX_QUOTE_CHARS],
     })
-    print(json.dumps({'status': 'logged', 'url': args.url, 'kind': kind, 'numbers': len(numbers)}))
+    print(json.dumps({'status': 'logged', 'url': args.url, 'kind': kind,
+                      'numbers': len(numbers), 'quoted': bool(args.quote)}))
 
 
 def cmd_score(args):
@@ -490,6 +504,9 @@ def main():
     p_log.add_argument('--angle', required=True, help='The sub-question this retrieval was answering')
     p_log.add_argument('--via', required=True, choices=list(VIA_VALUES))
     p_log.add_argument('--status', default='ok')
+    p_log.add_argument('--quote', default='',
+                       help='The sentence that made this source worth citing, verbatim. '
+                            'Truncated at {} characters.'.format(MAX_QUOTE_CHARS))
     p_log.add_argument('--title', default='')
     p_log.add_argument('--date', default='', help='Publication date of the source, ISO-8601')
     p_log.add_argument('--text-file', default=None, help='File of fetched page text; numeric tokens are extracted')

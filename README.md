@@ -30,7 +30,7 @@ Research that settles a decision. Ask a real question, get a memo where every fa
 
 **It does not ask permission to begin.** It infers a level, says which one it picked, and goes. Redirect it mid-run if it guessed wrong; that costs far less than a blocking question on every research request.
 
-**The gates are real.** `check.py` fails a report that cites a page nobody opened, quotes a figure that appears on no page that was fetched, or claims strong support from a single line of enquiry. The suite ships fixtures that are *supposed* to fail, so the gate is proved to bite rather than assumed to.
+**The gates are real.** `check.py` fails a report that cites a page nobody opened, quotes a figure that appears on no page that was fetched, rests a finding on nothing anyone recorded, or claims strong support from a single line of enquiry. The suite ships fixtures that are *supposed* to fail - one per failure mode - so the gate is proved to bite rather than assumed to.
 
 ## Install
 
@@ -95,6 +95,10 @@ Set a different default with `export LEGWORK_DEFAULT_MODE=deep`.
 
 On any failure the wrapper emits JSON to stderr and exits non-zero, and the skill falls back to the built-ins. Auth and quota failures map to exit code `2`, so you are told to re-authenticate rather than left silently degraded.
 
+Scrapes are capped at `--max-chars 8000` by policy (the wrapper's own default is 20000). A research run reads dozens of pages and almost none of them need twenty thousand characters in context to yield the sentence you are after.
+
+Retrieval subagents run on a cheaper model than the orchestrator and return structured evidence only - `{url, kind, angle, date, title, quote}` - never prose, and never a transcript pasted into the synthesis. One agent per search angle, which also keeps the angle attribution honest.
+
 ## Output
 
 Written to `<output-base>/[Topic]_Research_[YYYYMMDD]/`, where `<output-base>` is `$LEGWORK_OUTPUT`, else `<git-root>/docs/research/`, else `$PWD/docs/research/`.
@@ -109,7 +113,9 @@ Outlook_Email_SaaS_Research_20260728/
 
 **Markdown only.** No HTML, no PDF.
 
-The fetch log is one row per retrieval: URL, source kind, the search angle that surfaced it, how it was retrieved, and the numeric tokens found on the page. It is what lets the gate prove a cited page was actually opened and a quoted figure actually appeared on it, without storing any page text.
+The fetch log is one row per retrieval: URL, source kind, the search angle that surfaced it, how it was retrieved, the numeric tokens found on the page, and one verbatim sentence - the line that made the source worth citing.
+
+That last field earns its place twice. Around **half of real findings carry no figure at all**, so without a quote they would be backed by nothing but proof that somebody opened the page; the gate now fails a finding that has neither a traceable figure nor a quote on any source it cites. And it is the only part of the evidence that survives the page changing or going dead six months later.
 
 ## Scripts
 

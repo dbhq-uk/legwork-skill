@@ -16,7 +16,8 @@ Scope.
 
 **Confidence: Weak** - one page, and one that was never actually retrieved.
 
-The second source is cited but never appears in the fetch log [2].
+The first source was genuinely retrieved and carries a quote [1]. The second is cited
+but never appears in the fetch log [2].
 
 ## Synthesis
 

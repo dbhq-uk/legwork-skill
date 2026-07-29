@@ -59,6 +59,9 @@ CLOSEST_RE = re.compile(r'^\s*\*{0,2}Closest\b', re.M | re.I)
 
 RECEIPT_RE = re.compile(r'^\s*\*(quick|standard|deep)\b[^*]*\*\s*$', re.M | re.I)
 FINDING_RE = re.compile(r'^#{2,3}\s+Finding\s+(\d+)\s*[:.]\s*(.+)$', re.M)
+# House style is a plain hyphen, but the separator class accepts an en dash too:
+# parsing should be forgiving of a report someone wrote by hand. Do not "tidy"
+# this to a bare hyphen - it would silently stop recognising those findings.
 CONFIDENCE_RE = re.compile(r'^\*\*Confidence:\s*(Strong|Moderate|Weak)\*\*\s*[-–]\s*(\S.*)$', re.M | re.I)
 
 PLACEHOLDERS = ('TBD', 'TODO', 'FIXME', '[citation needed]', '[needs citation]', '[placeholder]')
@@ -246,9 +249,13 @@ def check_structure(content, fmt, problems, report_path):
 def check_evidence(content, entries, rows, problems):
     """Fetched-URL and figure tracing. Requires a fetch log."""
     by_url = {}
+    quotes_by_url = {}
     for row in rows:
         if (row.get('status') or 'ok').lower() == 'ok':
-            by_url.setdefault(canonicalize(row.get('url', '')), []).extend(row.get('numbers') or [])
+            key = canonicalize(row.get('url', ''))
+            by_url.setdefault(key, []).extend(row.get('numbers') or [])
+            if (row.get('quote') or '').strip():
+                quotes_by_url[key] = row['quote'].strip()
 
     unfetched = sorted(
         number for number, entry in entries.items()
@@ -259,15 +266,28 @@ def check_evidence(content, entries, rows, problems):
             'cited but never fetched in this run - a citation to a page nobody opened: {}'.format(unfetched))
 
     for finding in finding_sections(content):
+        cited = citations_in(finding['text'])
         figures = traced_figures(finding['text'])
-        if not figures:
-            continue
+
         available = set()
-        for number in citations_in(finding['text']):
+        quoted = False
+        for number in cited:
             entry = entries.get(number)
             if entry and entry['url']:
-                available.update(by_url.get(canonicalize(entry['url']), []))
-        if not available:
+                key = canonicalize(entry['url'])
+                available.update(by_url.get(key, []))
+                quoted = quoted or key in quotes_by_url
+
+        # Roughly half of real findings carry no figure at all, so figure tracing
+        # alone leaves them checked only by "somebody opened the page". A recorded
+        # quote is what a qualitative claim rests on, and it is also the only part
+        # of the evidence that survives the page changing or going dead.
+        if cited and not figures and not quoted:
+            problems.graded(
+                'Finding {} rests on no recorded evidence: it quotes no figure, and none of '
+                'its cited sources carries a quote in the fetch log'.format(finding['number']))
+
+        if not figures or not available:
             continue
         untraceable = sorted(figures - available)
         if untraceable:

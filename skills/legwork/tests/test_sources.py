@@ -172,3 +172,28 @@ def test_tabs_and_newlines_in_a_title_cannot_corrupt_the_log(tmp_path):
     rows = sources.read_rows(path)
     assert len(rows) == 1
     assert rows[0]['title'] == 'a title with control chars'
+
+
+# ---------------------------------------------------------------------------
+# Quotes
+# ---------------------------------------------------------------------------
+
+def test_a_quote_survives_the_log_round_trip(tmp_path):
+    path = str(tmp_path / 'run.tsv')
+    sources.append_row(path, {
+        'url': 'https://a.example/docs', 'kind': 'vendor_docs', 'angle': 'x',
+        'via': 'webfetch', 'quote': 'Publishing to the catalogue is not supported.',
+    })
+    assert sources.read_rows(path)[0]['quote'] == 'Publishing to the catalogue is not supported.'
+
+
+def test_a_log_written_before_quotes_existed_still_parses(tmp_path):
+    """The column is appended last precisely so old logs keep working."""
+    path = tmp_path / 'old.tsv'
+    path.write_text(
+        'url\tkind\tangle\tvia\tfetched_at\tstatus\tdate\tnumbers\ttitle\n'
+        'https://a.example/\tblog\tan angle\twebsearch\t2026-07-28T09:00:00+00:00\tok\t\t30\tA title\n',
+        encoding='utf-8')
+    row = sources.read_rows(str(path))[0]
+    assert row['numbers'] == ['30']
+    assert row.get('quote', '') == ''

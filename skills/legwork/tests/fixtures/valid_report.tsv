@@ -1,0 +1,4 @@
+url	kind	angle	via	fetched_at	status	date	numbers	title
+https://acme-software.example/pricing	vendor_pricing	incumbent pricing	webfetch	2026-07-28T09:00:00+00:00	ok	2026-07-01	30,12,60	Acme Pricing
+https://learn.contoso.example/updates/triage	vendor_announcement	platform risk	webfetch	2026-07-28T09:01:00+00:00	ok	2026-06-20	2026	Introducing triage
+https://forum.example/t/email-tooling	community	segment willingness to pay	brightdata	2026-07-28T09:02:00+00:00	ok	2026-05-11	12,60	What we pay for email tooling

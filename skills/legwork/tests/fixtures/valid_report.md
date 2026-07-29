@@ -1,114 +1,50 @@
-# Research Report: Test Topic
+# Should we build Outlook triage for small accounting practices
+
+*deep · 4 angles · 6 sources (2 via Bright Data) · 3 disconfirming searches · 1 finding downgraded*
 
 ## Executive Summary
 
-This is a test report with exactly the right length for validation. It contains multiple findings backed by citations. The report covers comprehensive research on the test topic. Overall confidence level is high.
-
-**Primary Recommendation:** Proceed with implementation
-
-**Confidence Level:** High
-
----
+Small accounting practices are paying for Outlook triage today, and the incumbent
+pricing sits well above what the segment says it will bear [1]. The gap is real
+but narrow, and it closes the moment Microsoft ships the same behaviour natively [2].
 
 ## Introduction
 
-### Research Question
-What is the current state of test research?
+Scope, assumptions and what would change the answer.
 
-### Scope & Methodology
-This research covered academic sources, industry publications, and recent developments in the field using a systematic 8-phase approach.
+## Findings
 
-### Key Assumptions
-We assume test data is representative of real-world conditions.
+### Finding 1: The incumbent charges more than the segment says it will pay
 
----
+**Confidence: Strong** - the vendor's own pricing page, plus practitioner discussion
+found through a separate search.
 
-## Main Analysis
+The vendor lists the product at 30 US dollars per user per month on its own pricing
+page [1]. Practitioners in the segment describe 12 dollars per user as their ceiling,
+which is a gap of 60 percent against the listed price [3].
 
-### Finding 1: Current State
+### Finding 2: Native platform support is the live risk
 
-The field has seen significant advancement in recent years [1], [2]. Multiple studies confirm this trend [3].
+**Confidence: Weak** - a single vendor announcement, with no independent confirmation
+that the feature reaches this segment.
 
-**Sources:** [1], [2], [3]
+The platform announced a comparable capability, though the announcement does not say
+which licence tiers receive it [2].
 
-### Finding 2: Key Challenges
+## Synthesis
 
-Several challenges remain, including scalability [4] and adoption barriers [5], [6].
+The opportunity exists but is bounded by platform risk.
 
-**Sources:** [4], [5], [6]
+## Limitations
 
-### Finding 3: Future Outlook
-
-The outlook is positive with emerging solutions [7], [8], [9], [10].
-
-**Sources:** [7], [8], [9], [10]
-
----
-
-## Synthesis & Insights
-
-### Patterns Identified
-Clear trend toward increased adoption and sophistication in implementations.
-
-### Novel Insights
-The combination of recent developments suggests accelerated progress in the next 2-3 years.
-
-### Implications
-Organizations should prepare for rapid change and invest in capability building.
-
----
-
-## Limitations & Caveats
-
-### Known Gaps
-Limited data available for certain niche applications.
-
-### Assumptions
-Assumes current trajectory continues without major disruptions.
-
-### Areas of Uncertainty
-Long-term impact remains to be fully understood.
-
----
+One practitioner thread is thin evidence for a price ceiling.
 
 ## Recommendations
 
-### Immediate Actions
-Begin pilot implementation to gain early experience.
-
-### Next Steps
-Monitor developments and adjust strategy quarterly.
-
-### Further Research
-Deep dive into specific implementation case studies.
-
----
+Validate the ceiling with five practices before building.
 
 ## Bibliography
 
-[1] Smith, J. (2025). "Test Research Advances". Journal of Testing. https://example.com/paper1
-[2] Johnson, K. (2025). "Current State Analysis". Research Quarterly. https://example.com/paper2
-[3] Williams, M. (2024). "Comprehensive Review". Academic Press. https://example.com/paper3
-[4] Brown, A. (2025). "Scalability Challenges". Tech Review. https://example.com/paper4
-[5] Davis, R. (2024). "Adoption Barriers". Industry Report. https://example.com/paper5
-[6] Miller, S. (2025). "Implementation Issues". Trade Journal. https://example.com/paper6
-[7] Wilson, T. (2025). "Future Trends". Forecasting Quarterly. https://example.com/paper7
-[8] Moore, L. (2025). "Emerging Solutions". Innovation Today. https://example.com/paper8
-[9] Taylor, P. (2024). "Next Generation Approaches". Tech Horizons. https://example.com/paper9
-[10] Anderson, C. (2025). "Market Outlook". Strategy Brief. https://example.com/paper10
-
----
-
-## Appendix: Methodology
-
-### Research Process
-Conducted 8-phase research pipeline with systematic source evaluation and triangulation.
-
-### Sources Consulted
-10 peer-reviewed sources spanning 2024-2025.
-
-### Verification Approach
-All major claims verified across minimum 3 independent sources.
-
-### Quality Control
-Automated validation plus manual review for accuracy and completeness.
+[1] Acme Software (2026). "Pricing". https://acme-software.example/pricing
+[2] Contoso (2026). "Introducing triage". https://learn.contoso.example/updates/triage
+[3] Practitioner thread (2026). "What we pay for email tooling". https://forum.example/t/email-tooling

@@ -1,0 +1,4 @@
+url	kind	angle	via	fetched_at	status	date	numbers	title
+https://docs.vendor.example/plugins	vendor_docs	official submission route	webfetch	2026-07-28T09:00:00+00:00	ok	2026-07-10		Plugins
+https://registry.example/add	registry	generic installer route	webfetch	2026-07-28T09:01:00+00:00	ok	2026-07-02	50	Adding a skill
+https://forum.example/t/publishing	community	what practitioners report	brightdata	2026-07-28T09:02:00+00:00	ok	2026-06-15		Publishing agent plugins

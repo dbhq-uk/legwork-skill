@@ -22,7 +22,7 @@ cd ~/dbhq-legwork
 ./install-codex.sh    # Codex: installs into ~/.codex/skills
 ```
 
-The committed skill references its scripts via `${CLAUDE_SKILL_DIR}` (the skill's own directory), which Claude Code substitutes for personal, project and plugin installs alike. So `install.sh` symlinks the **whole skill directory** into `~/.claude/skills/` - `SKILL.md`, `scripts/`, `reference/`, `templates/` and `schemas/` are all live, and every edit takes effect with no re-run. Codex does not substitute `${CLAUDE_SKILL_DIR}`, so `install-codex.sh` rewrites it to the install path - **re-run `./install-codex.sh` after editing a `SKILL.md`** for Codex.
+The committed skill references its scripts via `${CLAUDE_SKILL_DIR}` (the skill's own directory), which Claude Code substitutes for personal, project and plugin installs alike. So `install.sh` symlinks the **whole skill directory** into `~/.claude/skills/` - `SKILL.md`, `scripts/`, `reference/` and `templates/` are all live, and every edit takes effect with no re-run. Codex does not substitute `${CLAUDE_SKILL_DIR}`, so `install-codex.sh` rewrites it to the install path - **re-run `./install-codex.sh` after editing a `SKILL.md`** for Codex.
 
 ## 3. Verify
 
@@ -30,10 +30,15 @@ The committed skill references its scripts via `${CLAUDE_SKILL_DIR}` (the skill'
 cd skills/legwork
 python3 -m pytest tests/ -v
 
-# The gate must reject a bad report, not just accept good ones:
-python3 scripts/validate_report.py --report tests/fixtures/valid_brief.md --format brief
-python3 scripts/validate_report.py --report tests/fixtures/invalid_report.md   # expected to FAIL
+# The gate must reject bad reports, not just accept good ones:
+python3 scripts/check.py --report tests/fixtures/valid_brief.md --format brief --level deep
+python3 scripts/check.py --report tests/fixtures/invalid_report.md --level deep      # expected to FAIL
+python3 scripts/check.py --report tests/fixtures/one_origin.md --level deep          # expected to FAIL
 ```
+
+The last one is the interesting failure: five genuinely distinct publishers back the
+finding, but every one of them was surfaced by the same search angle, so corroboration
+scores 1 rather than 5.
 
 Then, in Claude Code, try *"legwork: compare managed Postgres options for a UK fintech"*.
 

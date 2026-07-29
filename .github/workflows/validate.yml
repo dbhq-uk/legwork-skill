@@ -58,8 +58,9 @@ jobs:
           import ast, pathlib, sys
           STDLIB = set(sys.stdlib_module_names)
           LOCAL = {p.stem for p in pathlib.Path("skills/legwork/scripts").glob("*.py")}
-          # weasyprint is an optional extra for PDF output and is imported lazily.
-          ALLOWED_OPTIONAL = {"weasyprint"}
+          # No exceptions. The skill outputs markdown only, so there is no longer
+          # even an optional renderer to carve out.
+          ALLOWED_OPTIONAL = set()
           bad = []
           for f in sorted(pathlib.Path("skills/legwork/scripts").glob("*.py")):
               for node in ast.walk(ast.parse(f.read_text())):
@@ -122,51 +123,80 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Validate the shipped fixtures with the real gates
+      - name: The gate passes what it should
         working-directory: skills/legwork
         run: |
           set -e
-          echo "--- report format ---"
-          python scripts/validate_report.py --report tests/fixtures/valid_report.md --format report
-          python scripts/verify_citations.py --report tests/fixtures/valid_report.md --offline
+          python scripts/check.py --report tests/fixtures/valid_report.md --format report --level deep
+          python scripts/check.py --report tests/fixtures/valid_brief.md  --format brief  --level deep
+          python scripts/check.py --report tests/fixtures/could_not_answer.md --level deep
+          echo "OK: sound deliverables pass at the strictest level"
 
-          echo "--- brief format ---"
-          python scripts/validate_report.py --report tests/fixtures/valid_brief.md --format brief
-          python scripts/verify_citations.py --report tests/fixtures/valid_brief.md --offline
+      # A gate that cannot fail is not a gate. Each of these asserts a DIFFERENT
+      # failure mode, so a regression that guts one check still turns CI red.
+      - name: The gate fails what it should
+        working-directory: skills/legwork
+        run: |
+          set -e
+          expect_fail() {
+            if python scripts/check.py --report "$1" --format "${3:-report}" --level deep >/dev/null 2>&1; then
+              echo "ERROR: $1 passed the gate but should have failed ($2)"
+              exit 1
+            fi
+            echo "OK: rejected - $2"
+          }
+          expect_fail tests/fixtures/invalid_report.md     "truncation markers and placeholders"
+          expect_fail tests/fixtures/unfetched_citation.md "cites a page that was never fetched"
+          expect_fail tests/fixtures/one_origin.md         "strong claim from a single line of enquiry"
 
-          echo "--- invalid report must FAIL ---"
-          if python scripts/validate_report.py --report tests/fixtures/invalid_report.md; then
-            echo "ERROR: invalid_report.md passed validation but should have failed"
-            exit 1
-          fi
-          echo "OK: invalid report correctly rejected"
-
-      - name: Full run lifecycle (init -> batch register -> batch evidence -> bibliography)
+      - name: Full run lifecycle (log -> score -> group -> gate)
         working-directory: skills/legwork
         run: |
           set -e
           RUN=$(mktemp -d)
-          python scripts/citation_manager.py init-run --out-dir "$RUN" --query "smoke test" --mode standard
+          TSV="$RUN/run.tsv"
 
-          cat > "$RUN/sources_batch.jsonl" <<'EOF'
-          {"raw_url": "https://www.nature.com/articles/x", "title": "A Paper", "year": "2026", "source_type": "academic"}
-          {"raw_url": "https://arxiv.org/abs/2501.00001", "title": "A Preprint", "year": "2026", "source_type": "academic"}
-          EOF
-          python scripts/citation_manager.py register-sources --jsonl-file "$RUN/sources_batch.jsonl" --dir "$RUN"
+          printf 'the listed price is 30 dollars per seat and 1,600 seats are covered\n' > "$RUN/page.txt"
+          python scripts/sources.py log --tsv "$TSV" \
+            --url "https://acme.example/pricing" --kind vendor_pricing \
+            --angle "what does the incumbent charge" --via webfetch \
+            --date 2026-07-01 --title "Pricing" --text-file "$RUN/page.txt"
+          python scripts/sources.py log --tsv "$TSV" \
+            --url "https://forum.example/t/1" --kind community \
+            --angle "what do buyers say they pay" --via brightdata \
+            --date 2026-06-01 --title "What we actually pay"
 
-          SID=$(python -c "import json;print(json.loads(open('$RUN/sources.jsonl').readline())['source_id'])")
-          cat > "$RUN/evidence_batch.jsonl" <<EOF
-          {"source_id": "$SID", "quote": "the measured latency fell by 34%", "locator": "p4", "evidence_type": "data_point"}
-          EOF
-          python scripts/evidence_store.py add-batch --jsonl-file "$RUN/evidence_batch.jsonl" --dir "$RUN"
+          python scripts/sources.py kinds >/dev/null
+          python scripts/sources.py score --tsv "$TSV" --claim-kind price
 
-          python scripts/citation_manager.py assign-display-numbers --dir "$RUN"
-          python scripts/citation_manager.py export-bibliography --dir "$RUN"
-          python scripts/source_evaluator.py score --jsonl-file "$RUN/sources.jsonl"
+          # Two parties reached from two angles: corroboration must clear 2.
+          python scripts/independence.py groups --tsv "$TSV"
+          python scripts/independence.py check  --tsv "$TSV" --min 2
 
-          test -s "$RUN/sources.jsonl"
-          test -s "$RUN/evidence.jsonl"
+          # The numeric tokens must have survived the round trip, or the
+          # figure-tracing check in the gate silently passes everything.
+          grep -q '1600' "$TSV" || { echo "ERROR: normalised numbers missing from the log"; exit 1; }
           echo "OK: full lifecycle completed"
+
+      - name: Corroboration does not inflate with our own fan-out
+        working-directory: skills/legwork
+        # The property the whole independence layer exists to guarantee, asserted
+        # end to end rather than only in a unit test: many distinct sources
+        # reached from ONE angle must still count as one confirmation.
+        run: |
+          set -e
+          RUN=$(mktemp -d); TSV="$RUN/fanout.tsv"
+          for i in 1 2 3 4 5 6; do
+            python scripts/sources.py log --tsv "$TSV" \
+              --url "https://publisher-$i.example/article" --kind press \
+              --angle "one single query" --via websearch \
+              --title "A distinct headline about subject number $i in the sector"
+          done
+          if python scripts/independence.py check --tsv "$TSV" --min 2 >/dev/null 2>&1; then
+            echo "ERROR: six sources from one angle cleared a corroboration bar of 2"
+            exit 1
+          fi
+          echo "OK: fan-out does not manufacture corroboration"
 
       - name: setup.sh must succeed WITHOUT the Bright Data CLI
         working-directory: skills/legwork

@@ -41,6 +41,14 @@ Research that settles a decision. Ask a real question, get a memo where every fa
 /plugin install legwork@dbhq
 ```
 
+### Any agent (Cursor, Copilot, Windsurf, Gemini, Cline and more)
+
+```bash
+npx skills add dbhq-uk/legwork-skill
+```
+
+The [skills.sh](https://skills.sh) CLI installs into whichever agent directories it finds, so this works outside Claude Code and Codex too.
+
 ### Local install (Claude Code or Codex)
 
 ```bash

@@ -59,6 +59,13 @@ judgements about strength, so they inform at standard and block at deep.
   report unchecked.
 - **Every finding states its confidence** on a line of the form
   `**Confidence: Strong|Moderate|Weak** - <one sentence>`.
+- **Every finding can have its age judged.** A finding whose cited sources all
+  carry no publication date is flagged. This is not a staleness threshold: the
+  gate does not know what claim kind a finding makes, and guessing would be the
+  kind of tunable heuristic the rest of the gate avoids. It asks only the question
+  that needs no threshold - is there a date anywhere behind this. Staleness proper
+  is `sources.py stale --claim-kind`, run during Challenge where the claim kind is
+  known.
 
 If the gate reports a figure it cannot trace, the honest fixes are: cite the
 source that actually carries the number, correct the number, or remove it.
@@ -79,6 +86,29 @@ is worse than none.
 When this fires, it usually means one line of enquiry produced everything behind
 the finding. Find a genuinely different angle or downgrade the band. Both are
 legitimate; padding the source list is not.
+
+- **The run as a whole is not concentrated.** Corroboration is asked per finding,
+  so a report can pass on every finding while the document as a whole rests on one
+  voice. Three limits, because they catch different things and none implies the
+  others:
+
+  | Limit | Catches |
+  |---|---|
+  | over 50% of retrievals from one party | one vendor's estate carrying the report |
+  | fewer than 3 distinct parties | a run that only ever asked two people |
+  | over 60% of retrievals in one independence group | syndication - many domains, one story |
+
+  Party share is counted on retrievals rather than on groups, deliberately. Eight
+  pages from one vendor collapse to a single independence group, so measuring
+  party dominance at group level would report that run as perfectly balanced.
+
+  Group share is the mirror of the same problem and is the only one of the three
+  that sees syndication: six outlets carrying one wire story are six parties and
+  one voice, which party share alone calls diverse.
+
+  The check is skipped below six retrievals: a two-source run is small rather than
+  lopsided, and firing there would fail quick runs for a reason they cannot act
+  on.
 
 ## The "could not answer" shape
 

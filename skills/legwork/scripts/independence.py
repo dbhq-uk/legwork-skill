@@ -278,6 +278,78 @@ def corroboration(rows, threshold=SIMILARITY_THRESHOLD):
 
 
 # ---------------------------------------------------------------------------
+# Portfolio
+# ---------------------------------------------------------------------------
+
+# Corroboration is asked per finding. Nothing was ever asked of the run as a
+# whole, so a report could pass on every finding while most of the document rested
+# on one party. These are deliberately loose: the check exists to catch a lopsided
+# run, not to impose a source quota.
+DEFAULT_MAX_PARTY_SHARE = 0.5
+DEFAULT_MIN_PARTIES = 3
+# Party share and group share catch different failures and neither implies the
+# other. Six outlets syndicating one wire story are six parties and one voice:
+# party share calls that perfectly balanced, and only group share sees it.
+DEFAULT_MAX_GROUP_SHARE = 0.6
+
+
+def portfolio(rows, max_party_share=DEFAULT_MAX_PARTY_SHARE, min_parties=DEFAULT_MIN_PARTIES,
+              max_group_share=DEFAULT_MAX_GROUP_SHARE):
+    """Concentration across a whole run, rather than within one finding.
+
+    Share is counted on retrievals, not on groups. Eight pages from one vendor
+    collapse to a single group, so measuring at group level would report a run
+    dominated by that vendor as perfectly balanced.
+    """
+    if not rows:
+        return {'sources': 0, 'groups': 0, 'parties': 0, 'angles': 0,
+                'top_party': '', 'top_party_share': 0.0, 'top_group_share': 0.0,
+                'passed': True, 'failures': []}
+
+    groups = group_sources(rows)
+
+    party_counts = {}
+    for row in rows:
+        party = party_of(row.get('url', '')) or '(unknown)'
+        party_counts[party] = party_counts.get(party, 0) + 1
+    top_party, top_count = max(party_counts.items(), key=lambda kv: (kv[1], kv[0]))
+
+    angles = {(row.get('angle') or '').strip() for row in rows}
+    angles.discard('')
+
+    top_group = max(len(g['members']) for g in groups)
+
+    result = {
+        'sources': len(rows),
+        'groups': len(groups),
+        'parties': len(party_counts),
+        'angles': len(angles),
+        'top_party': top_party,
+        'top_party_share': top_count / len(rows),
+        'top_group_share': top_group / len(rows),
+    }
+
+    failures = []
+    if result['top_party_share'] > max_party_share:
+        failures.append(
+            'source concentration: {:.0f}% of retrievals come from one party ({}), '
+            'above the {:.0f}% limit'.format(
+                result['top_party_share'] * 100, top_party, max_party_share * 100))
+    if result['parties'] < min_parties:
+        failures.append(
+            'source concentration: only {} distinct parties across the whole run '
+            '(need at least {})'.format(result['parties'], min_parties))
+    if result['top_group_share'] > max_group_share:
+        failures.append(
+            'source concentration: {:.0f}% of retrievals collapse into one independence '
+            'group - a single voice however many domains it spans - above the {:.0f}% '
+            'limit'.format(result['top_group_share'] * 100, max_group_share * 100))
+    result['failures'] = failures
+    result['passed'] = not failures
+    return result
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -326,6 +398,25 @@ def cmd_check(args):
     sys.exit(0 if result['passed'] else 1)
 
 
+def cmd_portfolio(args):
+    rows = read_rows(args.tsv)
+    result = portfolio(rows, max_party_share=args.max_party_share, min_parties=args.min_parties,
+                       max_group_share=args.max_group_share)
+    if args.format == 'json':
+        print(json.dumps(result, indent=2))
+    else:
+        print('{} sources -> {} groups, {} parties, {} angles'.format(
+            result['sources'], result['groups'], result['parties'], result['angles']))
+        print('largest party: {} ({:.0f}% of retrievals)'.format(
+            result['top_party'] or '(none)', result['top_party_share'] * 100))
+        print('largest group: {:.0f}% of retrievals'.format(result['top_group_share'] * 100))
+        for failure in result['failures']:
+            print('  FAIL  {}'.format(failure))
+        if result['passed']:
+            print('  PASS')
+    sys.exit(0 if result['passed'] else 1)
+
+
 def main():
     parser = argparse.ArgumentParser(prog='independence', description=__doc__.split('\n')[1])
     sub = parser.add_subparsers(dest='command', required=True)
@@ -341,8 +432,15 @@ def main():
     p_check.add_argument('--min', type=int, default=2)
     p_check.add_argument('--format', default='text', choices=['text', 'json'])
 
+    p_portfolio = sub.add_parser('portfolio', help='Source concentration across the whole run')
+    p_portfolio.add_argument('--tsv', required=True)
+    p_portfolio.add_argument('--max-party-share', type=float, default=DEFAULT_MAX_PARTY_SHARE)
+    p_portfolio.add_argument('--min-parties', type=int, default=DEFAULT_MIN_PARTIES)
+    p_portfolio.add_argument('--max-group-share', type=float, default=DEFAULT_MAX_GROUP_SHARE)
+    p_portfolio.add_argument('--format', default='table', choices=['table', 'json'])
+
     args = parser.parse_args()
-    {'groups': cmd_groups, 'check': cmd_check}[args.command](args)
+    {'groups': cmd_groups, 'check': cmd_check, 'portfolio': cmd_portfolio}[args.command](args)
 
 
 if __name__ == '__main__':

@@ -58,6 +58,27 @@ Four phases. Full instructions in [methodology.md](./reference/methodology.md).
 
 Phases 2 and 3 interleave per finding rather than running as strict gates.
 
+## Before you start
+
+**Anchor the date.** Run `date -u +%Y-%m-%d` and use that string for the run, in
+the output folder name, and in every search query that could return dated
+material. Never rely on your own sense of what year it is, and never let a
+subagent work it out for itself.
+
+**Check whether this run has already been done.** Look in the output base for a
+prior run on the same question. If one exists and still holds, say so and answer
+from it rather than repeating it. If it is stale or was left unfinished, resume
+rather than restart:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py resume --tsv "$OUT/$BASE.tsv"
+```
+
+That prints the angles already worked, the pages already fetched, and which of
+them still carry no quote. Everything in that log is already paid for. A run that
+died at minute 30 should pick up the uncovered angles, not refetch the covered
+ones.
+
 ## Retrieval policy
 
 **Built-in `WebSearch` and `WebFetch` first.** Free, no setup, no per-request
@@ -80,6 +101,30 @@ retry.
 have a specific reason to need more; the wrapper's own default is 20000. A
 research run reads dozens of pages and almost none of them need 20,000 characters
 in context to yield the sentence you are after.
+
+### Whose sources you may use
+
+Research is what an outsider could establish. That boundary matters in both
+directions.
+
+**Never present the user's own records as a finding.** If the question is about
+the user's own company, product or market position, do not reach into their
+private accounts - their registrar, their billing, their inbox, their internal
+files - and report back what you found there as though it were discovered. They
+already know it. It is circular, it inflates the apparent evidence, and it
+disguises how little an outsider can actually see. Search for the public
+equivalent and report what an outsider would find, including nothing.
+
+**Do use exclusive access the user has given you, on third parties.** A paid
+subscription, a private dataset or an internal database the user has explicitly
+offered is a genuine advantage when researching competitors, suppliers or a
+market. Use it, log it as a source like any other, and note in Limitations that
+the finding rests on access the reader may not have.
+
+When an entity turns out to have no public footprint at all, that is the answer.
+List what you checked, say that existence or scale could not be verified from
+outside, and do not fill the gap from privileged access. It is the "could not
+answer" shape applied to one entity rather than the whole question.
 
 ## The fetch log
 
@@ -120,17 +165,26 @@ Run `sources.py kinds` for the source kinds and which claims they suit.
 
 ## Subagents
 
-Retrieval is the one phase worth parallelising, and it is mechanical, so it does
-not need the orchestrator's model.
+Retrieval is the one phase worth parallelising. Brief them from
+[subagent-brief.md](./reference/subagent-brief.md), which carries the template
+verbatim and the reasons each line is in it.
 
-- **Spawn retrieval subagents on a cheaper model** (`haiku` or equivalent). Pass
-  the override explicitly every time; never let a subagent inherit the main
-  session's model. `Task(subagent_type="general-purpose", model="haiku", ...)`.
+- **A subagent has zero context.** It cannot see this skill, the conversation or
+  the decision. Everything it needs goes in the brief, including today's literal
+  date and how much effort the angle is worth.
+- **Match the model to the shape of the angle.** Snippet gathering and pinning a
+  known figure run fine on a cheap model - pass the override explicitly, never let
+  one inherit the session model by accident. But **deep-level primary-source work,
+  and anything that rebuilds an enumeration, stays on the orchestrator's model**:
+  small models drop rows when a task means opening a dozen pages and keeping every
+  figure exact, and they report success while doing it.
 - **They return structured evidence, never prose.** One JSON object per source:
-  `{url, kind, angle, date, title, quote}`. No narrative summaries, no
-  recommendations, no reasoning.
+  `{url, kind, angle, date, title, quote}`, then a required `{gaps: [...]}` object
+  saying what they searched for and did not find. An empty gaps list on a
+  non-trivial angle means the negative case was never looked for.
 - **Never paste a subagent's transcript into your synthesis.** Take its structured
-  return, log each row with `sources.py log`, and work from the log.
+  return, check the angle string came back unchanged, log each row with
+  `sources.py log`, and work from the log.
 - **The orchestrator keeps scoping, challenge and synthesis.** Those are
   judgement, and they stay on the main model.
 
@@ -144,7 +198,10 @@ All stdlib-only. No virtualenv. Any `python3` >= 3.9.
 | Script | Purpose |
 |---|---|
 | `sources.py kinds \| log \| score` | Source-kind vocabulary, the fetch log, fitness scoring per claim kind |
+| `sources.py stale --claim-kind K` | Which logged sources have gone off, on that claim kind's half-life |
+| `sources.py resume` | What a previous run already fetched, so a re-run skips it |
 | `independence.py groups \| check` | Collapse sources into independent voices; count angle-aware corroboration |
+| `independence.py portfolio` | Source concentration across the whole run, not within one finding |
 | `check.py --report PATH --level LEVEL` | The shippability gate |
 | `bd_search.py "<query\|url>" -m MODE --json` | Bright Data retrieval fallback |
 

@@ -41,7 +41,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from independence import canonicalize, corroboration  # noqa: E402
+from independence import canonicalize, corroboration, portfolio  # noqa: E402
 from sources import read_rows  # noqa: E402
 
 LEVELS = ('quick', 'standard', 'deep')
@@ -83,6 +83,10 @@ TRUNCATION_PATTERNS = (
 MIN_TRACED_NUMBER = 10
 
 CONFIDENCE_CORROBORATION = {'strong': 2, 'moderate': 1, 'weak': 0}
+
+# Below this, a run is small rather than lopsided, and reporting concentration
+# would be noise a quick run cannot act on.
+MIN_ROWS_FOR_PORTFOLIO = 6
 
 
 class Problems:
@@ -337,6 +341,41 @@ def check_confidence(content, entries, rows, problems, run_independence):
                     result['sources'], result['groups'], result['angles']))
 
 
+def check_dates(content, entries, rows, problems):
+    """Can this finding's age be judged at all?
+
+    Deliberately not a staleness threshold: the gate does not know what claim
+    kind a finding makes, and guessing would be exactly the tunable heuristic the
+    rest of this file avoids. It asks the one question that needs no threshold -
+    is there a date anywhere behind this finding. Staleness proper is
+    `sources.py stale --claim-kind`, run during Challenge where the claim kind is
+    known.
+    """
+    by_url = {canonicalize(row.get('url', '')): row for row in rows}
+    for finding in finding_sections(content):
+        cited_rows = []
+        for number in citations_in(finding['text']):
+            entry = entries.get(number)
+            if entry and entry['url']:
+                row = by_url.get(canonicalize(entry['url']))
+                if row:
+                    cited_rows.append(row)
+        if not cited_rows:
+            continue
+        if not any((row.get('date') or '').strip() for row in cited_rows):
+            problems.graded(
+                'Finding {}: no cited source carries a publication date, so how old this '
+                'finding is cannot be judged'.format(finding['number']))
+
+
+def check_portfolio(rows, problems):
+    """Concentration across the run, not within a finding."""
+    if len(rows) < MIN_ROWS_FOR_PORTFOLIO:
+        return
+    for failure in portfolio(rows)['failures']:
+        problems.graded(failure)
+
+
 def check_could_not_answer(content, problems):
     if not CLOSEST_RE.search(content):
         problems.structural(
@@ -373,9 +412,11 @@ def run(report_path, tsv_path, fmt, level):
             problems.graded('no fetch log supplied, so cited URLs cannot be checked against what was retrieved')
         else:
             check_evidence(content, entries, rows, problems)
+            check_dates(content, entries, rows, problems)
 
     if evidence_layers:
         check_confidence(content, entries, rows, problems, run_independence=bool(rows))
+        check_portfolio(rows, problems)
 
     return problems, {'outcome': 'report', 'sources': len(entries), 'fetched': len(rows)}
 

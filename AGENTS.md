@@ -38,7 +38,26 @@ python3 scripts/check.py --report tests/fixtures/valid_brief.md --format brief -
 python3 scripts/check.py --report tests/fixtures/invalid_report.md --level deep      # MUST fail
 python3 scripts/check.py --report tests/fixtures/unfetched_citation.md --level deep  # MUST fail
 python3 scripts/check.py --report tests/fixtures/one_origin.md --level deep          # MUST fail
+python3 scripts/check.py --report tests/fixtures/no_evidence.md --level deep         # MUST fail
+python3 scripts/check.py --report tests/fixtures/undated_evidence.md --level deep    # MUST fail
+python3 scripts/check.py --report tests/fixtures/concentrated.md --level deep        # MUST fail
 cd ../.. && claude plugin validate .         # manifest + structure
 ```
 
-The three fixtures that MUST fail are the important ones - they exist so the gate is proved to bite. Each covers a different failure mode: `invalid_report.md` a truncated document, `unfetched_citation.md` a citation to a page nobody opened, `one_origin.md` a strong claim resting on a single line of enquiry. A change that makes any of them pass has broken the gate, even if every other test is green.
+The fixtures that MUST fail are the important ones - they exist so the gate is proved to bite. Each covers a different failure mode, and each fails for that reason **only**, which is what makes it evidence about that check rather than about the gate in general:
+
+| Fixture | Failure mode |
+|---|---|
+| `invalid_report.md` | a truncated document that looks finished |
+| `unfetched_citation.md` | a citation to a page nobody opened |
+| `one_origin.md` | a strong claim resting on a single line of enquiry |
+| `no_evidence.md` | a finding with neither a traceable figure nor a quote |
+| `undated_evidence.md` | a finding whose age cannot be judged |
+| `concentrated.md` | a run resting almost entirely on one party |
+
+A change that makes any of them pass has broken the gate, even if every other test is green.
+
+Two properties are asserted end to end in CI rather than only in unit tests, because both are the kind of thing a plausible-looking refactor silently destroys:
+
+- **Corroboration must not rise with our own fan-out.** Many sources from one angle still count as one confirmation.
+- **Concentration must be measured on retrievals, not on groups.** Eight pages from one vendor collapse to a single independence group, so a group-level measure would report a run dominated by that vendor as balanced.

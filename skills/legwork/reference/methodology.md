@@ -46,6 +46,14 @@ response, what the adjacent market says.
 
 ## Phase 2: Gather
 
+**Anchor the date before the first search.** Run `date -u +%Y-%m-%d` and use that
+string. Then **year-pin every query** that could return dated material: "acme
+pricing 2026", not "acme pricing". A model's prior about what year it is cannot be
+trusted, and a query that silently searches the wrong year poisons everything
+downstream of it - the sources are real, the figures trace, and the whole finding
+is a year stale. Pass the literal date string to every subagent; never let one
+work it out for itself.
+
 Work sub-question by sub-question. For each one:
 
 1. Search with the built-in `WebSearch`.
@@ -69,6 +77,45 @@ Around half of real findings carry no figure, so for those the quote is the only
 evidence recorded. The gate fails a finding that has neither a traceable figure
 nor a quote on any of its cited sources - not because the finding is wrong, but
 because nothing about it can be checked.
+
+### Rebuild enumerations from the items, never from the aggregator
+
+When a sub-question needs a *list* - every competitor in a segment, every plan on
+a pricing page, every release in a changelog, every firm named in a market study -
+open the enumerated items themselves and rebuild the list from them.
+
+A table lifted whole out of one review, roundup or analyst note is **one source,
+not one source per row**. This is the single easiest way for a run to look
+thoroughly evidenced while resting entirely on one document, and legwork is
+unusually exposed to it because competitor scans and pricing comparisons are
+exactly this shape. The aggregator is a lead worth following, not the evidence.
+
+Log the aggregator if you used it, then log each item you opened under the same
+angle. `independence.py` will then see what is actually there: several parties
+rather than one.
+
+If rebuilding genuinely is not possible - the underlying items are paywalled, or
+the aggregator is the only party that ever collected them - say so in the finding
+and downgrade the band. A single-origin list presented as corroborated is worse
+than a single-origin list labelled as one.
+
+### Credit the source a fact comes from, not the one you read it in
+
+State the finding first. Name each source at the point where its own
+contribution appears. Never open a finding by handing the whole answer to one
+document before any finding has been stated.
+
+The failure looks harmless: "Acme's 2026 market review reports that the segment
+has four vendors, with pricing from 20 to 90 dollars per seat [3]." Every fact
+there may be right, every figure traceable. But the sentence sources the entire
+finding to Acme's review, including the parts that came from four vendors' own
+pricing pages. A reader cannot tell which is which, and neither can the
+independence check.
+
+Write it the other way round: state what is known, then attribute each part where
+it belongs. A vendor's price belongs to that vendor's pricing page even when a
+review is where you first saw it collected. Credit the aggregator for what is
+genuinely its own - its selection, its pooled analysis, its argument.
 
 ### Getting the source kind right
 
@@ -139,6 +186,42 @@ publishers they span, because our own fan-out produced all five.
 If a finding you believed was strong scores 1, that is the system working. Either
 go and find a genuinely different angle, or downgrade the confidence.
 
+### Check the run as a whole, not only each finding
+
+Corroboration is asked per finding, so a report can pass on every finding and
+still rest mostly on one party.
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/independence.py portfolio --tsv "$OUT/$BASE.tsv"
+```
+
+It reports the share of retrievals from the largest party, the number of distinct
+parties, and the share sitting in the largest independence group. The last one is
+the only check that sees syndication: six outlets carrying one wire story are six
+parties and one voice, and every party-level measure calls that diverse.
+
+When one party is over half the run, that is usually a Gather problem rather than
+a writing problem: go and find a different party, or say plainly in Limitations
+that the picture is largely one party's account of itself. When one *group* is
+most of the run, the fix is different - the run has found one story repeated, so
+go looking for a second story rather than a seventh copy of the first.
+
+### Check the evidence has not gone off
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py stale --tsv "$OUT/$BASE.tsv" --claim-kind price
+```
+
+Run it once per claim kind the report actually makes. The horizon is two
+half-lives of that claim kind, so a 400-day-old pricing page is stale while a
+400-day-old filing is fine - which is the whole reason the horizon is not a single
+global number.
+
+Two outcomes, two different fixes. **Stale** needs a newer source, or an explicit
+sentence saying the figure is the most recent available and how old it is.
+**Undated** needs the date recorded: a source with no date is not necessarily old,
+but nobody can tell, and the gate will say so.
+
 ### At deep level: the origin audit
 
 For any finding claiming Strong, check whether the corroborating sources trace
@@ -190,6 +273,24 @@ work.
 - If you could not find something, say so. "No source addresses X directly" is a
   finding. A fabricated citation is a defect the gate will catch anyway.
 - Prose first. Bullets are for genuine lists, not for delivering content.
+
+### Read the finished draft against itself
+
+Challenge tests each finding as it is gathered, which is the right place for it.
+But findings interact, and nothing has yet read the assembled document as a
+whole. Do that once, before the gate, asking five questions:
+
+1. Could the central recommendation be wrong, and what would have to be true?
+2. Which high-impact claim rests on a single party, however many URLs back it?
+3. Does any finding contradict another, or quietly assume one is false?
+4. Does the Synthesis claim anything no individual finding supports?
+5. Does any finding open by attributing itself to one document?
+
+**Find at least three issues, or run it again.** A pass that returns "no problems
+found" on a document of this size has almost always not been run - that is what
+the forcing function is for, and it is cheaper to re-read than to ship. Fix what
+you find; where an issue is real but unfixable within the run, it belongs in
+Limitations, named specifically rather than as generic hedging.
 
 ### Then gate it
 

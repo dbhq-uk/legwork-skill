@@ -148,7 +148,9 @@ jobs:
           expect_fail tests/fixtures/invalid_report.md     "truncation markers and placeholders"
           expect_fail tests/fixtures/unfetched_citation.md "cites a page that was never fetched"
           expect_fail tests/fixtures/one_origin.md         "strong claim from a single line of enquiry"
-          expect_fail tests/fixtures/no_evidence.md       "finding with neither a traceable figure nor a quote"
+          expect_fail tests/fixtures/no_evidence.md        "finding with neither a traceable figure nor a quote"
+          expect_fail tests/fixtures/undated_evidence.md   "finding whose age cannot be judged"
+          expect_fail tests/fixtures/concentrated.md       "run resting almost entirely on one party"
 
       - name: Full run lifecycle (log -> score -> group -> gate)
         working-directory: skills/legwork
@@ -205,6 +207,123 @@ jobs:
             exit 1
           fi
           echo "OK: fan-out does not manufacture corroboration"
+
+      - name: Concentration is measured on retrievals, not on groups
+        working-directory: skills/legwork
+        # The property the portfolio check exists for. Eight pages from one vendor
+        # collapse to ONE independence group, so a group-level measure would call
+        # a run dominated by that vendor perfectly balanced. If this stops firing,
+        # the check has been silently gutted.
+        run: |
+          set -e
+          RUN=$(mktemp -d); TSV="$RUN/lopsided.tsv"
+          for i in 1 2 3 4 5 6 7 8; do
+            python scripts/sources.py log --tsv "$TSV" \
+              --url "https://vendor.example/page-$i" --kind vendor_docs \
+              --angle "angle number $i" --via webfetch --date 2026-07-01 \
+              --title "Vendor page $i" --quote "A sentence from vendor page $i."
+          done
+          python scripts/sources.py log --tsv "$TSV" \
+            --url "https://other.example/x" --kind press \
+            --angle "a different angle" --via websearch --date 2026-07-01 \
+            --title "Somebody else entirely" --quote "An independent sentence."
+
+          if python scripts/independence.py portfolio --tsv "$TSV" >/dev/null 2>&1; then
+            echo "ERROR: a run that is 8/9 one party passed the concentration check"
+            exit 1
+          fi
+          echo "OK: one-party dominance is caught"
+
+          # Six parties all carrying ONE story are six domains and one voice.
+          # Party share alone calls that balanced, so only the group-share limit
+          # catches it. Titles here are deliberately near-identical.
+          WIRE="$RUN/wire.tsv"
+          for i in 1 2 3 4 5 6; do
+            python scripts/sources.py log --tsv "$WIRE" \
+              --url "https://outlet-$i.example/story" --kind press \
+              --angle "angle number $i" --via websearch --date 2026-07-01 \
+              --title "Regulator opens consultation on record keeping duties" \
+              --quote "The regulator has opened a consultation."
+          done
+          if python scripts/independence.py portfolio --tsv "$WIRE" >/dev/null 2>&1; then
+            echo "ERROR: six outlets carrying one story passed as a diverse run"
+            exit 1
+          fi
+          echo "OK: syndication across many domains is caught"
+
+          # ...and a genuinely diverse run must still pass, or the check is just
+          # a tax on every report rather than a signal. Distinct parties AND
+          # distinct stories.
+          DIVERSE="$RUN/diverse.tsv"
+          python scripts/sources.py log --tsv "$DIVERSE" --url "https://alpha.example/a" \
+            --kind vendor_pricing --angle "what it costs" --via webfetch --date 2026-07-01 \
+            --title "Pricing and plans" --quote "The team plan is 30 dollars a seat."
+          python scripts/sources.py log --tsv "$DIVERSE" --url "https://beta.example/b" \
+            --kind community --angle "what buyers report paying" --via websearch --date 2026-07-01 \
+            --title "What we actually spend on tooling" --quote "Nobody I know pays over 12."
+          python scripts/sources.py log --tsv "$DIVERSE" --url "https://gamma.example/c" \
+            --kind filing --angle "how big the segment is" --via webfetch --date 2026-07-01 \
+            --title "Annual report and accounts" --quote "Revenue grew 8 percent."
+          python scripts/sources.py log --tsv "$DIVERSE" --url "https://delta.example/d" \
+            --kind job_ad --angle "is anyone hiring for this" --via websearch --date 2026-07-01 \
+            --title "Senior engineer, integrations team" --quote "Experience with triage tooling."
+          python scripts/sources.py log --tsv "$DIVERSE" --url "https://epsilon.example/e" \
+            --kind registry --angle "does a listing exist" --via webfetch --date 2026-07-01 \
+            --title "Package index entry" --quote "Published under an MIT licence."
+          python scripts/sources.py log --tsv "$DIVERSE" --url "https://zeta.example/f" \
+            --kind analyst --angle "what the trade press says" --via websearch --date 2026-07-01 \
+            --title "Sector outlook for the coming year" --quote "Consolidation is expected."
+          python scripts/independence.py portfolio --tsv "$DIVERSE"
+          echo "OK: a genuinely diverse run is not flagged"
+
+      - name: Staleness is judged per claim kind, not on one global horizon
+        working-directory: skills/legwork
+        # A 400-day-old pricing page is worthless and a 400-day-old filing is
+        # fine. If both ever answer the same way, the per-claim-kind half-life
+        # has stopped being used and the whole model has collapsed to a constant.
+        run: |
+          set -e
+          RUN=$(mktemp -d); TSV="$RUN/aged.tsv"
+          OLD=$(python -c "import datetime;print((datetime.date.today()-datetime.timedelta(days=400)).isoformat())")
+          python scripts/sources.py log --tsv "$TSV" \
+            --url "https://vendor.example/pricing" --kind vendor_pricing \
+            --angle "what it costs" --via webfetch --date "$OLD" \
+            --title "Pricing" --quote "The team plan costs 30 dollars per seat."
+
+          if python scripts/sources.py stale --tsv "$TSV" --claim-kind price >/dev/null 2>&1; then
+            echo "ERROR: a 400-day-old source passed as fresh for a price claim"
+            exit 1
+          fi
+          echo "OK: stale for a price claim"
+
+          python scripts/sources.py stale --tsv "$TSV" --claim-kind market
+          echo "OK: the same source is current for a market claim"
+
+      - name: Resume reports what a previous run already paid for
+        working-directory: skills/legwork
+        run: |
+          set -e
+          RUN=$(mktemp -d); TSV="$RUN/partial.tsv"
+          python scripts/sources.py log --tsv "$TSV" \
+            --url "https://a.example/one?utm_source=x" --kind press \
+            --angle "the first angle" --via websearch --date 2026-07-01 \
+            --title "One" --quote "A quotable sentence."
+          python scripts/sources.py log --tsv "$TSV" \
+            --url "https://b.example/two" --kind press \
+            --angle "the second angle" --via websearch --date 2026-07-01 --title "Two"
+
+          python scripts/sources.py resume --tsv "$TSV" --format json > "$RUN/state.json"
+          python - "$RUN/state.json" <<'PY'
+          import json, sys
+          state = json.load(open(sys.argv[1]))
+          assert state["sources"] == 2, state
+          # Tracking parameters must not stop a refetch being recognised.
+          assert "https://a.example/one" in state["fetched"], state["fetched"]
+          assert sorted(state["angles"]) == ["the first angle", "the second angle"], state
+          # The source with no quote is what the gate will reject later.
+          assert state["unquoted"] == ["https://b.example/two"], state
+          print("OK: resume state is usable")
+          PY
 
       - name: setup.sh must succeed WITHOUT the Bright Data CLI
         working-directory: skills/legwork

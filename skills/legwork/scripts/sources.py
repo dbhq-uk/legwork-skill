@@ -409,6 +409,106 @@ def read_rows(tsv_path):
 
 
 # ---------------------------------------------------------------------------
+# Freshness
+# ---------------------------------------------------------------------------
+
+# Scoring already decays a source continuously. Freshness answers the blunter
+# question the gate and the Challenge phase need: has this gone off? Two
+# half-lives is the default horizon, i.e. the point at which recency has taken
+# three quarters of the source's value away.
+DEFAULT_STALE_HALF_LIVES = 2
+
+
+def staleness_horizon_days(claim_kind, half_lives=DEFAULT_STALE_HALF_LIVES):
+    """How old a source of this claim kind may be before it counts as stale."""
+    return HALF_LIFE_DAYS.get(claim_kind, HALF_LIFE_DAYS['general']) * half_lives
+
+
+def freshness(row, claim_kind, half_lives=DEFAULT_STALE_HALF_LIVES, now=None):
+    """Classify one logged source as 'current', 'stale' or 'undated'.
+
+    Undated is deliberately its own state rather than being folded into stale.
+    They are different problems with different fixes: an undated source needs a
+    date recorded, a stale one needs replacing.
+    """
+    horizon = staleness_horizon_days(claim_kind, half_lives)
+    parsed, _ = parse_date(row.get('date'))
+    if parsed is None:
+        state, age_days = 'undated', None
+    else:
+        reference = now or datetime.now(timezone.utc)
+        age_days = (reference - parsed).total_seconds() / 86400.0
+        state = 'stale' if age_days > horizon else 'current'
+    return {
+        'url': row.get('url', ''),
+        'kind': row.get('kind', ''),
+        'angle': row.get('angle', ''),
+        'state': state,
+        'age_days': None if age_days is None else round(age_days, 1),
+        'horizon_days': horizon,
+    }
+
+
+def freshness_audit(rows, claim_kind, half_lives=DEFAULT_STALE_HALF_LIVES, now=None):
+    """Split a whole log into current, stale and undated for one claim kind."""
+    results = [freshness(row, claim_kind, half_lives=half_lives, now=now) for row in rows]
+    counts = {'current': 0, 'stale': 0, 'undated': 0}
+    for result in results:
+        counts[result['state']] += 1
+    return {
+        'claim_kind': claim_kind,
+        'horizon_days': staleness_horizon_days(claim_kind, half_lives),
+        'sources': len(results),
+        'flagged': [r for r in results if r['state'] != 'current'],
+        **counts,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Resume
+# ---------------------------------------------------------------------------
+
+
+def resume_state(rows):
+    """What a previous run already paid for, so a re-run can skip it.
+
+    A deep run that dies partway has a complete log of everything it retrieved.
+    Starting over refetches pages that are already recorded, which costs time and
+    (on the Bright Data path) money for nothing.
+    """
+    # Imported here rather than at module scope: independence imports read_rows
+    # from this module, so a top-level import would be circular. By call time
+    # both modules are fully loaded.
+    from independence import canonicalize
+
+    angles = {}
+    fetched, failed, unquoted = [], [], []
+    quoted = 0
+    for row in rows:
+        angle = (row.get('angle') or '').strip()
+        if angle:
+            angles[angle] = angles.get(angle, 0) + 1
+        key = canonicalize(row.get('url', ''))
+        if (row.get('status') or 'ok').lower() == 'ok':
+            if key not in fetched:
+                fetched.append(key)
+            if (row.get('quote') or '').strip():
+                quoted += 1
+            elif key not in unquoted:
+                unquoted.append(key)
+        elif key not in failed:
+            failed.append(key)
+    return {
+        'sources': len(rows),
+        'angles': angles,
+        'fetched': fetched,
+        'failed': failed,
+        'quoted': quoted,
+        'unquoted': unquoted,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -490,6 +590,46 @@ def cmd_score(args):
             result['score'], result['tier'], result['source_kind'], result['url'][:70]))
 
 
+def cmd_stale(args):
+    rows = read_rows(args.tsv)
+    if not rows:
+        print('error: no rows in {}'.format(args.tsv), file=sys.stderr)
+        sys.exit(1)
+    result = freshness_audit(rows, args.claim_kind, half_lives=args.half_lives)
+    if args.format == 'json':
+        print(json.dumps(result, indent=2))
+    else:
+        print('{} sources against a {}-day horizon for {!r} claims: '
+              '{} current, {} stale, {} undated'.format(
+                  result['sources'], result['horizon_days'], result['claim_kind'],
+                  result['current'], result['stale'], result['undated']))
+        for entry in result['flagged']:
+            age = 'undated' if entry['age_days'] is None else '{:.0f}d old'.format(entry['age_days'])
+            print('  {:<8} {:<12} {}'.format(entry['state'], age, entry['url'][:70]))
+    sys.exit(0 if not result['flagged'] else 1)
+
+
+def cmd_resume(args):
+    state = resume_state(read_rows(args.tsv))
+    if args.format == 'json':
+        print(json.dumps(state, indent=2))
+        return
+    print('{} retrievals already logged: {} distinct pages fetched, {} failed, {} carry a quote'.format(
+        state['sources'], len(state['fetched']), len(state['failed']), state['quoted']))
+    if state['angles']:
+        print('\nangles already worked:')
+        for angle, count in sorted(state['angles'].items(), key=lambda kv: -kv[1]):
+            print('  {:>3}  {}'.format(count, angle))
+    if state['unquoted']:
+        print('\nfetched but carrying no quote (the gate will not accept these as evidence):')
+        for url in state['unquoted']:
+            print('  {}'.format(url[:88]))
+    if state['failed']:
+        print('\nfailed, worth retrying:')
+        for url in state['failed']:
+            print('  {}'.format(url[:88]))
+
+
 def main():
     parser = argparse.ArgumentParser(prog='sources', description=__doc__.split('\n')[1])
     sub = parser.add_subparsers(dest='command', required=True)
@@ -517,8 +657,20 @@ def main():
     p_score.add_argument('--claim-kind', required=True, choices=list(CLAIM_KINDS))
     p_score.add_argument('--format', default='table', choices=['table', 'json'])
 
+    p_stale = sub.add_parser('stale', help='Flag logged sources that have gone off for a claim kind')
+    p_stale.add_argument('--tsv', required=True)
+    p_stale.add_argument('--claim-kind', required=True, choices=list(CLAIM_KINDS))
+    p_stale.add_argument('--half-lives', type=float, default=DEFAULT_STALE_HALF_LIVES,
+                         help='Staleness horizon, in half-lives of the claim kind (default 2)')
+    p_stale.add_argument('--format', default='table', choices=['table', 'json'])
+
+    p_resume = sub.add_parser('resume', help='Summarise an existing fetch log so a re-run can skip it')
+    p_resume.add_argument('--tsv', required=True)
+    p_resume.add_argument('--format', default='table', choices=['table', 'json'])
+
     args = parser.parse_args()
-    {'kinds': cmd_kinds, 'log': cmd_log, 'score': cmd_score}[args.command](args)
+    {'kinds': cmd_kinds, 'log': cmd_log, 'score': cmd_score,
+     'stale': cmd_stale, 'resume': cmd_resume}[args.command](args)
 
 
 if __name__ == '__main__':

@@ -19,6 +19,8 @@ Exit status is 0 when there are no errors. Warnings do not fail the run.
 | Structural | error | error | error |
 | Evidence | not run | warning | error |
 | Independence | not run | warning | error |
+| Comparison matrix | not run | warning | error |
+| Filing | warning | warning | warning |
 
 Structural problems are always errors because they make a document unusable
 regardless of how well researched it is. Evidence and independence problems are
@@ -109,6 +111,30 @@ legitimate; padding the source list is not.
   The check is skipped below six retrievals: a two-source run is small rather than
   lopsided, and firing there would fail quick runs for a reason they cannot act
   on.
+
+## Comparison matrix
+
+Runs only when the report carries a `## Comparison matrix` section.
+
+- **Every cell says something** - a claim, or `[unknown]`. A blank cell is an
+  error, because a reader takes it to mean "no" when it means "we never found
+  out".
+- **A row stating any established value cites something.** A row that is entirely
+  `[unknown]` needs no citation and is not a problem.
+- **Rows have the table's column count.**
+
+Table cells are not sentences, so figure tracing and the confidence checks cannot
+see inside a matrix. Without this layer a grid of confident-looking values citing
+nothing would pass a gate that rejects the same claim written as prose.
+
+## Filing
+
+- **The run is registered in the research index**, when one exists at the output
+  base.
+
+Always a warning, never an error, even at deep. Filing is housekeeping and must
+not block a sound deliverable. It only fires when an `index.md` is already there,
+so a user who never made one is never nagged about it.
 
 ## The "could not answer" shape
 

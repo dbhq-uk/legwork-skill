@@ -42,6 +42,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from independence import canonicalize, corroboration, portfolio  # noqa: E402
+from index import read_index  # noqa: E402
+from matrix import check_matrix, parse_matrix  # noqa: E402
 from sources import read_rows  # noqa: E402
 
 LEVELS = ('quick', 'standard', 'deep')
@@ -376,6 +378,39 @@ def check_portfolio(rows, problems):
         problems.graded(failure)
 
 
+def check_matrix_section(content, problems):
+    """A comparison matrix, if the report carries one.
+
+    Table cells are not sentences, so none of the sentence-level checks above can
+    see inside a matrix. Without this, a grid of confident-looking values citing
+    nothing passes a gate that would reject the same claim written as prose.
+    """
+    parsed = parse_matrix(content)
+    if parsed is None:
+        return
+    for problem in check_matrix(parsed)['problems']:
+        problems.graded(problem)
+
+
+def check_registered(report_path, problems):
+    """Is this run findable by the next one?
+
+    Only fires when an index already exists. The index is opt-in, and nagging a
+    user who never made one would be noise. Always a warning, never an error:
+    filing is housekeeping and must not block a sound deliverable.
+    """
+    run_dir = os.path.dirname(os.path.abspath(report_path))
+    base = os.path.dirname(run_dir)
+    if not os.path.exists(os.path.join(base, 'index.md')):
+        return
+    folder = os.path.basename(run_dir)
+    if not any(entry.get('folder') == folder for entry in read_index(base)):
+        problems.warn(
+            'not registered in the research index at {}/index.md - the next run will not find '
+            'this one and will repeat it. Add it with: index.py add --base {} --folder {} '
+            '--topic "..." --one-liner "..."'.format(base, base, folder))
+
+
 def check_could_not_answer(content, problems):
     if not CLOSEST_RE.search(content):
         problems.structural(
@@ -417,6 +452,9 @@ def run(report_path, tsv_path, fmt, level):
     if evidence_layers:
         check_confidence(content, entries, rows, problems, run_independence=bool(rows))
         check_portfolio(rows, problems)
+        check_matrix_section(content, problems)
+
+    check_registered(report_path, problems)
 
     return problems, {'outcome': 'report', 'sources': len(entries), 'fetched': len(rows)}
 

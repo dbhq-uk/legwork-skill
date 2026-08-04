@@ -39,6 +39,40 @@ this is a summary of evidence, not a preamble to it.]
 - **What would change the answer.** The falsifiers. These are what Challenge hunted
   for, and they set up the Limitations section.]
 
+<!--
+=============================================================================
+OPTIONAL: THE COMPARISON MATRIX
+
+Include this ONLY when the decision is a comparison across three or more named
+options. "Which of these should we use" is a grid question, and rendering it as
+prose alone loses the grid.
+
+The matrix carries the data. The findings still carry the argument - do not let
+the table replace them, and do not repeat the table back in prose underneath it.
+
+Two rules the gate enforces, because table cells are not sentences and none of
+the sentence-level checks can see inside them:
+
+  - EVERY cell says something. Either a claim, or [unknown]. A blank cell reads
+    as "no" when it means "we never found out", and that is the single most
+    common way a comparison misleads.
+  - A row stating any established value cites something. A row that is entirely
+    [unknown] needs no citation and still belongs in the table: it records that
+    the option was examined and came back empty, which is exactly the option a
+    reader would otherwise assume was overlooked.
+
+Check it with: matrix.py check --report <path>
+Delete this whole block, heading included, when the question is not a comparison.
+=============================================================================
+-->
+
+## Comparison matrix
+
+| Option | [Field] | [Field] | [Field] |
+|---|---|---|---|
+| [Option A] | [value] [N] | [value] [N] | [unknown] |
+| [Option B] | [value] [N] | [unknown] | [value] [N] |
+
 ## Findings
 
 ### Finding 1: [The finding as a claim someone can act on]
@@ -98,6 +132,37 @@ wearing a suit.
 
 Distinguish what to do now, what to do if a named condition holds, and what to stop
 worrying about.]
+
+<!--
+=============================================================================
+THE TWO SECTIONS BELOW APPEAR ONLY ON A REFRESH
+
+A refresh updates this report in place - same folder, same file - rather than
+creating a second folder that competes with it. These two sections are what make
+that safe, because without them a refresh silently overwrites what it disagrees
+with and the reader cannot tell the picture changed.
+
+Omit both entirely on a first run.
+=============================================================================
+-->
+
+## Superseded
+
+[Claims from an earlier version of THIS report that are now wrong, each with the date
+and the reason. Never delete a claim silently - a reader who acted on the old version
+needs to see that it moved, and a future run needs to know this ground was covered.
+
+If the same answer has now been overturned twice, say so loudly here: it is the
+strongest signal in the document that the question is unstable.]
+
+| Claim | Why it no longer holds | Date |
+|---|---|---|
+| [The superseded claim, as it was written] | [What changed, cited] | YYYY-MM-DD |
+
+## Timeline
+
+- YYYY-MM-DD - first run, [level]
+- YYYY-MM-DD - refreshed: [what changed in one line]
 
 ## Bibliography
 

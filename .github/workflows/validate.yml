@@ -325,6 +325,105 @@ jobs:
           print("OK: resume state is usable")
           PY
 
+      - name: A refresh updates its index row rather than duplicating it
+        working-directory: skills/legwork
+        # The index is a dispatcher, and two rows describing one folder make it
+        # ambiguous - a reader acts on whichever they happen to read. Upsert is
+        # keyed on the folder for exactly this reason.
+        run: |
+          set -e
+          BASE=$(mktemp -d)
+          python scripts/index.py add --base "$BASE" --folder "Topic_Research_20260802" \
+            --topic "Outlook triage" --level deep --one-liner "No native triage below E5"
+          python scripts/index.py add --base "$BASE" --folder "Other_Research_20260714" \
+            --topic "Plugin gallery" --level standard --one-liner "No submission route exists"
+          python scripts/index.py add --base "$BASE" --folder "Topic_Research_20260802" \
+            --topic "Outlook triage" --level deep --one-liner "Now shipping on Business Premium"
+
+          python scripts/index.py list --base "$BASE" --format json > "$BASE/state.json"
+          python - "$BASE/state.json" <<'PY'
+          import json, sys
+          rows = json.load(open(sys.argv[1]))
+          folders = [r["folder"] for r in rows]
+          assert len(folders) == 2, folders
+          assert folders.count("Topic_Research_20260802") == 1, folders
+          row = next(r for r in rows if r["folder"] == "Topic_Research_20260802")
+          assert row["one_liner"] == "Now shipping on Business Premium", row
+          # Position must survive a refresh, or the index reshuffles every run.
+          assert folders[0] == "Topic_Research_20260802", folders
+          print("OK: refresh updates in place")
+          PY
+
+      - name: A stale index entry is flagged rather than read as current
+        working-directory: skills/legwork
+        run: |
+          set -e
+          BASE=$(mktemp -d)
+          OLD=$(python -c "import datetime;print((datetime.date.today()-datetime.timedelta(days=200)).isoformat())")
+          python scripts/index.py add --base "$BASE" --folder "Old_Research_20260101" \
+            --topic "Old" --level deep --one-liner "Concluded something" --verified "$OLD"
+          python scripts/index.py add --base "$BASE" --folder "New_Research_20260802" \
+            --topic "New" --level deep --one-liner "Concluded something else"
+
+          python scripts/index.py list --base "$BASE" --stale-days 90 --format json > "$BASE/s.json"
+          python - "$BASE/s.json" <<'PY'
+          import json, sys
+          rows = {r["folder"]: r["stale"] for r in json.load(open(sys.argv[1]))}
+          assert rows["Old_Research_20260101"] is True, rows
+          assert rows["New_Research_20260802"] is False, rows
+          print("OK: staleness is flagged per entry")
+          PY
+
+      - name: A blank matrix cell is caught where a marked unknown is not
+        working-directory: skills/legwork
+        # The distinction the matrix layer exists for. A blank cell reads as a
+        # confident "no"; [unknown] says the question was asked and came back
+        # empty. If both ever pass, the layer has stopped doing its only job.
+        run: |
+          set -e
+          RUN=$(mktemp -d)
+          cat > "$RUN/blank.md" <<'MD'
+          # A comparison
+
+          ## Comparison matrix
+
+          | Option | Price | Native triage |
+          |---|---|---|
+          | Acme | 30 USD/seat [1] |  |
+          MD
+          if python scripts/matrix.py check --report "$RUN/blank.md" >/dev/null 2>&1; then
+            echo "ERROR: a blank matrix cell passed"
+            exit 1
+          fi
+          echo "OK: blank cell caught"
+
+          cat > "$RUN/marked.md" <<'MD'
+          # A comparison
+
+          ## Comparison matrix
+
+          | Option | Price | Native triage |
+          |---|---|---|
+          | Acme | 30 USD/seat [1] | [unknown] |
+          MD
+          python scripts/matrix.py check --report "$RUN/marked.md"
+          echo "OK: an explicit unknown is accepted"
+
+          cat > "$RUN/uncited.md" <<'MD'
+          # A comparison
+
+          ## Comparison matrix
+
+          | Option | Price | Native triage |
+          |---|---|---|
+          | Acme | 30 USD/seat | No |
+          MD
+          if python scripts/matrix.py check --report "$RUN/uncited.md" >/dev/null 2>&1; then
+            echo "ERROR: a matrix row stating values with no citation passed"
+            exit 1
+          fi
+          echo "OK: uncited row caught"
+
       - name: setup.sh must succeed WITHOUT the Bright Data CLI
         working-directory: skills/legwork
         # Bright Data is a fallback provider, not a requirement: the skill runs

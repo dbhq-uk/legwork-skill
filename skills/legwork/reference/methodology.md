@@ -17,6 +17,9 @@ Outlook triage for small accounting practices, or is the gap too narrow" is a
 decision. If the user gave you a topic, infer the decision from context and state
 your inference in the Introduction rather than asking.
 
+Before writing any of it down, check the index (`SKILL.md`, "Before you start").
+A decision already settled by a run that still holds does not need framing again.
+
 ### 2. The sub-questions that would settle it
 
 Between two and eight, depending on level. Each must be answerable by evidence,
@@ -237,6 +240,22 @@ number came from.
 Pick the format (`SKILL.md` says which per level), then write section by section,
 each write under roughly 2,000 words so no single tool call risks truncation.
 
+### When the question is a comparison
+
+Three or more named options means a `## Comparison matrix` alongside the prose.
+Decide the field list **before** fanning out, or each option comes back described
+in its own terms and the grid cannot be assembled: one agent reports a monthly
+price, another an annual one, a third a "contact us".
+
+Fill the grid honestly. `[unknown]` is a result and belongs in the cell; a blank
+is not, and reads as a confident "no". A whole row of `[unknown]` is worth
+keeping - it says the option was examined, which stops the next reader assuming
+it was skipped.
+
+Then write the findings from the grid rather than restating it. The matrix says
+what each option does; the findings say which one to pick and why, and that is
+still the part the report exists for.
+
 ### Findings carry their own claim
 
 `### Finding 3: Microsoft is the biggest risk, but the gate is 96% wide` is worth
@@ -296,3 +315,14 @@ Limitations, named specifically rather than as generic hedging.
 
 Run `check.py` at your level, fix what it reports, re-run. After two failed
 cycles, stop and tell the user what is wrong rather than continuing to patch.
+
+### Then file it
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/index.py add --base "$OUTPUT_BASE" \
+  --folder "$BASE" --topic "..." --level "$LEVEL" --one-liner "..."
+```
+
+A run that never reaches the index is a run the next session cannot find, so the
+next session repeats it. That applies to a "could not answer" run too: "we looked
+and nothing held" is exactly what saves the next person the search.

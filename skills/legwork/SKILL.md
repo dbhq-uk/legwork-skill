@@ -65,19 +65,70 @@ the output folder name, and in every search query that could return dated
 material. Never rely on your own sense of what year it is, and never let a
 subagent work it out for itself.
 
-**Check whether this run has already been done.** Look in the output base for a
-prior run on the same question. If one exists and still holds, say so and answer
-from it rather than repeating it. If it is stale or was left unfinished, resume
-rather than restart:
+**Check whether this run has already been done.** Read the index first. It is a
+dispatcher: one row per past run, and the one-liner column exists so you can
+decide whether to open a report without paying to open it.
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py resume --tsv "$OUT/$BASE.tsv"
+python3 ${CLAUDE_SKILL_DIR}/scripts/index.py list --base "$OUTPUT_BASE"
 ```
 
-That prints the angles already worked, the pages already fetched, and which of
-them still carry no quote. Everything in that log is already paid for. A run that
-died at minute 30 should pick up the uncovered angles, not refetch the covered
-ones.
+Then pick one of four paths, and say which in your opening line:
+
+| The index says | Do this |
+|---|---|
+| A run covers this and is not stale | Answer from it. Read that report, not the web. |
+| A run covers this but is flagged stale | **Refresh** it |
+| A run is close but answers a different question | New run, and cross-reference it |
+| Nothing matches | New run |
+
+**Answering from a prior run is a success, not a shortcut.** Open the report, read
+the findings that bear on the question, and answer with their confidence bands
+intact. Say plainly that it comes from a run of a given date. Re-running research
+that was already done and still holds is the waste this index exists to prevent.
+
+### Refreshing rather than re-running
+
+A refresh **updates the existing report in place** - same folder, same file. Do
+not create a second folder: two folders describing one question is how a reader
+ends up acting on whichever they happened to open.
+
+1. Resume the fetch log rather than starting a new one. Everything in it is
+   already paid for.
+
+   ```bash
+   python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py resume --tsv "$OUT/$BASE.tsv"
+   ```
+
+   That prints the angles already worked, the pages already fetched, and which of
+   them still carry no quote. Work the uncovered angles and re-verify the claims
+   that decide the answer; do not refetch what is already recorded and current.
+
+2. Move every claim that is now wrong into `## Superseded` with the date and the
+   reason. **Never delete a claim silently.** Someone may have acted on it, and a
+   future run needs to know this ground has been covered. If the same answer has
+   now been overturned twice, say so loudly - that is the strongest signal in the
+   document that the question is unstable.
+
+3. Append a `## Timeline` line saying what changed.
+
+4. Update the index row.
+
+### Filing the run
+
+Every run ends in the index, including one that could not answer - "we looked and
+found nothing" is exactly what a future session needs to not look again.
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/index.py add --base "$OUTPUT_BASE" \
+  --folder "$BASE" --topic "Outlook triage for small practices" --level deep \
+  --one-liner "No native triage below E5; the gap is real but narrow"
+```
+
+The one-liner says what the run **concluded**, not what it was about. "Notes on
+the plugin gallery" is useless six months from now; "No submission route exists,
+install is by URL or not at all" answers the question on its own. The gate warns
+when a run is missing from an index that exists.
 
 ## Retrieval policy
 
@@ -202,6 +253,8 @@ All stdlib-only. No virtualenv. Any `python3` >= 3.9.
 | `sources.py resume` | What a previous run already fetched, so a re-run skips it |
 | `independence.py groups \| check` | Collapse sources into independent voices; count angle-aware corroboration |
 | `independence.py portfolio` | Source concentration across the whole run, not within one finding |
+| `index.py add \| list` | The research index - file a run, find a past one, spot stale ones |
+| `matrix.py check --report PATH` | Completeness of a comparison matrix |
 | `check.py --report PATH --level LEVEL` | The shippability gate |
 | `bd_search.py "<query\|url>" -m MODE --json` | Bright Data retrieval fallback |
 
@@ -216,13 +269,19 @@ OUT="$OUTPUT_BASE/$BASE"; mkdir -p "$OUT"
 ```
 
 The folder and every file in it share one base name, so they group and sort
-together:
+together, and `index.md` at the base is the dispatcher across all of them:
 
 ```
-docs/research/Outlook_Email_SaaS_Research_20260728/
-  Outlook_Email_SaaS_Research_20260728.md
-  Outlook_Email_SaaS_Research_20260728.tsv
+docs/research/
+  index.md
+  Outlook_Email_SaaS_Research_20260728/
+    Outlook_Email_SaaS_Research_20260728.md
+    Outlook_Email_SaaS_Research_20260728.tsv
 ```
+
+The date in the folder name is when the run was **created**. A refresh keeps that
+name and records the new date in `## Timeline` and in the index, so the folder
+stays a stable address rather than multiplying.
 
 Supporting documents keep their own descriptive names inside the folder.
 
@@ -232,6 +291,27 @@ Supporting documents keep their own descriptive names inside the folder.
 
 **brief** (quick, and standard when the question is small) - 800 to 2,500 words.
 Template: [brief_template.md](./templates/brief_template.md).
+
+**A comparison across three or more named options adds a matrix.** "Which of
+these should we use" is a grid question, and prose alone loses the grid. Add a
+`## Comparison matrix` section: one row per option, one column per field that
+would decide it. The matrix carries the data, the findings still carry the
+argument, and neither repeats the other.
+
+One agent per option is the natural fan-out, filling the same field list. Every
+cell must say something - a claim, or `[unknown]` - because a blank cell reads as
+"no" when it means "we never found out", and that is the commonest way a
+comparison misleads. A row that is entirely `[unknown]` still belongs in the
+table: it records that the option was examined and came back empty, which is
+exactly the option a reader would otherwise assume was overlooked.
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/matrix.py check --report "$OUT/$BASE.md"
+```
+
+Table cells are not sentences, so none of the gate's sentence-level checks can
+see inside them. This is what stops a grid of confident-looking values citing
+nothing from passing a gate that would reject the same claim written as prose.
 
 **report** (deep, and standard when the question warrants it) - Executive
 Summary, Introduction, Findings, Synthesis, Limitations, Recommendations,

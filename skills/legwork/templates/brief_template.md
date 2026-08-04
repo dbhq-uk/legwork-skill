@@ -107,6 +107,21 @@ rather than fabricating coverage.]
 
 ---
 
+<!--
+ON A REFRESH ONLY: a brief updated in place carries the same two sections as the
+report, kept short. Omit both on a first run.
+
+## Superseded
+
+| Claim | Why it no longer holds | Date |
+|---|---|---|
+
+## Timeline
+
+- YYYY-MM-DD - first run, [level]
+- YYYY-MM-DD - refreshed: [what changed]
+-->
+
 ## Bibliography
 
 <!--

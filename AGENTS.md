@@ -12,7 +12,7 @@ Guidance for AI agents (and people) working in this repository.
 .claude-plugin/plugin.json     # plugin manifest
 skills/legwork/SKILL.md        # the skill (agent-facing instructions)
 skills/legwork/scripts/        # python, standard library only
-skills/legwork/reference/      # methodology (four phases), quality gates
+skills/legwork/reference/      # methodology (four phases), quality gates, subagent brief
 skills/legwork/templates/      # brief + report
 skills/legwork/tests/          # offline, no network
 install.sh / install-codex.sh  # local symlink installers (Claude / Codex)
@@ -27,6 +27,8 @@ docs/design-notes.md           # why the skill is shaped the way it is
 - Bright Data is a **fallback**, never a requirement. Anything that assumes it is installed is a bug: the built-in `WebSearch`/`WebFetch` are the primary providers and a run must complete without a CLI present.
 - Tests are hermetic - no network, ever. The gate makes no network calls at all.
 - **Corroboration must be counted on the layer the pipeline does not amplify.** Gather deliberately fans out to find more sources per finding, so a source count measures our own effort. Independence groups reached from *different search angles* is the real signal. A change that makes corroboration rise with breadth has broken the check, whatever the tests say.
+- **The index is keyed on the folder, never the topic.** Topics get reworded between runs; the folder is stamped once and never moves. Upserting on the folder is what makes a refresh update its row in place instead of leaving two rows competing to describe one report. For the same reason the index header is identified by *position*, not by a cell reading "Topic" - a run whose topic is worded like a column heading is still a run.
+- **A blank matrix cell is never acceptable.** `[unknown]` records that the question was asked and came back empty; a blank records nothing and reads as a confident "no". Table cells are not sentences, so no other layer of the gate can see inside them.
 - House style: British English, plain hyphens (no em or en dashes).
 
 ## Validating a change
@@ -38,7 +40,26 @@ python3 scripts/check.py --report tests/fixtures/valid_brief.md --format brief -
 python3 scripts/check.py --report tests/fixtures/invalid_report.md --level deep      # MUST fail
 python3 scripts/check.py --report tests/fixtures/unfetched_citation.md --level deep  # MUST fail
 python3 scripts/check.py --report tests/fixtures/one_origin.md --level deep          # MUST fail
+python3 scripts/check.py --report tests/fixtures/no_evidence.md --level deep         # MUST fail
+python3 scripts/check.py --report tests/fixtures/undated_evidence.md --level deep    # MUST fail
+python3 scripts/check.py --report tests/fixtures/concentrated.md --level deep        # MUST fail
 cd ../.. && claude plugin validate .         # manifest + structure
 ```
 
-The three fixtures that MUST fail are the important ones - they exist so the gate is proved to bite. Each covers a different failure mode: `invalid_report.md` a truncated document, `unfetched_citation.md` a citation to a page nobody opened, `one_origin.md` a strong claim resting on a single line of enquiry. A change that makes any of them pass has broken the gate, even if every other test is green.
+The fixtures that MUST fail are the important ones - they exist so the gate is proved to bite. Each covers a different failure mode, and each fails for that reason **only**, which is what makes it evidence about that check rather than about the gate in general:
+
+| Fixture | Failure mode |
+|---|---|
+| `invalid_report.md` | a truncated document that looks finished |
+| `unfetched_citation.md` | a citation to a page nobody opened |
+| `one_origin.md` | a strong claim resting on a single line of enquiry |
+| `no_evidence.md` | a finding with neither a traceable figure nor a quote |
+| `undated_evidence.md` | a finding whose age cannot be judged |
+| `concentrated.md` | a run resting almost entirely on one party |
+
+A change that makes any of them pass has broken the gate, even if every other test is green.
+
+Two properties are asserted end to end in CI rather than only in unit tests, because both are the kind of thing a plausible-looking refactor silently destroys:
+
+- **Corroboration must not rise with our own fan-out.** Many sources from one angle still count as one confirmation.
+- **Concentration must be measured on retrievals, not on groups.** Eight pages from one vendor collapse to a single independence group, so a group-level measure would report a run dominated by that vendor as balanced.

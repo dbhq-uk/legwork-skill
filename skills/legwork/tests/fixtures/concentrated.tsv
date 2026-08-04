@@ -1,0 +1,8 @@
+url	kind	angle	via	fetched_at	status	date	numbers	title	quote
+https://onevendor.example/docs	vendor_docs	angle for docs	webfetch	2026-07-28T09:00:00+00:00	ok	2026-07-01		Vendor docs	A sentence from the vendor docs page.
+https://onevendor.example/pricing	vendor_pricing	angle for pricing	webfetch	2026-07-28T09:00:00+00:00	ok	2026-07-01		Vendor pricing	A sentence from the vendor pricing page.
+https://onevendor.example/changelog	vendor_announcement	angle for changelog	webfetch	2026-07-28T09:00:00+00:00	ok	2026-07-01		Vendor changelog	A sentence from the vendor changelog page.
+https://onevendor.example/reference	vendor_docs	angle for reference	webfetch	2026-07-28T09:00:00+00:00	ok	2026-07-01		Vendor reference	A sentence from the vendor reference page.
+https://onevendor.example/announcement	vendor_announcement	angle for announcement	webfetch	2026-07-28T09:00:00+00:00	ok	2026-07-01		Vendor announcement	A sentence from the vendor announcement page.
+https://onevendor.example/migration	vendor_docs	angle for migration	webfetch	2026-07-28T09:00:00+00:00	ok	2026-07-01		Vendor migration	A sentence from the vendor migration page.
+https://forum.example/t/what-we-did	community	what practitioners did	brightdata	2026-07-28T09:02:00+00:00	ok	2026-06-15		What we did	We abandoned the documented route and did it by hand.

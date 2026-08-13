@@ -212,6 +212,13 @@ going dead six months from now.
 later confirm that a figure you quote actually appeared on a page you opened. No
 page text beyond the quote is stored.
 
+`--via` records how the page was reached: `websearch`, `webfetch`, `brightdata`,
+`api` for a structured endpoint queried directly, `local` for evidence read from
+disk, `mcp` for a connected tool. Log the transport you actually used. Re-fetching
+a page through a different one to make it loggable distorts the trail rather than
+recording it. Local evidence is cited with a `file://` locator and counts as a
+single party however many files it spans.
+
 Run `sources.py kinds` for the source kinds and which claims they suit.
 
 ## Subagents
@@ -256,6 +263,7 @@ All stdlib-only. No virtualenv. Any `python3` >= 3.9.
 | `index.py add \| list` | The research index - file a run, find a past one, spot stale ones |
 | `matrix.py check --report PATH` | Completeness of a comparison matrix |
 | `check.py --report PATH --level LEVEL` | The shippability gate |
+| `finish.py --report PATH --level LEVEL` | Gate, staleness sweep and filing in one call |
 | `bd_search.py "<query\|url>" -m MODE --json` | Bright Data retrieval fallback |
 
 ## Output
@@ -344,17 +352,27 @@ An honest empty answer is a result. Hedged length is not.
 
 ## Gates
 
-After writing, run the gate for your level and fix what it reports:
+Close the run with one call. It gates the report, sweeps the evidence for
+anything past its horizon, and files the run:
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/check.py \
-  --report "$OUT/$BASE.md" --format report --level deep
+python3 ${CLAUDE_SKILL_DIR}/scripts/finish.py \
+  --report "$OUT/$BASE.md" --level deep \
+  --topic "Outlook triage for small practices" \
+  --one-liner "No native triage below E5; the gap is real but narrow"
 ```
+
+A run that fails the gate is **not** filed, because the index is what the next
+session trusts instead of searching again.
 
 Structural problems are always errors. Evidence and independence problems are
 warnings at standard and errors at deep. **After two failed cycles, stop and
 report to the user** rather than grinding. Details in
 [quality-gates.md](./reference/quality-gates.md).
+
+`check.py` still runs the gate alone if you want it without the filing. If the
+Stop hook is installed (`install.sh --with-hook`) it gates any report written in
+the session anyway, so skipping this step is loud rather than silent.
 
 ## Trust boundary
 

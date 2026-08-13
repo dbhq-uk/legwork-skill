@@ -52,7 +52,10 @@ jobs:
       # The whole point of this skill is that it ships no dependencies. If an
       # import creeps in, the "no virtualenv required" claim in the README and
       # the installers silently becomes false - so assert it rather than trust it.
-      - name: Scripts import nothing outside the standard library
+      - name: Evals file is valid JSON
+        run: jq empty evals/evals.json
+
+      - name: Scripts and hooks import nothing outside the standard library
         run: |
           python3 - <<'PY'
           import ast, pathlib, sys
@@ -61,8 +64,12 @@ jobs:
           # No exceptions. The skill outputs markdown only, so there is no longer
           # even an optional renderer to carve out.
           ALLOWED_OPTIONAL = set()
+          # The hook ships outside the skill directory but runs on the user's
+          # machine on every Stop, so it is held to exactly the same bar.
+          sources = sorted(pathlib.Path("skills/legwork/scripts").glob("*.py")) + \
+                    sorted(pathlib.Path("hooks").glob("*.py"))
           bad = []
-          for f in sorted(pathlib.Path("skills/legwork/scripts").glob("*.py")):
+          for f in sources:
               for node in ast.walk(ast.parse(f.read_text())):
                   mods = []
                   if isinstance(node, ast.Import):
@@ -105,13 +112,12 @@ jobs:
         # path is asserted explicitly).
         run: python -m pytest tests/ -v -p no:cacheprovider
 
-      - name: Verify every script parses on this version
-        working-directory: skills/legwork
+      - name: Verify every script and hook parses on this version
         run: |
-          for f in scripts/*.py; do
+          for f in skills/legwork/scripts/*.py hooks/*.py; do
             python -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$f" || exit 1
           done
-          echo "All scripts parse cleanly on Python ${{ matrix.python-version }}"
+          echo "All scripts and hooks parse cleanly on Python ${{ matrix.python-version }}"
 
   smoke:
     name: end-to-end smoke (no network)

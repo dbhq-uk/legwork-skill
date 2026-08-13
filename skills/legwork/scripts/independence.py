@@ -104,8 +104,86 @@ def registrable_domain(host):
     return '.'.join(labels[-2:])
 
 
+# Multi-tenant hosts: one hostname, many unrelated publishers. The registrable
+# domain names the platform, not the voice - github.com is not a party, the org
+# is, and two orgs there are as independent as two companies. Value is how many
+# leading path segments identify the tenant.
+PATH_TENANT_HOSTS = {
+    'github.com': 1,
+    'githubusercontent.com': 1,
+    'gitlab.com': 1,
+    'bitbucket.org': 1,
+    'huggingface.co': 1,
+    'medium.com': 1,
+    'sourceforge.net': 1,
+    'npmjs.com': 1,
+    'pypi.org': 1,
+    'crates.io': 1,
+    'stackexchange.com': 1,
+}
+
+# Hosts where the tenant is the subdomain instead: 'acme.substack.com' and
+# 'rival.substack.com' are two publications, not one.
+SUBDOMAIN_TENANT_DOMAINS = frozenset([
+    'substack.com', 'github.io', 'gitlab.io', 'blogspot.com', 'wordpress.com',
+    'tumblr.com', 'gitbook.io', 'notion.site', 'readthedocs.io', 'netlify.app',
+    'vercel.app', 'pages.dev', 'wixsite.com', 'weebly.com', 'myshopify.com',
+])
+
+# Preprint, DOI and repository hosts where the *document* is the party. Three
+# unrelated research teams publishing on arxiv.org are three voices; counting
+# them as one is how a run that read three independent papers scores as having
+# read one. Same paper reached via /abs/, /pdf/ and /html/ stays one party.
+DOCUMENT_TENANT_HOSTS = frozenset([
+    'arxiv.org', 'doi.org', 'biorxiv.org', 'medrxiv.org', 'ssrn.com',
+    'osf.io', 'zenodo.org', 'papers.ssrn.com',
+])
+
+_ARXIV_ID = re.compile(r'/(?:abs|pdf|html|ps|format)/(\d{4}\.\d{4,5})')
+
+
+def _document_party(host, path):
+    """Identify the document on a preprint or DOI host, version stripped."""
+    match = _ARXIV_ID.search(path)
+    if match:
+        return '{}/{}'.format(host, match.group(1))
+    trimmed = path.strip('/')
+    return '{}/{}'.format(host, trimmed) if trimmed else host
+
+
 def party_of(url):
-    return registrable_domain(urlparse((url or '').strip()).hostname or '')
+    """The party behind a URL, treating multi-tenant platforms as platforms.
+
+    Falls back to the registrable domain, which is right for the ordinary case
+    of one organisation per domain.
+    """
+    parsed = urlparse((url or '').strip())
+    # Evidence read from disk is all one voice - the machine it was read on -
+    # however many files it spans. Treating each file as its own party would let
+    # a run corroborate itself out of its own working copy.
+    if (parsed.scheme or '').lower() == 'file':
+        return 'local'
+    host = (parsed.hostname or '').lower().strip('.')
+    if not host:
+        return ''
+    if host.startswith('www.'):
+        host = host[4:]
+    domain = registrable_domain(host)
+    path = parsed.path or ''
+
+    if domain in DOCUMENT_TENANT_HOSTS or host in DOCUMENT_TENANT_HOSTS:
+        return _document_party(domain, path)
+
+    if domain in SUBDOMAIN_TENANT_DOMAINS and host != domain:
+        return host
+
+    segments = PATH_TENANT_HOSTS.get(domain)
+    if segments:
+        parts = [part for part in path.split('/') if part][:segments]
+        if parts:
+            return '{}/{}'.format(domain, '/'.join(parts).lower())
+
+    return domain
 
 
 # ---------------------------------------------------------------------------

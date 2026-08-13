@@ -15,6 +15,8 @@ skills/legwork/scripts/        # python, standard library only
 skills/legwork/reference/      # methodology (four phases), quality gates, subagent brief
 skills/legwork/templates/      # brief + report
 skills/legwork/tests/          # offline, no network
+hooks/gate_on_stop.py          # Stop hook - gates any report written in a session
+evals/                         # behaviour evals + the baseline protocol
 install.sh / install-codex.sh  # local symlink installers (Claude / Codex)
 docs/design-notes.md           # why the skill is shaped the way it is
 ```
@@ -29,6 +31,9 @@ docs/design-notes.md           # why the skill is shaped the way it is
 - **Corroboration must be counted on the layer the pipeline does not amplify.** Gather deliberately fans out to find more sources per finding, so a source count measures our own effort. Independence groups reached from *different search angles* is the real signal. A change that makes corroboration rise with breadth has broken the check, whatever the tests say.
 - **The index is keyed on the folder, never the topic.** Topics get reworded between runs; the folder is stamped once and never moves. Upserting on the folder is what makes a refresh update its row in place instead of leaving two rows competing to describe one report. For the same reason the index header is identified by *position*, not by a cell reading "Topic" - a run whose topic is worded like a column heading is still a run.
 - **A blank matrix cell is never acceptable.** `[unknown]` records that the question was asked and came back empty; a blank records nothing and reads as a confident "no". Table cells are not sentences, so no other layer of the gate can see inside them.
+- **The platform is not the party.** `party_of` treats multi-tenant hosts as what they are: two orgs on one code host are two voices, three unrelated papers on one preprint server are three, and evidence read from disk is always one. A change that makes tenancy raise corroboration for sources found down a *single* angle has broken the check - `test_party_tenancy.py` pins both directions.
+- **A run that fails its gate is never filed.** `finish.py` gates before it writes to the index, because the index is what a later session trusts instead of searching again. Filing a failed run launders a conclusion the evidence does not support.
+- **Prose is a cost, not a free win.** The measured constraint on this skill is instruction density, not mechanism count: adherence collapses well before the number of rules legwork already carries, and the observed failure mode is an agent reporting compliance it did not achieve. Prefer moving a rule into the gate, a script or the hook over writing it down again. A change that adds standing procedure should say what it is buying and what it displaces.
 - House style: British English, plain hyphens (no em or en dashes).
 
 ## Validating a change
@@ -44,7 +49,13 @@ python3 scripts/check.py --report tests/fixtures/no_evidence.md --level deep    
 python3 scripts/check.py --report tests/fixtures/undated_evidence.md --level deep    # MUST fail
 python3 scripts/check.py --report tests/fixtures/concentrated.md --level deep        # MUST fail
 cd ../.. && claude plugin validate .         # manifest + structure
+bash -n install.sh                           # installer parses
 ```
+
+The suite covers the hook and the eval set as well as the scripts. The hook
+tests are the ones to watch: they assert that a *brief* is gated as a brief, and
+that a hook which cannot reach `check.py` stays silent. A hook that cries wolf
+gets removed, and a removed hook is the gate going back to being optional.
 
 The fixtures that MUST fail are the important ones - they exist so the gate is proved to bite. Each covers a different failure mode, and each fails for that reason **only**, which is what makes it evidence about that check rather than about the gate in general:
 

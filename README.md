@@ -54,9 +54,12 @@ The [skills.sh](https://skills.sh) CLI installs into whichever agent directories
 ```bash
 git clone https://github.com/dbhq-uk/legwork-skill.git
 cd legwork-skill
-./install.sh          # Claude Code: symlinks into ~/.claude/skills (edits are live)
-./install-codex.sh    # Codex: installs into ~/.codex/skills
+./install.sh              # Claude Code: symlinks into ~/.claude/skills (edits are live)
+./install.sh --with-hook  # ...and gate every report automatically (see below)
+./install-codex.sh        # Codex: installs into ~/.codex/skills
 ```
+
+**`--with-hook` is the one worth taking.** It registers a `Stop` hook that runs the gate on any legwork report written during a session and refuses to end the turn on one that fails. Without it the gate fires only when the agent remembers to run it, at the end of a long run - and measured against real runs, that is often enough not to happen. It edits `~/.claude/settings.json`, backing it up first, which is why it is opt-in rather than the default.
 
 **No virtualenv, no packages.** Every script is Python standard library only, on 3.9 or newer. That is the whole dependency list.
 
@@ -129,13 +132,14 @@ That last field earns its place twice. Around **half of real findings carry no f
 
 All standard library only, Python 3.9+.
 
-Four of them, all standard library only, Python 3.9+.
-
 | Script | Purpose |
 |--------|---------|
-| `sources.py kinds \| log \| score` | The source-kind vocabulary, the fetch log, and fitness scoring per claim kind |
-| `independence.py groups \| check` | Collapse sources into independent voices; count angle-aware corroboration |
-| `check.py --report P --level L` | The shippability gate: structural, evidence, independence |
+| `sources.py kinds \| log \| score \| stale \| resume` | The source-kind vocabulary, the fetch log, fitness scoring per claim kind, staleness, resume |
+| `independence.py groups \| check \| portfolio` | Collapse sources into independent voices; angle-aware corroboration; run-wide concentration |
+| `check.py --report P --level L` | The shippability gate: structural, evidence, independence, matrix |
+| `finish.py --report P --level L` | Gate, staleness sweep and index filing in one call |
+| `index.py add \| list` | The research index across runs |
+| `matrix.py check --report P` | Comparison-matrix completeness |
 | `bd_search.py` | Bright Data fallback wrapper |
 
 ## Tests
@@ -147,6 +151,14 @@ python3 -m pytest skills/legwork/tests/ -v      # no network required
 CI runs the suite across Python 3.9-3.13, plus an end-to-end smoke job that pushes the shipped fixtures through the real gates in both directions - asserting that sound deliverables pass *and* that each broken one is rejected for its own specific reason - runs a full log-to-gate lifecycle, and asserts setup succeeds with no Bright Data CLI present.
 
 One CI job exists solely to guard the property the independence layer is for: six distinct publishers logged against a single search angle must still fail a corroboration bar of two. A unit test that calls the gate directly cannot catch a gate that never binds in production.
+
+## Evaluations
+
+Tests prove the maths is right. They cannot prove the skill changes what an agent does, and a rule that never fires is indistinguishable from a rule that is absent.
+
+[`evals/`](evals/) holds four behaviour cases in the standard `{prompt, expected_behavior[]}` shape, each reproducing a failure observed in a real run rather than an imagined one: a run that reports gate compliance it did not achieve, an enumeration lifted whole from one aggregator, a settled question researched again from scratch, and padding where nothing cleared the floor.
+
+Each case runs twice - once with the skill and once without. The baseline arm is not decoration: it is the only thing that catches the skill being confidently wrong, because an agent working without legwork will sometimes reach a source or a capability legwork's instructions assert does not exist. [`evals/README.md`](evals/README.md) has the protocol and the scoring.
 
 ## Known limitations
 

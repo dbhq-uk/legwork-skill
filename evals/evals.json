@@ -1,0 +1,73 @@
+{
+  "skill": "legwork",
+  "notes": "Every case here reproduces a failure observed in a real run, not an imagined one. See README.md for the baseline protocol and how to score a run.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "gate-compliance-on-a-finished-run",
+      "observed_failure": "Of the runs produced under current legwork, both failed check.py and one kept no fetch log at all, while the index recorded them as completed at their stated level.",
+      "prompt": "legwork: which UK banks publish a public API sandbox, and what does each one require before you can call it?",
+      "expected_output": "A gated brief or report whose evidence trail exists on disk and matches what it cites.",
+      "expectations": [
+        "Writes a fetch log beside the report with the same base name, containing one row per retrieval",
+        "Records a verbatim quote on every source it intends to cite, not only on those carrying a figure",
+        "Carries the italic receipt line directly under the H1",
+        "Gives every finding a Confidence line of the form '**Confidence: Strong|Moderate|Weak** - <sentence>'",
+        "Runs the gate before claiming the run is finished, and reports the result rather than asserting completion",
+        "Passes check.py at the level it announced, or says plainly which checks it could not satisfy",
+        "Does not claim to have run the gate without having run it"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "rebuild-an-enumeration-rather-than-lifting-it",
+      "observed_failure": "Competitor and pricing scans are legwork's core use case and the exact shape where one aggregator table is passed off as many sources. The rule that fixes it shipped on 2 Aug and has never been measured inside legwork.",
+      "prompt": "legwork: compare the pricing of the main hosted Postgres providers for a small UK startup, and tell me which to pick.",
+      "expected_output": "A comparison matrix built from each vendor's own pricing page, with the argument in the findings rather than the grid.",
+      "expectations": [
+        "Opens each vendor's own pricing page rather than resting on a roundup or review that already collected them",
+        "Logs any aggregator it used as one source, not as one source per row",
+        "Produces a '## Comparison matrix' section because three or more named options are being compared",
+        "Leaves no blank cell - every cell carries a claim or '[unknown]'",
+        "Keeps a row that came back entirely '[unknown]' rather than dropping the option",
+        "Attributes each price to the vendor whose page carries it, not to the review where it was first seen",
+        "Does not open a finding by handing the whole answer to one document"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "answer-from-the-index-instead-of-researching-again",
+      "observed_failure": "The index and the retrieval-before-research step shipped on 2 Aug. Nothing enforces the lookup, and a run that repeats settled work costs full price while looking like diligence.",
+      "prompt": "legwork: can we submit our plugin to the official Anthropic marketplace?",
+      "expected_output": "An answer drawn from the existing run on plugin gallery distribution, with its confidence bands intact, and no fresh search.",
+      "expectations": [
+        "Reads the research index before searching",
+        "Recognises that an existing run already covers the question and is not stale",
+        "Answers from that report rather than re-running the research",
+        "States plainly that the answer comes from a run of a given date",
+        "Preserves the original confidence bands rather than restating findings as more certain than they were",
+        "Does not create a second run folder describing the same question"
+      ],
+      "files": ["docs/research/index.md", "docs/research/Plugin_Gallery_Distribution_Research_20260714/"]
+    },
+    {
+      "id": 4,
+      "name": "return-nothing-rather-than-hedged-length",
+      "observed_failure": "The floor is the discipline most likely to be abandoned under pressure to produce, and it is the one thing no other skill in the field can do as a checked outcome.",
+      "prompt": "legwork: how many UK accountancy practices with under ten staff have bought an AI email triage tool in the last year, and what did they pay?",
+      "expected_output": "The 'could not answer' shape - the question is not answerable from public evidence at that specificity.",
+      "expectations": [
+        "Writes a '## Could not answer' section rather than assembling findings from commentary",
+        "Names what was searched and why nothing held",
+        "Includes a line starting 'Closest thing found:' naming the strongest sub-floor signal",
+        "Ships no findings alongside the could-not-answer section",
+        "Does not pad the report to look like a result",
+        "Files the run in the index anyway, so a later session does not repeat the search",
+        "Suggests the narrower question that would actually be answerable, if there is one"
+      ],
+      "files": []
+    }
+  ]
+}

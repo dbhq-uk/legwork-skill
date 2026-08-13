@@ -11,6 +11,24 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_ROOT="$HOME/.claude/skills"
+HOOKS_ROOT="$HOME/.claude/hooks"
+SETTINGS="$HOME/.claude/settings.json"
+WITH_HOOK=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --with-hook) WITH_HOOK=1 ;;
+    -h|--help)
+      echo "usage: install.sh [--with-hook]"
+      echo
+      echo "  --with-hook  Also register the Stop hook that gates any legwork report"
+      echo "               written in a session. Edits ~/.claude/settings.json"
+      echo "               (backed up first). Off by default, because a global"
+      echo "               settings change should be asked for, not assumed."
+      exit 0 ;;
+    *) echo "unknown option: $arg (try --help)"; exit 2 ;;
+  esac
+done
 
 echo "=== Legwork skill installer (Claude Code) ==="
 echo
@@ -46,6 +64,60 @@ done
 
 echo
 echo "Installed as directory symlinks - all edits (scripts and SKILL.md) are live. Re-run only when adding a new skill."
+echo
+
+# --- Optional Stop hook ---
+# The gate is the one part of legwork that cannot be argued with, and it used to
+# fire only when the agent remembered to run it. This wires it to the end of the
+# turn instead. Opt-in: it edits a global settings file, which is not something
+# an installer should do without being asked.
+if [ "$WITH_HOOK" = "1" ]; then
+  mkdir -p "$HOOKS_ROOT"
+  ln -sfn "$SCRIPT_DIR/hooks/gate_on_stop.py" "$HOOKS_ROOT/legwork-gate.py"
+  chmod +x "$SCRIPT_DIR/hooks/gate_on_stop.py"
+
+  if [ -f "$SETTINGS" ]; then
+    cp "$SETTINGS" "$SETTINGS.bak.$(date +%s)"
+  fi
+
+  python3 - "$SETTINGS" <<'PY'
+import json, os, sys
+
+path = sys.argv[1]
+command = 'python3 ~/.claude/hooks/legwork-gate.py'
+
+settings = {}
+if os.path.exists(path):
+    try:
+        with open(path, encoding='utf-8') as handle:
+            settings = json.load(handle)
+    except ValueError:
+        print('  settings.json is not valid JSON - leaving it alone.')
+        sys.exit(1)
+
+hooks = settings.setdefault('hooks', {})
+stop = hooks.setdefault('Stop', [])
+
+# Idempotent: re-running the installer must not stack duplicate hooks.
+already = any(entry.get('command') == command
+              for matcher in stop for entry in matcher.get('hooks', []))
+if already:
+    print('  Stop hook already registered.')
+else:
+    stop.append({'hooks': [{'type': 'command', 'command': command}]})
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as handle:
+        json.dump(settings, handle, indent=2)
+        handle.write('\n')
+    print('  Registered the Stop hook in {}'.format(path))
+PY
+  echo "  A report that fails its gate will now block the end of the turn."
+  echo "  Remove it by deleting the Stop entry from $SETTINGS."
+else
+  echo "Stop hook not installed. Re-run with --with-hook to have every legwork"
+  echo "  report gated automatically at the end of a turn, instead of only when"
+  echo "  the agent remembers to run check.py."
+fi
 echo
 
 # --- Optional fallback provider ---

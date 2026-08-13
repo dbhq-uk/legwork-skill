@@ -125,7 +125,10 @@ def split_bibliography(content):
 
 
 def parse_bibliography(bibliography):
-    """{number: {'raw': str, 'url': str}} from '[N] ... https://...' lines."""
+    """{number: {'raw': str, 'url': str}} from '[N] ... https://...' lines.
+
+    file:// locators count, so local evidence is citable.
+    """
     entries = {}
     current = None
     for line in bibliography.splitlines():
@@ -139,7 +142,10 @@ def parse_bibliography(bibliography):
         elif current is not None:
             entries[current]['raw'] += ' ' + stripped
     for entry in entries.values():
-        url = re.search(r'https?://[^\s)\]>]+', entry['raw'])
+        # file:// is accepted so evidence read from disk can be cited like any
+        # other source. A finding about the working copy is still a finding, and
+        # without a locator it could be logged but never referenced.
+        url = re.search(r'(?:https?|file)://[^\s)\]>]+', entry['raw'])
         entry['url'] = url.group(0).rstrip('.,;') if url else ''
     return entries
 

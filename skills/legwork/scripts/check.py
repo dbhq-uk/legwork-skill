@@ -50,6 +50,26 @@ LEVELS = ('quick', 'standard', 'deep')
 FORMATS = ('report', 'brief')
 
 
+def discover_tsv(report_path):
+    """The run's fetch log, matched on the base name or failing that on being
+    the only one there.
+
+    Base-name matching alone is silently fragile: a run that names its log
+    anything else loses the entire evidence layer without saying so, because a
+    missing log is only a warning below deep. Measured 2026-08-13 - a run wrote
+    `sources.tsv`, the gate never found it, and the report passed with every
+    citation unchecked.
+    """
+    candidate = os.path.splitext(report_path)[0] + '.tsv'
+    if os.path.exists(candidate):
+        return candidate
+    folder = os.path.dirname(os.path.abspath(report_path))
+    found = sorted(f for f in os.listdir(folder) if f.endswith('.tsv')) if os.path.isdir(folder) else []
+    # Only when there is exactly one. Two logs beside a report is ambiguous, and
+    # guessing which one is the run's would be worse than reporting none.
+    return os.path.join(folder, found[0]) if len(found) == 1 else None
+
+
 def infer_format(content):
     """A report carries an Executive Summary; a brief does not.
 
@@ -406,8 +426,14 @@ def check_matrix_section(content, problems):
     parsed = parse_matrix(content)
     if parsed is None:
         return
-    for problem in check_matrix(parsed)['problems']:
-        problems.graded(problem)
+    result = check_matrix(parsed)
+    uncited = set(result.get('uncited_rows', ()))
+    for problem in result['problems']:
+        # A row with values and no citation at all is not a weak claim, it is an
+        # unevidenced one, and the prose equivalent is already structural. Left
+        # graded, it passes at standard - which is how a matrix citing nothing
+        # shipped and was gated green.
+        (problems.structural if problem in uncited else problems.graded)(problem)
 
 
 def check_registered(report_path, problems):
@@ -470,7 +496,13 @@ def run(report_path, tsv_path, fmt, level):
     if evidence_layers:
         check_confidence(content, entries, rows, problems, run_independence=bool(rows))
         check_portfolio(rows, problems)
-        check_matrix_section(content, problems)
+
+    # Runs at every level, unlike the rest of the evidence layer. A grid of
+    # confident values citing nothing is unusable whatever depth was asked for,
+    # and the body-text equivalent - "no inline [N] citations" - has always been
+    # checked at quick. Only the uncited-row problem is an error at quick; blank
+    # cells and column counts stay graded.
+    check_matrix_section(content, problems)
 
     check_registered(report_path, problems)
 
@@ -492,8 +524,7 @@ def main():
 
     tsv = args.tsv
     if tsv is None:
-        candidate = os.path.splitext(args.report)[0] + '.tsv'
-        tsv = candidate if os.path.exists(candidate) else None
+        tsv = discover_tsv(args.report)
 
     fmt = args.format
     if fmt == 'auto':

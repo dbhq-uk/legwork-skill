@@ -383,3 +383,152 @@ is reachable.
 model carve-out - cheap models for snippet gathering, the orchestrator's model
 for rebuilding an enumeration - is still borrowed from someone else's benchmark.
 Case 2 is the case that tests it and it has not been run on Haiku or Opus.
+
+---
+
+# Model sweep - case 2 on Haiku
+
+## The carve-out is validated, emphatically
+
+| | Haiku | Sonnet |
+|---|---|---|
+| Providers compared | 7 | 8 |
+| Vendor pricing pages opened | **3** | 8 |
+| Aggregators used | 1 | 2 |
+| Fetch log rows | **9** | 39 |
+| Retrieval subagents dispatched | **0** | 9 |
+| Blank cells | 0 | 0 |
+| `[unknown]` cells | **0** | 0 |
+| Gate result | pass | pass |
+
+Haiku opened three vendor pricing pages out of seven providers and filled the
+other four rows from one comparison article plus search snippets. It reported
+this honestly when asked: DigitalOcean, AWS RDS, Heroku and Render prices all
+came from an aggregator, and the 16GB production figures were "not independently
+verified on vendor pages".
+
+**And it presented zero `[unknown]` cells.** Sonnet, on the same question with
+the same skill, refused to state any aggregator-only price as fact and marked
+the ones it could not source. Haiku filled the grid.
+
+This is the enumeration failure the rule exists to prevent - a table lifted out
+of one review is one source, not one per row - reproduced exactly, on the
+cheaper model, with the rule loaded and visible. hec-ovi's finding replicates.
+
+It also ignored the fan-out entirely: **zero retrieval subagents** against
+Sonnet's nine.
+
+## The serious part: the gate passed it, and the hook did not block it
+
+The run reported `gate_result: pass`, truthfully. Verified directly against the
+shipped artefact:
+
+```
+warning  no fetch log supplied, so cited URLs cannot be checked
+warning  Neon: the row states values but carries no citation anywhere
+warning  Supabase: the row states values but carries no citation anywhere
+warning  Heroku: the row states values but carries no citation anywhere
+warning  Render: the row states values but carries no citation anywhere
+warning  Railway: the row states values but carries no citation anywhere
+PASS
+```
+
+**A comparison matrix in which five of seven rows cite nothing at all passed the
+gate.** At deep level the identical report fails with those same five as errors.
+
+Three distinct defects, in order of seriousness:
+
+**1. The Stop hook is level-blind, so it enforces structure only.** It reads
+`LEGWORK_DEFAULT_MODE`, which is unset, so it gates at standard - and at
+standard the entire evidence, independence and matrix layer is warnings. The
+centrepiece of the enforce cycle fires at the weakest available setting. Run
+against this report, the hook stayed silent.
+
+The fix is not to force deep on everything. It is to gate at **the level the
+report itself claims in its receipt line**. A run that announces standard gets
+standard; a run that announces deep gets deep; and a run whose receipt says deep
+can no longer pass by being checked as standard.
+
+**2. Fetch-log discovery is base-name-only.** Haiku wrote `sources.tsv` rather
+than `<base>.tsv`, so `check.py` never found it and skipped the evidence layer
+entirely. Its absence is only a warning at standard, so nothing surfaced. The
+gate should fall back to any single `.tsv` beside the report before concluding
+there is no log.
+
+**3. A matrix row stating values with no citation should be structural.** The
+grading argument in `quality-gates.md` is that structural problems make a
+document unusable regardless of how well researched it is. A confident grid
+citing nothing is exactly that. It is currently graded as evidence.
+
+**This was found only because the sweep ran.** Three Sonnet arms and four cases
+did not surface it, because Sonnet never produced a matrix weak enough to expose
+how permissive standard level is.
+
+---
+
+# Model sweep - the three-way result
+
+Same prompt, same skill, same day. Only the orchestrator model changed.
+
+| | Haiku | Sonnet | Opus |
+|---|---|---|---|
+| Providers compared | 7 | 8 | **14** |
+| Vendor pricing pages opened | 3 | 8 | **32** |
+| Fetch log rows | 9 | 39 | **96** |
+| Retrieval subagents | **0** | 9 | 8 |
+| `[unknown]` cells | 0 | 0 | **6** |
+| Aggregator-only prices in the grid | **4 of 7 rows** | none | none |
+| Options examined and explicitly dropped | 0 | not recorded | **7, with reasons** |
+| Largest party share | not run | passed | 13% |
+
+**The carve-out is confirmed, and the shape of the confirmation is the
+interesting part.** The `[unknown]` row inverts: Haiku 0, Sonnet 0, Opus 6. More
+capability produced *more* admitted ignorance, not less. Haiku filled every cell
+confidently from one aggregator; Opus opened thirty-two vendor pages and still
+marked six cells unknown, each with a footnote saying why.
+
+Opus also did the thing the enumeration rule is actually for. It refuted two
+aggregator figures against vendor rate cards rather than repeating them - an EU
+roundup's "Neon 30 to 80 dollars a month" against Neon's own rate card at 172.26
+for the reference workload, and a competitor-authored benchmark implying about
+265 dollars for Tiger Data, which it excluded and left `[unknown]`. It reached
+AWS and Azure through vendor-owned machine-readable price endpoints when the
+human-facing pages would not render server-side. Where it could not get in at
+all - ICO guidance, 403 to both WebFetch and Bright Data - it banded the finding
+Moderate and said so in the confidence line and the Limitations.
+
+### The draft-level re-read is now the best-evidenced rule in the skill
+
+Opus's self-review, before gating, found and fixed five real defects:
+
+- a finding heading claiming the cheap band excluded hyperscalers, which its own
+  AWS data contradicted
+- a Synthesis assertion about DigitalOcean's corporate stability that no finding
+  supported
+- an executive summary saying "three providers are cheaper" when it was two, and
+  naming the wrong two
+- **a receipt line that was asserted rather than counted** - recounted from the
+  log
+- an uncited self-hosting break-even figure
+
+That fourth one is Finding 3 of the research report - a run reporting compliance
+it did not achieve - caught by the skill's own machinery before it shipped.
+
+## Fixes shipped from the sweep
+
+All three verified against the actual failing artefact, not a synthetic one.
+
+1. **The hook gates at the level the report claims.** It reads the level from
+   the receipt line, falling back to the environment default only when there is
+   no receipt. A run announcing deep can no longer pass by being checked as
+   standard.
+2. **Fetch-log discovery falls back to the only `.tsv` beside the report.** Two
+   logs stay ambiguous and neither is guessed.
+3. **An uncited matrix row is structural at every level.** It is not a judgement
+   about evidence strength, it is the absence of evidence, and the prose
+   equivalent - "no inline `[N]` citations in the body" - has always been
+   structural.
+
+Verified after the change: the Haiku report now fails and the hook blocks it,
+every other eval run still passes, all six must-fail fixtures still fail for
+their own reason, and both must-pass fixtures still pass. 221 tests.

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -88,8 +89,28 @@ def recent_reports(base, now):
             except OSError:
                 continue
             if any(marker in head for marker in MARKERS):
-                found.append((path, infer_format(head)))
+                found.append((path, infer_format(head), infer_level(head)))
     return found
+
+
+# The receipt line opens with the level the run claims: *deep - 6 angles, ...*
+_RECEIPT_LEVEL = re.compile(r'^\*\s*(quick|standard|deep)\b', re.M | re.I)
+
+
+def infer_level(head):
+    """Gate a run at the level it claims for itself.
+
+    Reading the level from an environment default meant the hook checked
+    everything at standard, where the whole evidence and independence layer is
+    warnings - so it enforced structure and let unevidenced work through.
+    Measured 2026-08-13: a report whose matrix had five uncited rows was not
+    blocked. A run that announces deep in its receipt is now held to deep.
+    """
+    match = _RECEIPT_LEVEL.search(head)
+    if match:
+        return match.group(1).lower()
+    level = os.environ.get('LEGWORK_DEFAULT_MODE', 'standard')
+    return level if level in ('quick', 'standard', 'deep') else 'standard'
 
 
 def infer_format(head):
@@ -102,14 +123,11 @@ def infer_format(head):
     return 'report' if '## Executive Summary' in head else 'brief'
 
 
-def gate(path, fmt):
+def gate(path, fmt, level):
     """(passed, errors). A gate that cannot run never blocks."""
     checker = os.path.join(skill_dir(), 'scripts', 'check.py')
     if not os.path.exists(checker):
         return True, []
-    level = os.environ.get('LEGWORK_DEFAULT_MODE', 'standard')
-    if level not in ('quick', 'standard', 'deep'):
-        level = 'standard'
     try:
         result = subprocess.run(
             [sys.executable, checker, '--report', path,
@@ -137,8 +155,8 @@ def main():
 
     failures = []
     for base in output_bases(cwd):
-        for report, fmt in recent_reports(base, now):
-            passed, errors = gate(report, fmt)
+        for report, fmt, level in recent_reports(base, now):
+            passed, errors = gate(report, fmt, level)
             if not passed:
                 failures.append((report, errors))
 

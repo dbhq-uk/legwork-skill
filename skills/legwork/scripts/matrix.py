@@ -89,6 +89,7 @@ def check_matrix(parsed):
     fields = parsed['fields']
     expected_width = len(fields) + 1
     problems = []
+    uncited = []
     cells = unknown = 0
 
     for row in parsed['rows']:
@@ -111,8 +112,10 @@ def check_matrix(parsed):
                 established += 1
 
         if established and not re.search(r'\[\d+\]', ' '.join(row['cells'].values())):
-            problems.append(
-                '{}: the row states values but carries no citation anywhere'.format(row['entity']))
+            message = '{}: the row states values but carries no citation anywhere'.format(
+                row['entity'])
+            problems.append(message)
+            uncited.append(message)
 
     result.update({
         'entities': len(parsed['rows']),
@@ -121,6 +124,14 @@ def check_matrix(parsed):
         'unknown_cells': unknown,
         'coverage': round((cells - unknown) / cells, 4) if cells else 0.0,
         'problems': problems,
+        # Rows carrying values and no citation at all. Reported separately
+        # because this is not a judgement about how strong the evidence is - it
+        # is the absence of any evidence trail behind a confident claim, which
+        # is why the prose equivalent ("no inline [N] citations in the body") is
+        # already structural. Measured 2026-08-13: a Haiku run shipped a matrix
+        # where five of seven rows cited nothing, and passed at standard level
+        # because this was graded as evidence.
+        'uncited_rows': uncited,
     })
     return result
 

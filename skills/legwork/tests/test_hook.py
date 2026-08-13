@@ -117,6 +117,31 @@ def test_the_format_is_inferred_from_the_document():
     assert hook.infer_format('# T\n\n## Findings\n') == 'brief'
 
 
+# ---------------------------------------------------------------------------
+# The level a run claims is the level it is held to
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('level', ['quick', 'standard', 'deep'])
+def test_the_level_comes_from_the_receipt_line(level):
+    head = '# T\n\n*{} - 4 angles, 9 sources, 3 fetched directly*\n'.format(level)
+    assert hook.infer_level(head) == level
+
+
+def test_a_report_with_no_receipt_falls_back_to_the_default():
+    assert hook.infer_level('# T\n\n## Findings\n') == 'standard'
+
+
+def test_a_run_claiming_deep_is_not_checked_as_standard(tmp_path):
+    """The hook used to read the level from an environment default, so every
+    report was gated at standard - where the entire evidence and independence
+    layer is warnings. A run that announces deep must be held to deep."""
+    body = FAILING.replace('# A run that looks finished',
+                           '# A run that looks finished\n\n*deep - 3 angles, 4 sources*')
+    build_run(tmp_path, 'Deep_Research_20260812', body)
+    payload = json.loads(run_hook(tmp_path, level='quick').stdout)
+    assert payload['decision'] == 'block'
+
+
 def test_a_repo_with_no_research_folder_is_silent(tmp_path):
     result = run_hook(tmp_path)
     assert result.returncode == 0

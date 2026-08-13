@@ -91,3 +91,30 @@ new failure is observed in a real run, not on a schedule.
 
 Case 1 is the most important. It measures whether the machinery runs at all,
 and every other case's result is uninterpretable if it does not.
+
+## Runs
+
+| Run | Model | Result |
+|---|---|---|
+| [2026-08-13](runs/2026-08-13-sonnet-baseline.md) | Sonnet, both arms | First baseline. Cases 1 and 2 discriminate strongly, 4 moderately, 3 weakly |
+
+### What the first run changed
+
+Three of the four cases were originally built on the assumption that legwork's
+contribution is diligence - opening primary sources, refusing to fabricate,
+disclosing uncertainty. **The baseline arms did all three unprompted.** Those
+are now recorded as `precondition` fields rather than scored expectations,
+because an expectation both arms satisfy measures the model, not the skill.
+
+What separates the arms is narrower and firmer: how far the run *reaches* when
+primary sources block automated fetching, what happens to a figure that cannot
+be sourced to a page anyone opened, whether the output is in a shape a machine
+can check, and whether the run survives for the next session to reuse.
+
+The run also found a defect in the gate itself - `check.py` defaulted to report
+format and failed a brief for four sections a brief never has - which is exactly
+what evals are for and what no amount of re-reading the source had caught.
+
+**Known harness gap.** The runner must copy `docs/research/` into the eval
+output base. Forbidding writes to the real one makes legwork's refresh-in-place
+path unreachable, which contaminates case 3.

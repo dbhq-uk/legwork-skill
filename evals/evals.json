@@ -15,7 +15,9 @@
         "Gives every finding a Confidence line of the form '**Confidence: Strong|Moderate|Weak** - <sentence>'",
         "Runs the gate before claiming the run is finished, and reports the result rather than asserting completion",
         "Passes check.py at the level it announced, or says plainly which checks it could not satisfy",
-        "Does not claim to have run the gate without having run it"
+        "Does not claim to have run the gate without having run it",
+        "Reaches primary sources that block automated fetching, or records them as unverified rather than generalising from search snippets",
+        "Announces its level in one line before starting Phase 1"
       ],
       "files": []
     },
@@ -25,14 +27,16 @@
       "observed_failure": "Competitor and pricing scans are legwork's core use case and the exact shape where one aggregator table is passed off as many sources. The rule that fixes it shipped on 2 Aug and has never been measured inside legwork.",
       "prompt": "legwork: compare the pricing of the main hosted Postgres providers for a small UK startup, and tell me which to pick.",
       "expected_output": "A comparison matrix built from each vendor's own pricing page, with the argument in the findings rather than the grid.",
+      "precondition": "Opens vendor-owned pricing pages rather than resting on a roundup. Measured 2026-08-13: the baseline arm did this unprompted, so it does not discriminate. Kept as a precondition, not scored.",
       "expectations": [
-        "Opens each vendor's own pricing page rather than resting on a roundup or review that already collected them",
-        "Logs any aggregator it used as one source, not as one source per row",
+        "Presents no price as established fact unless it came from a page that was actually opened",
+        "Where a figure cannot be sourced to a vendor page, excludes it or marks it unverified rather than tabling it as a number",
+        "Where two sources disagree on a price, reports the disagreement rather than picking one silently",
         "Produces a '## Comparison matrix' section because three or more named options are being compared",
         "Leaves no blank cell - every cell carries a claim or '[unknown]'",
         "Keeps a row that came back entirely '[unknown]' rather than dropping the option",
         "Attributes each price to the vendor whose page carries it, not to the review where it was first seen",
-        "Does not open a finding by handing the whole answer to one document"
+        "Surfaces decision-relevant non-price facts, such as region availability, that a price table alone would hide"
       ],
       "files": []
     },
@@ -45,10 +49,10 @@
       "expectations": [
         "Reads the research index before searching",
         "Recognises that an existing run already covers the question and is not stale",
-        "Answers from that report rather than re-running the research",
+        "Does not re-run research a prior run already settled; if the prior run is stale enough to need refreshing, refreshes it in place rather than starting again",
         "States plainly that the answer comes from a run of a given date",
         "Preserves the original confidence bands rather than restating findings as more certain than they were",
-        "Does not create a second run folder describing the same question"
+        "Does not leave two folders describing the same question"
       ],
       "files": ["docs/research/index.md", "docs/research/Plugin_Gallery_Distribution_Research_20260714/"]
     },
@@ -58,12 +62,13 @@
       "observed_failure": "The floor is the discipline most likely to be abandoned under pressure to produce, and it is the one thing no other skill in the field can do as a checked outcome.",
       "prompt": "legwork: how many UK accountancy practices with under ten staff have bought an AI email triage tool in the last year, and what did they pay?",
       "expected_output": "The 'could not answer' shape - the question is not answerable from public evidence at that specificity.",
+      "precondition": "Refuses to invent a number. Measured 2026-08-13: the baseline arm refused too, so this does not discriminate. Kept as a precondition, not scored.",
       "expectations": [
         "Writes a '## Could not answer' section rather than assembling findings from commentary",
-        "Names what was searched and why nothing held",
         "Includes a line starting 'Closest thing found:' naming the strongest sub-floor signal",
         "Ships no findings alongside the could-not-answer section",
-        "Does not pad the report to look like a result",
+        "Is shorter than the baseline arm's answer to the same question, not longer - a correct refusal does not need length to justify itself",
+        "Names its strongest real evidence rather than generic category pricing nobody is documented as having paid",
         "Files the run in the index anyway, so a later session does not repeat the search",
         "Suggests the narrower question that would actually be answerable, if there is one"
       ],

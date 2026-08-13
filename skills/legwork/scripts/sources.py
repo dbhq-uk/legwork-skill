@@ -185,7 +185,13 @@ TSV_COLUMNS = ('url', 'kind', 'angle', 'via', 'fetched_at', 'status', 'date', 'n
 # enough that the log stays a log.
 MAX_QUOTE_CHARS = 300
 
-VIA_VALUES = ('websearch', 'webfetch', 'brightdata')
+# How the page was reached. 'api' covers a structured endpoint queried directly
+# (a registry's REST API, a search API); 'local' covers evidence read from disk,
+# which is the only way a finding about this repository can be recorded at all;
+# 'mcp' covers a connected tool. Without these three a run is forced either to
+# leave its best evidence out of the log or to re-fetch it through a transport
+# the log accepts, which distorts the evidence trail rather than recording it.
+VIA_VALUES = ('websearch', 'webfetch', 'brightdata', 'api', 'local', 'mcp')
 
 
 # ---------------------------------------------------------------------------

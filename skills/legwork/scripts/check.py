@@ -49,6 +49,18 @@ from sources import read_rows  # noqa: E402
 LEVELS = ('quick', 'standard', 'deep')
 FORMATS = ('report', 'brief')
 
+
+def infer_format(content):
+    """A report carries an Executive Summary; a brief does not.
+
+    The default used to be 'report', which meant gating a brief without the flag
+    failed it for four sections a brief is never supposed to have. Measured in
+    an eval run on 2026-08-13: the agent hit the spurious failure, then passed
+    --format brief and passed clean. A gate whose default verdict is wrong
+    teaches people to argue with it.
+    """
+    return 'report' if '## Executive Summary' in content else 'brief'
+
 REQUIRED_SECTIONS = {
     'report': ('Executive Summary', 'Introduction', 'Findings', 'Synthesis',
                'Limitations', 'Recommendations', 'Bibliography'),
@@ -125,7 +137,10 @@ def split_bibliography(content):
 
 
 def parse_bibliography(bibliography):
-    """{number: {'raw': str, 'url': str}} from '[N] ... https://...' lines."""
+    """{number: {'raw': str, 'url': str}} from '[N] ... https://...' lines.
+
+    file:// locators count, so local evidence is citable.
+    """
     entries = {}
     current = None
     for line in bibliography.splitlines():
@@ -139,7 +154,10 @@ def parse_bibliography(bibliography):
         elif current is not None:
             entries[current]['raw'] += ' ' + stripped
     for entry in entries.values():
-        url = re.search(r'https?://[^\s)\]>]+', entry['raw'])
+        # file:// is accepted so evidence read from disk can be cited like any
+        # other source. A finding about the working copy is still a finding, and
+        # without a locator it could be logged but never referenced.
+        url = re.search(r'(?:https?|file)://[^\s)\]>]+', entry['raw'])
         entry['url'] = url.group(0).rstrip('.,;') if url else ''
     return entries
 
@@ -463,7 +481,7 @@ def main():
     parser = argparse.ArgumentParser(prog='check', description=__doc__.split('\n')[1])
     parser.add_argument('--report', required=True)
     parser.add_argument('--tsv', default=None, help='The run fetch log; defaults to the report path with .tsv')
-    parser.add_argument('--format', default='report', choices=list(FORMATS))
+    parser.add_argument('--format', default='auto', choices=['auto'] + list(FORMATS))
     parser.add_argument('--level', default='standard', choices=list(LEVELS))
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
@@ -477,7 +495,12 @@ def main():
         candidate = os.path.splitext(args.report)[0] + '.tsv'
         tsv = candidate if os.path.exists(candidate) else None
 
-    problems, summary = run(args.report, tsv, args.format, args.level)
+    fmt = args.format
+    if fmt == 'auto':
+        with open(args.report, encoding='utf-8') as handle:
+            fmt = infer_format(handle.read())
+
+    problems, summary = run(args.report, tsv, fmt, args.level)
     passed = not problems.errors
 
     if args.json:
@@ -485,7 +508,7 @@ def main():
                           'warnings': problems.warnings, **summary}, indent=2))
     else:
         print('checking {} ({} format, {} level)'.format(
-            os.path.basename(args.report), args.format, args.level))
+            os.path.basename(args.report), fmt, args.level))
         if tsv:
             print('fetch log: {} ({} rows)'.format(os.path.basename(tsv), summary.get('fetched', 0)))
         print()

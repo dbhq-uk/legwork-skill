@@ -70,8 +70,67 @@ def output_bases(cwd):
     return [b for b in dict.fromkeys(bases) if os.path.isdir(b)]
 
 
+def _git(args, cwd, timeout=5):
+    """Run git, returning stdout, or None if git could not answer."""
+    try:
+        result = subprocess.run(['git'] + args, cwd=cwd, capture_output=True,
+                                text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def is_session_work(path, now):
+    """Was this run written in this session, rather than merely checked out?
+
+    mtime cannot answer this inside a repository, and it fails in the common
+    direction: `git worktree add`, `git clone` and `git checkout` all stamp
+    every file they write with the current time. In a worktree created an hour
+    ago, every report ever committed looks an hour old.
+
+    Measured 2026-08-18 - a worktree made at 13:48 gave all six of a repo's
+    research reports an mtime of 13:48, and a run from 11 July 2026 blocked the
+    end of a turn that had nothing to do with it. The agent then spent that turn
+    retrofitting confidence bands onto month-old research instead of the work it
+    had been asked for, which is the real cost: a hook that cries wolf does not
+    just get ignored, it actively misdirects.
+
+    So git is asked instead, and it is asked two things, because neither alone
+    is enough:
+
+    - **Uncommitted?** Untracked or modified means someone is working on it now,
+      whatever its age. This is what keeps a brand new run blocking, and without
+      it "ignore what git already knows about" would quietly become "ignore
+      everything".
+    - **Created recently?** The *oldest* commit touching the file, not the
+      newest. A run created this session and committed is still this session's
+      work; an old report given a formatting fix today is not a new run, and
+      holding the turn hostage to it is the loop this function exists to break.
+
+    Outside a repository there is nothing to ask, so mtime stands.
+    """
+    folder = os.path.dirname(path)
+    if _git(['rev-parse', '--show-toplevel'], folder) is None:
+        return True  # not a repo; the mtime pre-filter already vouched for it
+
+    status = _git(['status', '--porcelain', '--', os.path.basename(path)], folder)
+    if status is None:
+        return True  # git present but unhappy; fall back to blocking rather than missing
+    if status.strip():
+        return True
+
+    log = _git(['log', '--format=%ct', '--', os.path.basename(path)], folder)
+    if log is None or not log.strip():
+        return True  # tracked-clean with no history should not happen; do not silently skip
+    try:
+        created = int(log.strip().splitlines()[-1])
+    except ValueError:
+        return True
+    return now - created <= RECENT_SECONDS
+
+
 def recent_reports(base, now):
-    """Reports under this base touched recently enough to be this run's work."""
+    """Reports under this base written recently enough to be this run's work."""
     found = []
     for folder in sorted(os.listdir(base)):
         run_dir = os.path.join(base, folder)
@@ -82,14 +141,20 @@ def recent_reports(base, now):
                 continue
             path = os.path.join(run_dir, name)
             try:
+                # A stale mtime is trustworthy in a way a fresh one is not:
+                # any edit bumps it, so old means untouched. Kept as the cheap
+                # negative filter, so only report-shaped candidates reach git.
                 if now - os.path.getmtime(path) > RECENT_SECONDS:
                     continue
                 with open(path, encoding='utf-8') as handle:
                     head = handle.read(20000)
             except OSError:
                 continue
-            if any(marker in head for marker in MARKERS):
-                found.append((path, infer_format(head), infer_level(head)))
+            if not any(marker in head for marker in MARKERS):
+                continue
+            if not is_session_work(path, now):
+                continue
+            found.append((path, infer_format(head), infer_level(head)))
     return found
 
 

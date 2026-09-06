@@ -108,6 +108,7 @@ and every other case's result is uninterpretable if it does not.
 | [2026-08-13](runs/2026-08-13-sonnet-baseline.md) | Sonnet, both arms | First baseline. Cases 1 and 2 discriminate strongly, 4 moderately, 3 weakly |
 | [2026-09-06 (aborted)](runs/2026-09-06-search-pipeline-aborted.md) | Sonnet, both arms | Killed by a rate limit; nothing scored. Kept because one partial log raised the `fetch.py` adherence question the completed run then answered |
 | [2026-09-06](runs/2026-09-06-search-pipeline.md) | Sonnet, both arms | Cases 5 and 6 both pass and both discriminate, on reach rather than honesty. Case 6: baseline opened 1 page of 4 attempts, skill opened 33 of 40. The paid rungs were never climbed - that is the run's finding |
+| [2026-09-06 (second)](runs/2026-09-06-after-review.md) | Sonnet, skill arms | Re-run after the external-review fixes. Paid rungs climbed this time; quote verification caught a false quote on a real run; found that `-m render` was returning the CLI's own help text as the page, which its unit test could not see |
 
 ### What the first run changed
 

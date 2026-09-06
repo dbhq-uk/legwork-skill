@@ -337,6 +337,13 @@ Limitations, named specifically rather than as generic hedging.
 Run `check.py` at your level, fix what it reports, re-run. After two failed
 cycles, stop and tell the user what is wrong rather than continuing to patch.
 
+### Then say it
+
+Give the answer in the conversation as well as in the file: the receipt line, a
+brief in full or a report's Executive Summary and finding headings with their
+bands, then the path. `SKILL.md` has the shape. A path on its own is not an
+answer to a question somebody asked.
+
 ### Then file it
 
 ```bash

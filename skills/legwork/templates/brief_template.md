@@ -16,6 +16,9 @@ WHAT IT KEEPS (non-negotiable - brief drops ceremony, never rigour):
   - Honest limitations
   - Prose-first (>=80%); bullets only for genuinely enumerable things
 
+AFTER GATING: give this brief in full in the conversation as well, with the receipt
+line first and the file path last. A path is not an answer.
+
 RECEIPT COUNTS: do not count them by hand. Run
   python3 scripts/sources.py receipt --tsv [path]
 and paste what it prints. The gate compares the opened count against the log.

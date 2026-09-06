@@ -37,14 +37,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 import shutil
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fetch import default_out_path, find_windows, html_to_text, write_outputs  # noqa: E402
+from fetch import (  # noqa: E402
+    classify, default_out_path, find_windows, html_to_text, write_outputs)
 
 SERP_MODES = {"general", "news", "images", "shopping"}
 CONTENT_MODES = {"extract", "scrape"}
@@ -210,6 +213,9 @@ def run_serp(args) -> None:
     sys.stdout.write("\n")
 
 
+_CLI_USAGE_RE = re.compile(r"^\s*Usage:\s+brightdata\b", re.M)
+
+
 def _emit_page(args, target, body) -> None:
     """Clean, window, cap, and write the sidecar fetch.py's consumers expect.
 
@@ -218,10 +224,21 @@ def _emit_page(args, target, body) -> None:
     fetches came back as nav shells. Cleaning first and windowing on --find
     terms is what makes the cap safe.
     """
+    # A CLI that answers a malformed invocation with its own usage text and
+    # exit 0 would otherwise be written to disk and quoted as though it were
+    # the page.
+    if _CLI_USAGE_RE.search(body[:400]):
+        _fail(f"the CLI returned usage text rather than page content for {target[:80]}")
     text = html_to_text(body) if "<" in body[:400] else body.strip()
     passages = find_windows(text, args.find, args.window, args.max_hits) if args.find else []
     capped = text[: args.max_chars] if args.max_chars and len(text) > args.max_chars else text
     out_path = args.out or default_out_path(target)
+    # Paying for a page does not mean getting one. The Unlocker and the browser
+    # both return challenge pages and empty shells with a perfectly good exit
+    # code, and without this the run would quote one as though it were the
+    # source. There is no HTTP status on this path, so 200 stands in and the
+    # content tests do the work.
+    verdict, reason = classify(text, 200, body)
     payload = {
         "url": target,
         "mode": args.mode,
@@ -231,13 +248,16 @@ def _emit_page(args, target, body) -> None:
         "date": None,
         "chars": len(text),
         "text_file": out_path,
-        "verdict": "ok",
+        "verdict": verdict,
+        "reason": reason,
         "content": capped,
         "find": passages,
     }
     write_outputs(out_path, text, {k: v for k, v in payload.items() if k != "content"})
     json.dump(payload, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
+    if verdict != "ok":
+        sys.exit(3)
 
 
 def run_content(args) -> None:
@@ -268,8 +288,18 @@ def run_render(args) -> None:
     if args.country:
         base.extend(["--country", args.country])
     _run(base + ["open", target], timeout=TIMEOUT_RENDER)
+    # The CLI has no wait command, and a single-page app is often still drawing
+    # itself when `open` returns. Measured on one bank portal: 7,115 bytes of
+    # HTML immediately, 7,392 after a few seconds, stable thereafter. Small,
+    # because the rung is already the slow one.
+    if args.settle:
+        time.sleep(args.settle)
     try:
-        body = _run(base + ["get"], timeout=TIMEOUT_RENDER)
+        # `browser get` is a command group, not a leaf: on its own it prints its
+        # own usage text and exits 0, so the "page body" came back as the CLI's
+        # help. Found by an eval arm on 2026-09-06, not by a test - the test
+        # asserted the verb sequence and never looked at what `get` returned.
+        body = _run(base + ["get", "html"], timeout=TIMEOUT_RENDER)
     finally:
         # Leaving a session open bills for a browser nobody is using.
         try:
@@ -416,6 +446,8 @@ def main() -> None:
     p.add_argument("--pipeline", default=None,
                    help="pipeline mode: dataset name; see `brightdata pipelines list`")
     p.add_argument("--session", default=None, help="render mode: browser session name")
+    p.add_argument("--settle", type=float, default=3.0,
+                   help="render mode: seconds to let a single-page app finish drawing (default 3)")
     p.add_argument("--find", action="append", default=[], metavar="TERM",
                    help="repeatable; return the passages around each term rather than the page head")
     p.add_argument("--window", type=int, default=300, help="characters either side of a --find hit")

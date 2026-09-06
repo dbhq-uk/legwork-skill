@@ -44,7 +44,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from independence import canonicalize, corroboration, portfolio  # noqa: E402
 from index import read_index  # noqa: E402
 from matrix import check_matrix, parse_matrix  # noqa: E402
-from sources import read_rows  # noqa: E402
+from sources import SNIPPET_VIA, read_rows, retrieval_receipt  # noqa: E402
 
 LEVELS = ('quick', 'standard', 'deep')
 FORMATS = ('report', 'brief')
@@ -303,12 +303,15 @@ def check_evidence(content, entries, rows, problems):
     """Fetched-URL and figure tracing. Requires a fetch log."""
     by_url = {}
     quotes_by_url = {}
+    opened = set()
     for row in rows:
         if (row.get('status') or 'ok').lower() == 'ok':
             key = canonicalize(row.get('url', ''))
             by_url.setdefault(key, []).extend(row.get('numbers') or [])
             if (row.get('quote') or '').strip():
                 quotes_by_url[key] = row['quote'].strip()
+            if (row.get('via') or '').strip().lower() != SNIPPET_VIA:
+                opened.add(key)
 
     unfetched = sorted(
         number for number, entry in entries.items()
@@ -317,6 +320,21 @@ def check_evidence(content, entries, rows, problems):
     if unfetched:
         problems.graded(
             'cited but never fetched in this run - a citation to a page nobody opened: {}'.format(unfetched))
+
+    # Seen in a search result is not opened. Measured on a run filed on
+    # 2026-08-16: 18 of its 29 cited sources were search results nobody opened,
+    # and it passed this gate, because every ok row counted as fetched whatever
+    # transport produced it. Quick is snippet-first by design, so the grading
+    # (ignored at quick, warning at standard, error at deep) is the whole rule.
+    snippet_only = sorted(
+        number for number, entry in entries.items()
+        if entry['url']
+        and canonicalize(entry['url']) in by_url
+        and canonicalize(entry['url']) not in opened
+    )
+    if snippet_only:
+        problems.graded(
+            'cited from a search snippet, page never opened: {}'.format(snippet_only))
 
     for finding in finding_sections(content):
         cited = citations_in(finding['text'])
@@ -347,6 +365,29 @@ def check_evidence(content, entries, rows, problems):
             problems.graded(
                 'Finding {}: figures not found on any cited page that was fetched: {}'.format(
                     finding['number'], ', '.join(untraceable)))
+
+
+RECEIPT_OPENED_RE = re.compile(r'(\d+)\s+opened\b', re.I)
+
+
+def check_receipt(content, rows, problems):
+    """Does the receipt's opened count agree with the log?
+
+    The receipt is written by hand at the end of a long run, which is when a
+    model has least attention left for arithmetic, and the observed failure mode
+    of this whole skill is a run reporting compliance it did not achieve. A
+    warning rather than an error at every level: the log is the record, and a
+    report that simply predates the count is not disagreeing with anything.
+    """
+    match = RECEIPT_OPENED_RE.search(RECEIPT_RE.search(content).group(0)) if RECEIPT_RE.search(content) else None
+    if not match:
+        return
+    claimed = int(match.group(1))
+    actual = retrieval_receipt(rows)['opened']
+    if claimed != actual:
+        problems.warn(
+            'receipt says {} opened, the log has {} - run '
+            '`sources.py receipt --tsv <log>` and paste what it prints'.format(claimed, actual))
 
 
 def check_confidence(content, entries, rows, problems, run_independence):
@@ -501,6 +542,9 @@ def run(report_path, tsv_path, fmt, level):
         else:
             check_evidence(content, entries, rows, problems)
             check_dates(content, entries, rows, problems)
+
+    if rows:
+        check_receipt(content, rows, problems)
 
     if evidence_layers:
         check_confidence(content, entries, rows, problems, run_independence=bool(rows))

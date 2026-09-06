@@ -16,6 +16,10 @@ WHAT IT KEEPS (non-negotiable - brief drops ceremony, never rigour):
   - Honest limitations
   - Prose-first (>=80%); bullets only for genuinely enumerable things
 
+RECEIPT COUNTS: do not count them by hand. Run
+  python3 scripts/sources.py receipt --tsv [path]
+and paste what it prints. The gate compares the opened count against the log.
+
 VALIDATE WITH:
   python3 scripts/check.py --report [path] --format brief --level [quick|standard|deep]
 
@@ -27,7 +31,7 @@ Comparison" but "Postgres+pgvector covers our scale; a dedicated vector DB doesn
 for itself until ~10M embeddings".
 -->
 
-*[level] · [N] angles · [N] sources ([N] via Bright Data) · [N] disconfirming searches · [what changed]*
+*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data) · [N] disconfirming searches · [what changed]*
 
 **Question:** [The research question, verbatim as asked]
 **Scope:** [What's in, what's out. Assumptions made. 1-2 sentences.]

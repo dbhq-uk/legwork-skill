@@ -8,6 +8,10 @@ WHAT THIS IS: the full shape, for a decision worth documenting. No word target. 
 when the question is answered - a question fully answered in 3,000 words ships at
 3,000 words. Padding to a length band is the failure this format is most prone to.
 
+RECEIPT COUNTS: do not count them by hand. Run
+  python3 scripts/sources.py receipt --tsv [path]
+and paste what it prints. The gate compares the opened count against the log.
+
 VALIDATE WITH:
   python3 scripts/check.py --report [path] --format report --level [standard|deep]
 
@@ -18,7 +22,7 @@ IF NOTHING CLEARS THE FLOOR: do not use this template. Use the "could not answer
 shape at the bottom of this file.
 -->
 
-*[level] · [N] angles · [N] sources ([N] via Bright Data) · [N] disconfirming searches · [N] findings downgraded, [N] dropped below floor*
+*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data) · [N] disconfirming searches · [N] findings downgraded, [N] dropped below floor*
 
 ## Executive Summary
 
@@ -195,7 +199,7 @@ points at the narrower question that would work.
 
 # [The question, as asked]
 
-*[level] · [N] angles · [N] sources ([N] via Bright Data) · [N] disconfirming searches*
+*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data) · [N] disconfirming searches*
 
 ## Could not answer
 

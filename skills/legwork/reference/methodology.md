@@ -68,15 +68,48 @@ work it out for itself.
 
 Work sub-question by sub-question. For each one:
 
-1. Search with the built-in `WebSearch`.
-2. Decide which results are worth opening. Snippets are often enough to establish
-   a claim and a source; only fetch in full the sources that will anchor a
-   finding.
-3. `WebFetch` those. If a fetch fails and the page genuinely matters, fall back
-   to `bd_search.py`.
-4. **Log every retrieval** with `sources.py log`, giving the sub-question as
-   `--angle`, the correct `--kind`, and - for anything you intend to cite - the
-   sentence that made it worth citing as `--quote`.
+1. **Three query variants, minimum.** A plain one. A targeted one - `site:` the
+   primary party's own domain, an exact phrase in quotes, or `filetype:pdf` for
+   a filing or a specification. A negative one built from the angle's falsifier:
+   "X limitations", "why we left X", "X price increase".
+2. **Year-pin dated material only.** Prices, releases, regulation and news carry
+   the year. An evergreen primary page does not, and pinning it pulls round-ups
+   written about it instead of the page itself.
+3. **Ask the platform, not the search engine, for what a platform holds.**
+   `platforms.py` returns the record rather than a page about it, free and
+   keyless, with the platform's own numbers attached.
+
+   ```bash
+   python3 ${CLAUDE_SKILL_DIR}/scripts/platforms.py search --on hn --query "..."
+   ```
+
+   `platforms.py list` prints the ten. Sentiment and practitioner experience:
+   `hn`, `stackexchange`, `githubissues`. Adoption: `github`, `npm`, `pypi`.
+   Dated news with real country control: `news`. A vendor's own changelog:
+   `feed`. What a dead or changed page used to say: `wayback`.
+4. **Open every page you intend to cite.** `fetch.py` first - free, and the only
+   free transport that yields page text, which is what lets a figure be traced
+   and a quote be checked against the page it came from.
+
+   ```bash
+   python3 ${CLAUDE_SKILL_DIR}/scripts/fetch.py "<url>" --find "per user" --find "price"
+   ```
+
+   It exits 3 on a blocked page or a client-rendered shell and names the next
+   rung. At standard and deep a snippet is a lead, not evidence, and the gate
+   says so.
+5. **Log the failure before the fallback.** A page that would not open is
+   evidence about the run: log it with `--status blocked`, then try the next
+   rung. `--from-fetch` fills the row from the sidecar so the URL, title, date
+   and page text cannot drift.
+6. **Log every retrieval** with `sources.py log`: the sub-question as `--angle`,
+   the query as `--query`, the right `--kind`, and - for anything you intend to
+   cite - the sentence that made it worth citing as `--quote`.
+
+**Thin means fewer than two independent parties after three variants.** Thin
+routes to `platforms.py` where the angle suits one, then Bright Data SERP on a
+*different engine* with `--country` and `--language`, then `discover` with an
+intent line. Still thin after that is a finding: say what was searched.
 
 ### Capture the quote as you read, not afterwards
 
@@ -143,8 +176,8 @@ the worst evidence available for whether it is any good.
 
 ### Depth changes what you reach for, not how much you write
 
-- **quick**: SERP snippets. Fetch only to pin a specific figure.
-- **standard**: direct-fetch the top sources per finding.
+- **quick**: SERP snippets. Open a page only to pin a specific figure.
+- **standard**: open every source that anchors a finding.
 - **deep**: get a primary source for every finding. The vendor's own pricing
   page, not the analyst's summary of it. The filing, not the article about the
   filing. This is where Bright Data usage rises, because primary sources are

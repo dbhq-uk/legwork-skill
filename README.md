@@ -30,7 +30,9 @@ Research that settles a decision. Ask a real question, get a memo where every fa
 
 **It does not ask permission to begin.** It infers a level, says which one it picked, and goes. Redirect it mid-run if it guessed wrong; that costs far less than a blocking question on every research request.
 
-**The gates are real.** `check.py` fails a report that cites a page nobody opened, quotes a figure that appears on no page that was fetched, rests a finding on nothing anyone recorded, or claims strong support from a single line of enquiry. The suite ships fixtures that are *supposed* to fail - one per failure mode - so the gate is proved to bite rather than assumed to.
+**The gates are real.** `check.py` fails a report that cites a page nobody opened, cites a page it only ever saw in a search result, quotes a figure that appears on no page that was fetched, rests a finding on nothing anyone recorded, or claims strong support from a single line of enquiry. The suite ships fixtures that are *supposed* to fail - one per failure mode - so the gate is proved to bite rather than assumed to.
+
+**A quote is checked against the page it came from.** Pages opened by `fetch.py` leave their text on disk for the run, so a recorded quote is verified verbatim and a misquote is reported at the moment it is logged, not left for a reader to discover.
 
 ## Install
 
@@ -96,13 +98,33 @@ Set a different default with `export LEGWORK_DEFAULT_MODE=deep`.
 
 ## Search backend
 
+Two ladders, free rungs first.
+
+**To search:**
+
 | Situation | Provider |
 |-----------|----------|
-| Normal search and page reads | `WebSearch` / `WebFetch` (free) |
-| Page is bot-blocked, paywalled, or JS-heavy | Bright Data `-m scrape` |
-| Reddit thread | Bright Data `-m reddit` (billed per record) |
-| Geo-specific or vertical SERP (`--country`, news, images) | Bright Data SERP |
-| Coverage still thin after 2-3 query variants | Bright Data SERP |
+| Every angle, three query variants | `WebSearch` (free) |
+| The answer is a record a platform holds - a thread, a package, a repository, a dated news item, a vendor's changelog | `platforms.py` (free, keyless) |
+| Thin after three variants, or geo-specific | Bright Data SERP on a second engine, with `--country` and `--language` |
+| Two engines still thin | Bright Data `-m discover`, intent-ranked |
+
+**To open a page:**
+
+| Situation | Provider |
+|-----------|----------|
+| Every page you intend to cite | `fetch.py` (free, direct, returns page text) |
+| Blocked and not worth paying for | `WebFetch` (free) |
+| Bot-blocked, paywalled, 403 | Bright Data `-m scrape` |
+| A client-rendered shell | Bright Data `-m render`, a real browser |
+| A platform that blocks everything above | Bright Data `-m pipeline`, billed per record. Reddit is the one where this is the only route |
+
+**The ten free platforms** (`platforms.py list`): Hacker News, Stack Exchange,
+GitHub repositories and issues, npm, PyPI, Wikipedia, Google News with real
+country and language control, any site's own RSS or Atom feed, and the Wayback
+Machine. Every row carries the platform's own numbers - points, weekly
+downloads, stars, answer counts - which is the evidence a search snippet cannot
+give you.
 
 On any failure the wrapper emits JSON to stderr and exits non-zero, and the skill falls back to the built-ins. Auth and quota failures map to exit code `2`, so you are told to re-authenticate rather than left silently degraded.
 
@@ -124,7 +146,7 @@ Outlook_Email_SaaS_Research_20260728/
 
 **Markdown only.** No HTML, no PDF.
 
-The fetch log is one row per retrieval: URL, source kind, the search angle that surfaced it, how it was retrieved, the numeric tokens found on the page, and one verbatim sentence - the line that made the source worth citing.
+The fetch log is one row per retrieval: URL, source kind, the search angle that surfaced it, the query that found it, how it was retrieved, the numeric tokens found on the page, and one verbatim sentence - the line that made the source worth citing.
 
 That last field earns its place twice. Around **half of real findings carry no figure at all**, so without a quote they would be backed by nothing but proof that somebody opened the page; the gate now fails a finding that has neither a traceable figure nor a quote on any source it cites. And it is the only part of the evidence that survives the page changing or going dead six months later.
 
@@ -134,13 +156,15 @@ All standard library only, Python 3.9+.
 
 | Script | Purpose |
 |--------|---------|
-| `sources.py kinds \| log \| score \| stale \| resume` | The source-kind vocabulary, the fetch log, fitness scoring per claim kind, staleness, resume |
+| `fetch.py "<url>" --find TERM` | Open a page directly and keep its text; reads the publication date; exits 3 on a block or a client-rendered shell |
+| `platforms.py list \| search --on X` | Ten free platform-native sources, returning records rather than pages about them |
+| `sources.py kinds \| log \| receipt \| score \| stale \| resume` | The source-kind vocabulary, the fetch log, the retrieval receipt, fitness scoring per claim kind, staleness, resume |
 | `independence.py groups \| check \| portfolio` | Collapse sources into independent voices; angle-aware corroboration; run-wide concentration |
 | `check.py --report P --level L` | The shippability gate: structural, evidence, independence, matrix |
 | `finish.py --report P --level L` | Gate, staleness sweep and index filing in one call |
 | `index.py add \| list` | The research index across runs |
 | `matrix.py check --report P` | Comparison-matrix completeness |
-| `bd_search.py` | Bright Data fallback wrapper |
+| `bd_search.py` | Bright Data fallback: SERP on a second engine, intent search, scrape, browser render, pipelines |
 
 ## Tests
 

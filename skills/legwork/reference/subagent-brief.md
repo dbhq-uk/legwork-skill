@@ -61,10 +61,19 @@ across the options rather than going deep on the first one."}
 
 ## How to work
 
-1. Search, year-pinned. Read the results before opening anything.
-2. Open the sources that would actually settle the question. Snippets are enough
-   to establish that something exists; open the page when a figure or an exact
-   wording depends on it.
+1. Run three query variants: a plain one, one targeting the primary party's own
+   domain (`site:`, an exact phrase, or `filetype:pdf`), and one searching the
+   negative case. Year-pin only queries about prices, releases, regulation or
+   news. Read the results before opening anything.
+2. Open the sources that would settle the question, with
+   `python3 {SKILL_DIR}/scripts/fetch.py "<url>" --find "<term>"`. It returns
+   page text and prints the passages around your terms. If it exits 3 the page
+   is blocked or client-rendered: say so in your return rather than quoting the
+   search snippet as though you had read the page.
+   Where the answer lives on a platform rather than on a page - a forum thread,
+   a package, a repository, a dated news item, a vendor's changelog - use
+   `python3 {SKILL_DIR}/scripts/platforms.py search --on <platform> --query "..."`
+   instead. `platforms.py list` prints what is available.
 3. Where the answer is a LIST - every vendor, every plan, every release - open the
    listed items themselves and rebuild the list from them. A table copied out of
    one roundup is one source, not one per row. Return the roundup too, marked as
@@ -79,7 +88,8 @@ across the options rather than going deep on the first one."}
 One JSON object per source, and nothing else:
 
 {"url": "...", "kind": "...", "angle": "{the angle above, unchanged}",
- "date": "YYYY-MM-DD or empty", "title": "...", "quote": "the verbatim sentence"}
+ "date": "YYYY-MM-DD or empty", "title": "...", "quote": "the verbatim sentence",
+ "query": "the query that surfaced it", "opened": true}
 
 Then one final object recording what you could NOT establish:
 
@@ -94,6 +104,10 @@ result the orchestrator needs; silence reads as "X was never asked".
 - Never invent a URL. Every URL you return must have come from an actual result.
 - Never return a URL you did not open when the claim depends on the page's exact
   wording or figures.
+- `"opened": false` on anything you only saw in a search result. It is a lead,
+  and the orchestrator logs it as one. Marking a snippet as opened is the single
+  most damaging thing you can return, because everything downstream then treats
+  a search result as a page somebody read.
 - No narrative summary, no recommendations, no reasoning about what it all means.
   That is the orchestrator's job and your prose will not be used.
 - `kind` must be one of the values from `sources.py kinds`. If none fits, use

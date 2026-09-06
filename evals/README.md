@@ -77,10 +77,10 @@ into the same unenforced ritual it was meant to replace. A change to Frame,
 Gather, Challenge or the gate does need one, because those are the parts whose
 failure is invisible in the output.
 
-Four cases is the working set, above Anthropic's floor of three. Grow it when a
+Six cases is the working set, above Anthropic's floor of three. Grow it when a
 new failure is observed in a real run, not on a schedule.
 
-## What these four cases cover
+## What these cases cover
 
 | # | Case | The failure it reproduces |
 |---|---|---|
@@ -88,6 +88,15 @@ new failure is observed in a real run, not on a schedule.
 | 2 | `rebuild-an-enumeration-rather-than-lifting-it` | One aggregator table passed off as many sources |
 | 3 | `answer-from-the-index-instead-of-researching-again` | Paying full price to re-answer a settled question |
 | 4 | `return-nothing-rather-than-hedged-length` | Padding when nothing cleared the floor |
+| 5 | `open-the-page-rather-than-citing-the-snippet` | A report resting on pages nobody opened |
+| 6 | `get-through-a-blocked-primary-source` | A block that left no trace, so nobody could see how far the run got |
+
+Cases 5 and 6 measure **retrieval reach**, which the first four assume rather
+than test. They were added on 2026-09-06 after the fetch logs of seven runs were
+read: 215 rows, of which one carried a numeric token and 45 were search results
+cited as though they were pages. Both failures had survived two rounds of
+hardening aimed at evidence quality, because nothing in the log recorded what
+retrieval had actually done.
 
 Case 1 is the most important. It measures whether the machinery runs at all,
 and every other case's result is uninterpretable if it does not.
@@ -97,6 +106,7 @@ and every other case's result is uninterpretable if it does not.
 | Run | Model | Result |
 |---|---|---|
 | [2026-08-13](runs/2026-08-13-sonnet-baseline.md) | Sonnet, both arms | First baseline. Cases 1 and 2 discriminate strongly, 4 moderately, 3 weakly |
+| [2026-09-06](runs/2026-09-06-search-pipeline-aborted.md) | Sonnet, both arms | **Aborted on a rate limit; nothing scored.** One arm's partial fetch log shows blocked pages recorded as blocked and every row carrying its query, both firsts. Cases 5 and 6 remain unrun |
 
 ### What the first run changed
 

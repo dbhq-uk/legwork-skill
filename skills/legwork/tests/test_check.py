@@ -215,3 +215,106 @@ def test_a_finding_with_a_traceable_figure_needs_no_quote():
     double-charge a finding that already traces."""
     problems, _ = run('valid_report.md', level='deep')
     assert not any('no recorded evidence' in e for e in problems.errors)
+
+
+# ---------------------------------------------------------------------------
+# A search snippet is not an opened page
+#
+# Measured on a real run filed on 2026-08-16: 18 of its 29 cited sources were
+# search results nobody opened. It passed the gate at standard and was filed.
+# check_evidence treated every row with an ok status as fetched, whatever
+# transport it came from, so "cited but never fetched" could never see this.
+# ---------------------------------------------------------------------------
+
+def test_a_report_resting_only_on_snippets_fails_at_deep():
+    problems, _ = run('snippet_only.md', level='deep', fmt='brief')
+    assert any('never opened' in message for message in problems.errors), problems.errors
+
+
+def test_the_same_report_only_warns_at_standard():
+    problems, _ = run('snippet_only.md', level='standard', fmt='brief')
+    assert problems.errors == [], problems.errors
+    assert any('never opened' in message for message in problems.warnings)
+
+
+def test_quick_does_not_complain_because_quick_is_snippet_first_by_design():
+    problems, _ = run('snippet_only.md', level='quick', fmt='brief')
+    assert problems.errors == [], problems.errors
+    assert not any('never opened' in message for message in problems.warnings)
+
+
+def test_the_snippet_rule_is_the_only_thing_wrong_with_that_fixture():
+    """A MUST-fail fixture is evidence about one check only if it fails for one reason."""
+    problems, _ = run('snippet_only.md', level='deep', fmt='brief')
+    assert len(problems.errors) == 1, problems.errors
+
+
+def test_opening_the_page_later_clears_the_snippet_rule(tmp_path):
+    """Seen in a search result, then opened, is an opened page."""
+    report = shutil.copy(fixture('snippet_only.md'), str(tmp_path / 'run.md'))
+    tsv = str(tmp_path / 'run.tsv')
+    shutil.copy(fixture('snippet_only.tsv'), tsv)
+    with open(tsv, 'a', encoding='utf-8') as handle:
+        for url, title, quote in (
+                ('https://supplier.example/transit', 'Transit category',
+                 'All products listed are specified for H3 (high roof) configuration.'),
+                ('https://supplier.example/cubicle-d', 'Cubicle D',
+                 'External dimensions - height 2088mm.'),
+                ('https://roundup.example/transit-kits', 'Transit conversion kits',
+                 'The medium roof gives roughly 1886 mm of interior load height.')):
+            handle.write('{}\tvendor_docs\tan angle\tdirect\t2026-09-06T10:00:00+00:00\tok\t'
+                         '2026-08-01\t\t{}\t{}\tq\n'.format(url, title, quote))
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert not any('never opened' in message for message in problems.errors), problems.errors
+
+
+def test_an_api_record_counts_as_opened(tmp_path):
+    """A registry's own JSON is the record, not a snippet about it."""
+    report = shutil.copy(fixture('snippet_only.md'), str(tmp_path / 'run.md'))
+    tsv = str(tmp_path / 'run.tsv')
+    with open(tsv, 'w', encoding='utf-8') as handle:
+        handle.write('url\tkind\tangle\tvia\tfetched_at\tstatus\tdate\tnumbers\ttitle\tquote\tquery\n')
+        for url in ('https://supplier.example/transit', 'https://supplier.example/cubicle-d',
+                    'https://roundup.example/transit-kits'):
+            handle.write('{}\tregistry\tan angle\tapi\t2026-09-06T10:00:00+00:00\tok\t2026-08-01\t'
+                         '2088,1886\tA record\tA verbatim sentence from the record.\tq\n'.format(url))
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert not any('never opened' in message for message in problems.errors), problems.errors
+
+
+# ---------------------------------------------------------------------------
+# The receipt has to agree with the log
+# ---------------------------------------------------------------------------
+
+def _report_with_receipt(tmp_path, receipt):
+    report = str(tmp_path / 'run.md')
+    with open(fixture('snippet_only.md'), encoding='utf-8') as handle:
+        content = handle.read()
+    content = content.replace(
+        '*standard · 3 angles · 3 sources (0 opened, 0 via Bright Data) · 1 disconfirming search*',
+        receipt)
+    with open(report, 'w', encoding='utf-8') as handle:
+        handle.write(content)
+    tsv = shutil.copy(fixture('snippet_only.tsv'), str(tmp_path / 'run.tsv'))
+    return report, tsv
+
+
+def test_a_receipt_claiming_more_opened_than_the_log_holds_is_flagged(tmp_path):
+    report, tsv = _report_with_receipt(
+        tmp_path, '*standard · 3 angles · 3 sources (3 opened, 0 via Bright Data)*')
+    problems, _ = check.run(report, tsv, 'brief', 'standard')
+    assert any('receipt says 3 opened' in message for message in problems.warnings), problems.warnings
+
+
+def test_a_receipt_that_agrees_with_the_log_is_silent(tmp_path):
+    report, tsv = _report_with_receipt(
+        tmp_path, '*standard · 3 angles · 3 sources (0 opened, 0 via Bright Data)*')
+    problems, _ = check.run(report, tsv, 'brief', 'standard')
+    assert not any('receipt says' in message for message in problems.warnings), problems.warnings
+
+
+def test_a_receipt_with_no_opened_count_is_not_second_guessed(tmp_path):
+    """Old reports predate the count. Absence is not a disagreement."""
+    report, tsv = _report_with_receipt(tmp_path, '*standard · 3 angles · 3 sources*')
+    problems, _ = check.run(report, tsv, 'brief', 'standard')
+    assert not any('receipt says' in message for message in problems.warnings), problems.warnings

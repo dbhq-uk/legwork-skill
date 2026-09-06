@@ -32,9 +32,10 @@ also means a claim outlives the page changing or going dead.
 
 CLI:
     sources.py kinds
-    sources.py log --tsv PATH --url URL --kind KIND --angle "..." --via websearch \\
+    sources.py log --tsv PATH --url URL --kind KIND --angle "..." --via direct \\
                    [--quote "..."] [--title "..."] [--date 2026-07-01] \\
-                   [--text-file page.txt] [--status ok]
+                   [--text-file page.txt] [--query "..."] [--status ok]
+    sources.py receipt --tsv PATH
     sources.py score --tsv PATH --claim-kind price [--format table|json]
 
 Stdlib only. Runs on any python3 >= 3.9.
@@ -178,8 +179,11 @@ RECENCY_FLOOR = 0.55
 # above a demonstrably stale one, and is reported rather than silently assumed.
 RECENCY_UNKNOWN = 0.80
 
-# 'quote' is last so a log written before it existed still parses positionally.
-TSV_COLUMNS = ('url', 'kind', 'angle', 'via', 'fetched_at', 'status', 'date', 'numbers', 'title', 'quote')
+# Columns are appended, never inserted: a log written by an older version still
+# parses positionally, which is what lets a refresh resume a run started months
+# ago. 'quote' came after 'title', 'query' after 'quote'.
+TSV_COLUMNS = ('url', 'kind', 'angle', 'via', 'fetched_at', 'status', 'date', 'numbers',
+               'title', 'quote', 'query')
 
 # One sentence, not a page. Long enough to carry a qualitative claim, short
 # enough that the log stays a log.
@@ -191,7 +195,14 @@ MAX_QUOTE_CHARS = 300
 # 'mcp' covers a connected tool. Without these three a run is forced either to
 # leave its best evidence out of the log or to re-fetch it through a transport
 # the log accepts, which distorts the evidence trail rather than recording it.
-VIA_VALUES = ('websearch', 'webfetch', 'brightdata', 'api', 'local', 'mcp')
+# 'direct' is fetch.py: the page opened straight from this machine, which is the
+# only free transport that yields page text rather than a model's summary of it.
+VIA_VALUES = ('websearch', 'webfetch', 'direct', 'brightdata', 'api', 'local', 'mcp')
+
+# A search result is a lead, not a page anybody opened. Every other transport
+# returns the page or the record itself, including 'api' - a registry's own JSON
+# is the record, not a snippet about it.
+SNIPPET_VIA = 'websearch'
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +377,55 @@ def extract_numbers(text, limit=MAX_NUMBERS):
     return list(seen)
 
 
+def numbers_for_row(explicit, page_text, quote):
+    """Numeric tokens for one log row, and where they came from.
+
+    Order matters. Page text is the strong form: every figure on the page is
+    available to trace against. An explicit --numbers flag beats it because the
+    caller extracted them elsewhere and knows better. The quote is the weak form
+    and the important one: measured across seven real fetch logs on 2026-09-06,
+    the numbers column was filled on 1 row of 215, because WebFetch returns a
+    summary rather than page text and there was nothing to pass to --text-file.
+    The quote is verbatim page text, so a figure inside it did appear on the
+    page, and taking numbers from it is what makes figure tracing fire at all.
+    """
+    if explicit:
+        tokens = [n.strip() for n in explicit.split(',') if n.strip()]
+        if tokens:
+            return tokens, 'flag'
+    if page_text:
+        tokens = extract_numbers(page_text)
+        if tokens:
+            return tokens, 'text'
+    if quote:
+        tokens = extract_numbers(quote)
+        if tokens:
+            return tokens, 'quote'
+    return [], 'none'
+
+
+# Curly punctuation and non-breaking spaces are the reason a quote copied from a
+# rendered page fails a naive comparison against the same page's source text.
+_MATCH_PUNCT = {0x2018: "'", 0x2019: "'", 0x201c: '"', 0x201d: '"',
+                0x2013: '-', 0x2014: '-', 0x2212: '-', 0x00a0: ' '}
+
+
+def normalise_for_match(text):
+    """Fold the differences that stop a true quote matching the page it came from."""
+    return re.sub(r'\s+', ' ', (text or '').translate(_MATCH_PUNCT)).strip().lower()
+
+
+def quote_appears_in(quote, text):
+    """Is this quote verbatim from this page text?
+
+    The gate can check that a figure appeared on a page. Nothing could check
+    that a *sentence* did, and around half of all findings carry no figure, so
+    the quote is the only evidence those findings have. This is the check.
+    """
+    needle = normalise_for_match(quote)
+    return bool(needle) and needle in normalise_for_match(text)
+
+
 # ---------------------------------------------------------------------------
 # Fetch log
 # ---------------------------------------------------------------------------
@@ -514,9 +574,61 @@ def resume_state(rows):
     }
 
 
+def retrieval_receipt(rows):
+    """What the run actually retrieved, counted from the log rather than recalled.
+
+    The receipt line under a report's title is written by hand at the end of a
+    long run, which is when a model has least attention left for arithmetic.
+    Measured on real runs: a report claimed sources it had only seen in a search
+    result. These counts come from the file, so the two can be compared.
+    """
+    from independence import canonicalize
+
+    opened, snippet_only, blocked, queries = set(), set(), set(), set()
+    brightdata = set()
+    for row in rows:
+        key = canonicalize(row.get('url', ''))
+        via = (row.get('via') or '').strip().lower()
+        query = (row.get('query') or '').strip()
+        if query:
+            queries.add(query)
+        if (row.get('status') or 'ok').lower() != 'ok':
+            blocked.add(key)
+            continue
+        if via == SNIPPET_VIA:
+            snippet_only.add(key)
+        else:
+            opened.add(key)
+        if via == 'brightdata':
+            brightdata.add(key)
+    return {
+        'sources': len(rows),
+        'opened': len(opened),
+        # A page opened later stops being snippet-only, however it was first seen.
+        'snippet_only': len(snippet_only - opened),
+        'brightdata': len(brightdata),
+        'blocked': len(blocked - opened),
+        'queries': len(queries),
+    }
+
+
+def receipt_line(receipt):
+    """The retrieval half of a report's receipt line, ready to paste."""
+    return '{sources} sources \u00b7 {opened} opened \u00b7 {snippet_only} snippet-only \u00b7 ' \
+           '{brightdata} via Bright Data \u00b7 {blocked} blocked \u00b7 {queries} queries'.format(**receipt)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+
+def cmd_receipt(args):
+    receipt = retrieval_receipt(read_rows(args.tsv))
+    if args.format == 'json':
+        print(json.dumps(receipt, indent=2))
+        return
+    print(receipt_line(receipt))
 
 
 def cmd_kinds(args):
@@ -540,7 +652,46 @@ def cmd_kinds(args):
         print()
 
 
+def _apply_sidecar(args):
+    """Fill the row from the JSON fetch.py (or bd_search.py) wrote beside the page.
+
+    Retyping a URL, a title and a date that a script already has is where they
+    drift, and the drift is invisible: the row looks fine and points at a
+    slightly different page from the one that was read. Explicit flags still
+    win, because the caller may know better than the page's own metadata.
+    """
+    try:
+        with open(args.from_fetch, encoding='utf-8') as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError) as exc:
+        print('error: cannot read --from-fetch: {}'.format(exc), file=sys.stderr)
+        sys.exit(2)
+
+    args.url = args.url or payload.get('canonical') or payload.get('url') or ''
+    args.title = args.title or payload.get('title') or ''
+    args.date = args.date or payload.get('date') or ''
+    args.query = args.query or payload.get('query') or ''
+    if not args.text_file and payload.get('text_file') and os.path.exists(payload['text_file']):
+        args.text_file = payload['text_file']
+    if not args.via:
+        args.via = 'brightdata' if payload.get('provider') == 'brightdata' else 'direct'
+    verdict = (payload.get('verdict') or 'ok').lower()
+    if verdict != 'ok' and args.status == 'ok':
+        # A page that would not open is evidence about the run, not about the
+        # claim. Recording it is what makes the receipt's blocked count real.
+        args.status = verdict
+    return args
+
+
 def cmd_log(args):
+    if args.from_fetch:
+        args = _apply_sidecar(args)
+    if not args.url:
+        print('error: --url is required unless --from-fetch supplies one', file=sys.stderr)
+        sys.exit(2)
+    if not args.via:
+        print('error: --via is required unless --from-fetch supplies one', file=sys.stderr)
+        sys.exit(2)
     kind = args.kind or infer_source_kind(args.url, args.title or '')
     if kind not in SOURCE_KINDS:
         print('error: unknown source kind {!r}; one of: {}'.format(kind, ', '.join(SOURCE_KINDS)), file=sys.stderr)
@@ -549,14 +700,26 @@ def cmd_log(args):
         print('error: --via must be one of: {}'.format(', '.join(VIA_VALUES)), file=sys.stderr)
         sys.exit(2)
 
-    numbers = args.numbers.split(',') if args.numbers else []
+    page_text = None
     if args.text_file:
         try:
             with open(args.text_file, encoding='utf-8', errors='replace') as handle:
-                numbers = extract_numbers(handle.read())
+                page_text = handle.read()
         except OSError as exc:
             print('error: cannot read --text-file: {}'.format(exc), file=sys.stderr)
             sys.exit(2)
+
+    quote = (args.quote or '')[:MAX_QUOTE_CHARS]
+    numbers, numbers_from = numbers_for_row(args.numbers, page_text, quote)
+
+    # None means "could not be checked" - no page text was supplied - which is a
+    # different thing from a quote that was checked and is not on the page.
+    verified = None
+    if page_text is not None and quote:
+        verified = quote_appears_in(quote, page_text)
+        if not verified:
+            print('warning: the quote was not found in the page text; re-take it from the page',
+                  file=sys.stderr)
 
     append_row(args.tsv, {
         'url': args.url,
@@ -568,10 +731,12 @@ def cmd_log(args):
         'date': args.date or '',
         'numbers': ','.join(numbers),
         'title': args.title or '',
-        'quote': (args.quote or '')[:MAX_QUOTE_CHARS],
+        'quote': quote,
+        'query': args.query or '',
     })
     print(json.dumps({'status': 'logged', 'url': args.url, 'kind': kind,
-                      'numbers': len(numbers), 'quoted': bool(args.quote)}))
+                      'numbers': len(numbers), 'numbers_from': numbers_from,
+                      'quoted': bool(quote), 'quote_verified': verified}))
 
 
 def cmd_score(args):
@@ -636,7 +801,7 @@ def cmd_resume(args):
             print('  {}'.format(url[:88]))
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(prog='sources', description=__doc__.split('\n')[1])
     sub = parser.add_subparsers(dest='command', required=True)
 
@@ -645,10 +810,11 @@ def main():
 
     p_log = sub.add_parser('log', help='Append one retrieval to the fetch log')
     p_log.add_argument('--tsv', required=True)
-    p_log.add_argument('--url', required=True)
+    p_log.add_argument('--url', default='', help='Required unless --from-fetch supplies one')
     p_log.add_argument('--kind', default=None, help='Source kind; inferred from the URL when omitted')
     p_log.add_argument('--angle', required=True, help='The sub-question this retrieval was answering')
-    p_log.add_argument('--via', required=True, choices=list(VIA_VALUES))
+    p_log.add_argument('--via', default='', choices=[''] + list(VIA_VALUES),
+                       help='Required unless --from-fetch supplies one')
     p_log.add_argument('--status', default='ok')
     p_log.add_argument('--quote', default='',
                        help='The sentence that made this source worth citing, verbatim. '
@@ -657,6 +823,14 @@ def main():
     p_log.add_argument('--date', default='', help='Publication date of the source, ISO-8601')
     p_log.add_argument('--text-file', default=None, help='File of fetched page text; numeric tokens are extracted')
     p_log.add_argument('--numbers', default='', help='Comma-separated numeric tokens, if extracted elsewhere')
+    p_log.add_argument('--from-fetch', default=None, dest='from_fetch', metavar='PATH.json',
+                       help='Sidecar JSON from fetch.py or bd_search.py; fills url, title, date and text')
+    p_log.add_argument('--query', default='',
+                       help='The search query or endpoint call that surfaced this source')
+
+    p_receipt = sub.add_parser('receipt', help='Counts for the receipt line, taken from the log')
+    p_receipt.add_argument('--tsv', required=True)
+    p_receipt.add_argument('--format', default='line', choices=['line', 'json'])
 
     p_score = sub.add_parser('score', help='Score logged sources against a claim kind')
     p_score.add_argument('--tsv', required=True)
@@ -674,9 +848,15 @@ def main():
     p_resume.add_argument('--tsv', required=True)
     p_resume.add_argument('--format', default='table', choices=['table', 'json'])
 
-    args = parser.parse_args()
-    {'kinds': cmd_kinds, 'log': cmd_log, 'score': cmd_score,
+    args = parser.parse_args(argv)
+    {'kinds': cmd_kinds, 'log': cmd_log, 'receipt': cmd_receipt, 'score': cmd_score,
      'stale': cmd_stale, 'resume': cmd_resume}[args.command](args)
+
+
+# Tests drive the CLI through this rather than through a subprocess, so a bug in
+# argument handling fails a test rather than passing one that only exercised the
+# functions underneath it.
+main_with_args = main
 
 
 if __name__ == '__main__':

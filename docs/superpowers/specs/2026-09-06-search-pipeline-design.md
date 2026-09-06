@@ -2,6 +2,8 @@
 
 **Date:** 2026-09-06
 **Status:** draft, awaiting review
+**Revised:** 2026-09-06, adding component C2 after a probe of free
+platform APIs.
 **Scope:** `skills/legwork/scripts/`, the retrieval sections of `SKILL.md`,
 `methodology.md`, `subagent-brief.md`, the templates, the evals, and the
 three top-level docs that describe what the skill touches.
@@ -15,6 +17,7 @@ three top-level docs that describe what the skill touches.
   - [A. The gate sees opened versus seen](#a-the-gate-sees-opened-versus-seen)
   - [B. The fetch log records more, and checks itself](#b-the-fetch-log-records-more-and-checks-itself)
   - [C. `fetch.py`, a free direct fetch that yields page text](#c-fetchpy-a-free-direct-fetch-that-yields-page-text)
+  - [C2. `platforms.py`, free platform-native sources](#c2-platformspy-free-platform-native-sources)
   - [D. `bd_search.py` catches up with the CLI](#d-bd_searchpy-catches-up-with-the-cli)
   - [E. The query playbook](#e-the-query-playbook)
   - [F. Documents that describe the skill](#f-documents-that-describe-the-skill)
@@ -95,12 +98,23 @@ somebody has on disk.
 
 ## The retrieval ladder
 
+A search engine returns pages *about* a thing. A platform's own API returns
+the thing: the thread, the issue, the package record, the news item with its
+date. Legwork's own doctrine already says the complaints are primary evidence
+of sentiment and the article about the complaints is not, and that
+enumerations must be rebuilt from the items. Platform-native retrieval is how
+that is done without paying, so it sits above paid SERP rather than below it.
+
 For a search, in order:
 
 1. `WebSearch`, three query variants per angle (see E).
-2. Bright Data SERP (`bd_search.py -m general`) on a second engine, with
+2. `platforms.py` where the claim is about content a platform holds: a
+   community's own threads, a registry's own records, a dated news item, a
+   vendor's own feed (see C2). Free, keyless, returns records rather than
+   pages.
+3. Bright Data SERP (`bd_search.py -m general`) on a second engine, with
    `--country` and `--language`, when the angle is thin or geo-specific.
-3. Bright Data `discover` (`bd_search.py -m discover`) when two engines are
+4. Bright Data `discover` (`bd_search.py -m discover`) when two engines are
    still thin: an intent-ranked search that can return page content in the
    same call.
 
@@ -238,6 +252,54 @@ agent reaches the sentence it will quote without reading twenty thousand
 characters into context, and it replaces the blind head-truncate as the way
 a long page is made small.
 
+### C2. `platforms.py`, free platform-native sources
+
+New script, standard library only. Every endpoint below was probed from a
+developer machine on 2026-09-06 and returned HTTP 200 with no key.
+
+```
+platforms.py list
+platforms.py search --on PLATFORM --query "..." [--limit 10] [--since YYYY-MM-DD]
+             [--country gb] [--language en] [--out PATH] [--json]
+```
+
+| `--on` | Endpoint | Source kind it produces | What it gives that SERP does not |
+|---|---|---|---|
+| `hn` | `hn.algolia.com/api/v1/search` | `community` | The thread itself, with points and comment counts and an exact date |
+| `stackexchange` | `api.stackexchange.com/2.3/search/advanced` | `community` | Practitioner problems, with scores, answer counts and dates |
+| `github` | `api.github.com/search/repositories`, `/search/issues` | `registry` | Stars, last push, open issues: adoption evidence, not commentary about adoption |
+| `npm` | `registry.npmjs.org/-/v1/search` | `registry` | Weekly downloads, a demand signal with no article behind it |
+| `pypi` | `pypi.org/pypi/<name>/json` | `registry` | Release dates and the current version |
+| `news` | `news.google.com/rss/search` with `hl`, `gl`, `ceid` | `news` | Dated news with real geo and language control, free |
+| `feed` | RSS or Atom discovered from a site URL | `vendor_announcement` | A vendor's own changelog with per-entry dates |
+| `wayback` | `archive.org/wayback/available` | keeps the row's own kind | A snapshot of a page that is dead, blocked, or has changed since |
+
+**Output.** One JSON object: `{"platform", "query", "endpoint", "results":
+[{"url", "title", "date", "snippet", "kind", "signal"}]}`. `signal` carries
+the platform's own numbers (`points`, `comments`, `stars`, `downloads`,
+`answers`), which is the part a SERP snippet can never supply and the part a
+demand question actually needs. `--out` writes the same JSON for
+`sources.py log --from-fetch`.
+
+**Logging.** Platform rows are logged `--via api`, which already exists and
+which the gate counts as opened. An API record is the record itself, not a
+snippet about it.
+
+**Rate limits and manners.** One request per invocation, no retry loop, a
+`legwork-research` user agent with the repository URL. GitHub allows ten
+unauthenticated searches a minute; `GITHUB_TOKEN` is used if it happens to be
+in the environment and is never required, never logged and never written to
+disk. StackExchange allows three hundred requests a day unkeyed.
+
+**Reddit is not here, and that is the finding.** Both `www.reddit.com` and
+`old.reddit.com` returned 403 to a plain request on 2026-09-06. Reddit stays
+on the paid pipeline rung, which is exactly what that rung is for. Lobsters'
+JSON search endpoint now rejects the query parameter and is excluded.
+
+**Deliberately excluded.** Crossref and OpenAlex both work and are both
+academic. The redesign removed academic machinery because it never fired on a
+decision-research question, and re-adding it would re-import that dead weight.
+
 ### D. `bd_search.py` catches up with the CLI
 
 CLI 0.2.0 was read on 2026-09-06.
@@ -281,7 +343,7 @@ passed through with its positional parameters. The docstring carries a
 short table of which pipeline suits which source kind, for the agent
 choosing one:
 
-| Source kind the claim needs | Pipelines |
+| Source kind the claim needs | Pipelines (paid, after `platforms.py` has failed or does not cover it) |
 |---|---|
 | `review_aggregate` | `google_maps_reviews`, `facebook_company_reviews`, `amazon_product_reviews`, `apple_app_store`, `google_play_store` |
 | `job_ad` | `linkedin_job_listings` |
@@ -316,9 +378,13 @@ sub-question by sub-question" in `methodology.md` Phase 2. The rules:
   --country XX --language YY` on a second engine as one of the variants.
 - **Open every page you cite** with `fetch.py`, then up the ladder. At
   standard and deep a snippet is a lead, not evidence; the gate says so.
+- **Ask the platform, not the search engine, for what a platform holds.**
+  Sentiment, adoption, packages, dated news and a vendor's own changelog come
+  from `platforms.py`, free, as records rather than pages.
 - **Thin means fewer than two independent parties after three variants.**
-  Thin routes to Bright Data SERP on a different engine, then `discover`
-  with an intent line. Thin after that is a finding: say what was searched.
+  Thin routes to `platforms.py` where the angle suits one, then Bright Data
+  SERP on a different engine, then `discover` with an intent line. Thin after
+  that is a finding: say what was searched.
 - **Log the failure before the fallback.** A blocked or shell open gets
   `--status blocked` in the log, then the next rung is tried. The receipt
   counts them.
@@ -398,6 +464,8 @@ Angle: "what does the incumbent charge". Date anchored as 2026-09-06.
 | `fetch.py` | 1 | network or parse error | `WebFetch` |
 | `fetch.py` | 3 | blocked or shell, reason given | `WebFetch` or `bd_search.py -m scrape`, then `-m render` |
 | `fetch.py` | 4 | unsupported content type (PDF without `pdftotext`) | `WebFetch` |
+| `platforms.py` | 0 with `results: []` | the platform holds nothing on this | record it as a gap; it is evidence of absence |
+| `platforms.py` | 1 | endpoint error or rate limit, JSON on stderr | next rung; do not retry in a loop |
 | `bd_search.py` | 1 | CLI failure, JSON on stderr | next rung or record as unverified |
 | `bd_search.py` | 2 | auth or quota | tell the user to run `brightdata login`; do not retry |
 | `sources.py log` | 0 with `quote_verified: false` | quote not found in page text | re-take the quote from the window |
@@ -433,6 +501,16 @@ normalised, and a page with none yields empty; link density and short-text
 shell detection; challenge markers; `--find` windows and the hit cap; PDF
 branch with `pdftotext` absent exits 4; `urlopen` mocked to return 403 and
 the script exits 3 with reason `blocked`. No socket is opened in any test.
+
+**`test_platforms.py`.** `urlopen` mocked with one recorded response body
+per platform, stored as a fixture trimmed to a couple of records. Each
+platform's normalisation into `{url, title, date, snippet, kind, signal}`;
+dates normalised to `YYYY-MM-DD`; `--since` filters; `--limit` caps; RSS and
+Atom both parse in `feed` mode; feed discovery finds `<link rel="alternate">`;
+`wayback` returns the snapshot URL and its timestamp; an empty result set
+exits 0 with `results: []`; an HTTP error exits 1 with JSON on stderr;
+`GITHUB_TOKEN` is sent as a header when set and absent when not. No socket is
+opened in any test.
 
 **`test_bd_search.py`.** `subprocess.run` mocked. Argument mapping for each
 mode, including `--engine`, `--language`, `--page`, `shopping`, `discover`
@@ -480,10 +558,11 @@ Each step is a PR-sized unit with its own tests and leaves the suite green.
 1. **Log and gate.** B (all but `--from-fetch`), A, templates, the
    `snippet_only` fixture, `AGENTS.md` and CI MUST-fail lists.
 2. **`fetch.py`** and `log --from-fetch`.
-3. **`bd_search.py`**, importing the cleaner from `fetch.py`.
-4. **Playbook, brief, `SKILL.md` retrieval policy, README, SECURITY,
+3. **`platforms.py`**, which reuses `fetch.py`'s transport and date parsing.
+4. **`bd_search.py`**, importing the cleaner from `fetch.py`.
+5. **Playbook, brief, `SKILL.md` retrieval policy, README, SECURITY,
    design notes.**
-5. **Evals**: cases 5 and 6, then the re-run of 1, 2, 5, 6 and its record.
+6. **Evals**: cases 5 and 6, then the re-run of 1, 2, 5, 6 and its record.
 
 Work starts on a fresh branch from `main` once the prose cut on
 `refactor/cut-the-prose` has merged, so the playbook lands on the shorter

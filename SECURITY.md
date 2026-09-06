@@ -14,13 +14,26 @@ requests by design.
 
 ### Network
 
-**Yes, and that is the point.** Two paths, in this order:
+**Yes, and that is the point.** Four paths, in this order:
 
 1. **Your agent's built-in `WebSearch` and `WebFetch`.** Preferred, and used for
    the overwhelming majority of work. No setup, no key, no per-request cost. The
    requests go wherever the research leads - arbitrary public sites
-2. **Bright Data, optionally, as a fallback.** `bd_search.py` is used only when
-   the built-in tools genuinely cannot do the job: bot-blocked, paywalled or
+2. **`fetch.py`, a direct request from your machine.** One page per invocation,
+   on explicit instruction, with a browser user agent. No cookies are sent or
+   stored, no credentials are read, no JavaScript is executed, and nothing is
+   cached between runs. It does **not** consult `robots.txt`: it opens a single
+   named page the way a browser would, rather than crawling. That is a
+   deliberate choice, stated here so you can disagree with it - if you need
+   robots-respecting behaviour, remove `fetch.py` from the ladder in
+   `SKILL.md` and the run falls back to `WebFetch`
+3. **`platforms.py`, public APIs that need no key.** Hacker News, Stack
+   Exchange, GitHub, npm, PyPI, Wikipedia, Google News, a site's own RSS feed,
+   and the Internet Archive. Your query reaches those services. `GITHUB_TOKEN`
+   is used if it is already in your environment; it is never required, never
+   logged, and never written to disk
+4. **Bright Data, optionally, as a fallback.** `bd_search.py` is used only when
+   the paths above genuinely cannot do the job: bot-blocked, paywalled or
    JS-heavy pages, Reddit threads, and geo-specific or vertical SERPs
 
 Bright Data is a third party, billed per record, and requires an API key **you**
@@ -37,6 +50,10 @@ wording is itself confidential - the question is the thing most likely to leak.
 
 - Installs into `~/.claude/skills/legwork` or `~/.codex`, depending on the agent
 - Writes the findings memo where you ask it to
+- Writes page text to a temporary directory (`$TMPDIR/legwork/`) during a run,
+  so figures and quotes can be checked against the page. It is scratch: it never
+  enters the output folder, and the fetch log stores only the quote and the
+  numeric tokens
 - Stores no cache of fetched pages between runs
 
 ### Credentials

@@ -140,6 +140,64 @@ usually suggests the narrower question that would have worked.
 This is the same argument the gate makes. A tool whose non-empty answers can be
 believed has to be able to produce an empty one.
 
+## Search was never measured
+
+Everything above concerns what happens to evidence once it is in the log. Nothing
+concerned how it got there, and in September 2026 the fetch logs of one real run
+and six eval runs were read for the first time: seven files, 215 rows.
+
+| Log | Rows | `numbers` filled | Rows that are search results only |
+|---|---|---|---|
+| Evomotion, real, standard, 2026-08-16 | 29 | 0 | 18 (62%) |
+| Eval case 1, Sonnet | 34 | 0 | 0 |
+| Eval case 2, Haiku | 9 | 0 | 5 |
+| Eval case 2, Sonnet | 38 | 0 | 1 |
+| Eval case 2, Opus | 96 | 0 | 20 |
+| Eval case 3, Sonnet | 3 | 0 | 0 |
+| Eval case 4, Sonnet | 6 | 1 | 1 |
+
+Three things were wrong, and the third explains why the first two survived.
+
+**A search snippet passed as an opened page.** The gate counted every row with an
+ok status as fetched, whatever transport produced it. The Evomotion run cited 29
+sources, 18 of which nobody opened, passed at standard, and was filed. The claim
+in the README that the gate "fails a report that cites a page nobody opened" was
+true only of a URL absent from the log entirely.
+
+**Figure tracing was dead in production.** One row in 215 carried numeric tokens,
+because `WebFetch` returns a model's summary rather than page text, so there was
+never a file to pass to `--text-file`, and the check skips silently when it has
+nothing to compare against. It was proved by fixtures and had never once fired.
+
+**Nothing recorded what the search did.** No queries, no failures, no fallbacks -
+every row in every log said `ok`. A pipeline whose behaviour is not recorded
+cannot be found to be underperforming, which is why both defects lasted through
+two rounds of hardening aimed squarely at evidence quality.
+
+The response is two ladders, free rungs first, and a log that records enough to
+answer the question next time.
+
+`fetch.py` opens a page directly and keeps its text, which is what makes figure
+tracing fire and lets a quote be checked verbatim against the page it claims to
+come from. It reads the publication date from the page's own metadata and
+classifies a block or a client-rendered shell so the caller knows which rung is
+next. It deliberately ignores `Last-Modified`: measured live on a vendor page,
+that header returned the day of the request, which would have stamped a page of
+unknown age as published today and defeated the staleness check it feeds.
+
+`platforms.py` is the answer to a question the skill had never asked - what if
+the thing we want is not a page? A search engine returns pages *about* a thing;
+a platform's API returns the thing. That is the same argument the skill already
+makes about rebuilding enumerations from their items and about complaints being
+primary evidence of sentiment, so it belongs above paid SERP rather than below
+it. Ten platforms, all keyless, each row carrying the platform's own numbers.
+Reddit is not among them because it answers 403 to a plain request, which is
+precisely what the paid pipeline rung is for.
+
+The gate change is one line of policy with teeth: a citation resting only on
+search-result rows is unopened. Ignored at quick, which is snippet-first by
+design; a warning at standard; an error at deep.
+
 ## Bright Data stays a fallback
 
 Built-in `WebSearch` and `WebFetch` first, direct `WebFetch` next, Bright Data
@@ -147,7 +205,16 @@ only when that fails. No per-level spend rule is needed: deep attempts more
 primary sources, primary sources are disproportionately the ones that block you,
 so paid usage rises with depth on its own.
 
-`bd_search.py` is 272 lines with one dependency and no credentials of its own. The
+It has, though, grown into the rungs the CLI already offered and the wrapper
+never exposed: SERP on a second engine with country and language control, which
+is the whole reason to pay for search when `WebSearch` is free; intent-ranked
+`discover` for an angle two engines have left thin; a real browser for a
+client-rendered shell; and any of the CLI's pipelines by name rather than Reddit
+alone. Four modes were removed - scholar, academic, patents, people - because the
+CLI has no such verticals and each ran an ordinary web search while letting the
+caller believe otherwise.
+
+`bd_search.py` has one dependency and no credentials of its own. The
 alternative approach - browser cookie extraction, vendored platform clients, and a
 keyless tier scraping search-engine HTML - buys the same coverage with an order of
 magnitude more code, all of which decays every time a site changes. Paying for

@@ -37,14 +37,15 @@ import json
 import os
 import re
 import sys
-from urllib.parse import quote_plus, urlencode
+from urllib.parse import quote_plus, urlencode, urljoin
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fetch import USER_AGENT, html_to_text, normalise_date  # noqa: E402
+from fetch import (  # noqa: E402
+    USER_AGENT, BlockedAddress, _check_target, html_to_text, normalise_date)
 
 TIMEOUT = 20
 MAX_BYTES = 4 * 1024 * 1024
@@ -83,13 +84,14 @@ def _fail(message, code=1, **extra):
 
 
 def _get(url, headers=None, accept='application/json'):
+    """One GET against a known endpoint. `feed` mode validates its URL first."""
     request = Request(url, headers=dict({
         'User-Agent': USER_AGENT,
         'Accept': accept,
         'Accept-Language': 'en-GB,en;q=0.9',
     }, **(headers or {})))
     try:
-        with urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310 - fixed endpoint list
+        with urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310 - validated or fixed endpoint
             return response.read(MAX_BYTES).decode('utf-8', errors='replace')
     except HTTPError as exc:
         _fail('{} returned HTTP {}'.format(url.split('/')[2], exc.code), code=1, status=exc.code)
@@ -293,6 +295,12 @@ def search_feed(args):
     target = args.query.strip()
     if not target.startswith(('http://', 'https://')):
         _fail('feed mode takes a site or feed URL, got: {}'.format(target[:80]))
+    # The only mode here that takes an arbitrary URL rather than a fixed
+    # endpoint, so it is the only one that needs the address guard.
+    try:
+        _check_target(target)
+    except BlockedAddress as exc:
+        _fail(str(exc))
     body = _get(target, accept='application/rss+xml, application/atom+xml, text/html;q=0.9')
     if '<rss' not in body[:2000].lower() and '<feed' not in body[:2000].lower():
         found = _FEED_LINK_RE.search(body)
@@ -301,10 +309,11 @@ def search_feed(args):
         href = _HREF_RE.search(found.group(0))
         if not href:
             _fail('feed link carries no href at {}'.format(target[:80]))
-        target = href.group(1)
-        if target.startswith('/'):
-            parts = args.query.split('/')
-            target = '{}//{}{}'.format(parts[0], parts[2], target)
+        # urljoin, not string surgery: a feed link is as likely to be
+        # `feed.xml` or `../rss` as `/feed`, and only the root-relative form
+        # survived being pasted together by hand.
+        target = urljoin(args.query, href.group(1))
+        _check_target(target)
         body = _get(target, accept='application/rss+xml, application/atom+xml')
     return target, _parse_feed(body, args, kind='vendor_announcement')
 

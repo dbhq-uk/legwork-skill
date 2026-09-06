@@ -183,7 +183,7 @@ RECENCY_UNKNOWN = 0.80
 # parses positionally, which is what lets a refresh resume a run started months
 # ago. 'quote' came after 'title', 'query' after 'quote'.
 TSV_COLUMNS = ('url', 'kind', 'angle', 'via', 'fetched_at', 'status', 'date', 'numbers',
-               'title', 'quote', 'query')
+               'title', 'quote', 'query', 'verified')
 
 # One sentence, not a page. Long enough to carry a qualitative claim, short
 # enough that the log stays a log.
@@ -197,12 +197,16 @@ MAX_QUOTE_CHARS = 300
 # the log accepts, which distorts the evidence trail rather than recording it.
 # 'direct' is fetch.py: the page opened straight from this machine, which is the
 # only free transport that yields page text rather than a model's summary of it.
-VIA_VALUES = ('websearch', 'webfetch', 'direct', 'brightdata', 'api', 'local', 'mcp')
+VIA_VALUES = ('websearch', 'serp', 'webfetch', 'direct', 'brightdata', 'api', 'local', 'mcp')
 
 # A search result is a lead, not a page anybody opened. Every other transport
 # returns the page or the record itself, including 'api' - a registry's own JSON
 # is the record, not a snippet about it.
-SNIPPET_VIA = 'websearch'
+# Two transports return a search result rather than a page: the built-in
+# WebSearch, and a paid SERP or intent search, which is the same thing with a
+# bill attached. Both are leads. Every other transport returns the page or the
+# record itself, 'api' included, because a registry's own JSON is the record.
+SNIPPET_VIA = frozenset(('websearch', 'serp'))
 
 
 # ---------------------------------------------------------------------------
@@ -584,7 +588,7 @@ def retrieval_receipt(rows):
     """
     from independence import canonicalize
 
-    opened, snippet_only, blocked, queries = set(), set(), set(), set()
+    opened, snippet_only, refused, queries = set(), set(), set(), set()
     brightdata = set()
     for row in rows:
         key = canonicalize(row.get('url', ''))
@@ -593,9 +597,14 @@ def retrieval_receipt(rows):
         if query:
             queries.add(query)
         if (row.get('status') or 'ok').lower() != 'ok':
-            blocked.add(key)
+            # Counted whether or not a later rung got through. A page that
+            # refused one transport is a fact about the run: subtracting the
+            # ones later opened made a run that fought its way in look like a
+            # run that met no resistance, which is the opposite of what the
+            # blocked count is for.
+            refused.add(key)
             continue
-        if via == SNIPPET_VIA:
+        if via in SNIPPET_VIA:
             snippet_only.add(key)
         else:
             opened.add(key)
@@ -607,15 +616,21 @@ def retrieval_receipt(rows):
         # A page opened later stops being snippet-only, however it was first seen.
         'snippet_only': len(snippet_only - opened),
         'brightdata': len(brightdata),
-        'blocked': len(blocked - opened),
+        'blocked': len(refused),
+        # The ones nothing ever got through to: what the run could not reach at
+        # all, as opposed to what it had to work for.
+        'unreachable': len(refused - opened),
         'queries': len(queries),
     }
 
 
 def receipt_line(receipt):
     """The retrieval half of a report's receipt line, ready to paste."""
-    return '{sources} sources \u00b7 {opened} opened \u00b7 {snippet_only} snippet-only \u00b7 ' \
-           '{brightdata} via Bright Data \u00b7 {blocked} blocked \u00b7 {queries} queries'.format(**receipt)
+    line = ('{sources} sources \u00b7 {opened} opened \u00b7 {snippet_only} snippet-only \u00b7 '
+            '{brightdata} via Bright Data \u00b7 {blocked} blocked \u00b7 {queries} queries').format(**receipt)
+    if receipt['unreachable']:
+        line += ' ({} never reached)'.format(receipt['unreachable'])
+    return line
 
 
 # ---------------------------------------------------------------------------
@@ -733,6 +748,12 @@ def cmd_log(args):
         'title': args.title or '',
         'quote': quote,
         'query': args.query or '',
+        # '' means nobody could check - no page text was supplied. 'false' is a
+        # quote that was checked against the page and is not on it, which the
+        # gate refuses to treat as evidence. A warning on stderr at the moment
+        # of logging is not enough: nothing downstream could see it, so a
+        # sentence the page never contained could still carry a finding.
+        'verified': '' if verified is None else ('true' if verified else 'false'),
     })
     print(json.dumps({'status': 'logged', 'url': args.url, 'kind': kind,
                       'numbers': len(numbers), 'numbers_from': numbers_from,

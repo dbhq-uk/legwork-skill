@@ -303,14 +303,21 @@ def check_evidence(content, entries, rows, problems):
     """Fetched-URL and figure tracing. Requires a fetch log."""
     by_url = {}
     quotes_by_url = {}
+    unverified = {}
     opened = set()
     for row in rows:
         if (row.get('status') or 'ok').lower() == 'ok':
             key = canonicalize(row.get('url', ''))
             by_url.setdefault(key, []).extend(row.get('numbers') or [])
             if (row.get('quote') or '').strip():
-                quotes_by_url[key] = row['quote'].strip()
-            if (row.get('via') or '').strip().lower() != SNIPPET_VIA:
+                # A quote checked against the page and not found on it is not
+                # evidence. Recording it and then counting it would be worse
+                # than not checking at all.
+                if (row.get('verified') or '').strip().lower() == 'false':
+                    unverified.setdefault(key, row['quote'].strip())
+                else:
+                    quotes_by_url[key] = row['quote'].strip()
+            if (row.get('via') or '').strip().lower() not in SNIPPET_VIA:
                 opened.add(key)
 
     unfetched = sorted(
@@ -335,6 +342,15 @@ def check_evidence(content, entries, rows, problems):
     if snippet_only:
         problems.graded(
             'cited from a search snippet, page never opened: {}'.format(snippet_only))
+
+    misquoted = sorted(
+        number for number, entry in entries.items()
+        if entry['url'] and canonicalize(entry['url']) in unverified
+    )
+    if misquoted:
+        problems.graded(
+            'quote recorded against a page that does not contain it - the page text was '
+            'checked and the sentence is not on it: {}'.format(misquoted))
 
     for finding in finding_sections(content):
         cited = citations_in(finding['text'])

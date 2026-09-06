@@ -311,6 +311,31 @@ def test_a_blocked_row_is_not_counted_as_opened():
     assert receipt['opened'] == 0 and receipt['blocked'] == 1
 
 
+def test_a_page_that_refused_once_is_still_counted_as_having_refused():
+    """Subtracting the ones later opened made a run that fought its way in look
+    like a run that met no resistance."""
+    rows = [{'url': 'https://a.example/x', 'via': 'direct', 'status': 'blocked'},
+            {'url': 'https://a.example/x', 'via': 'brightdata', 'status': 'ok'}]
+    receipt = sources.retrieval_receipt(rows)
+    assert receipt['blocked'] == 1
+    assert receipt['unreachable'] == 0
+    assert receipt['opened'] == 1
+
+
+def test_unreachable_counts_only_what_nothing_got_through_to():
+    rows = [{'url': 'https://a.example/x', 'via': 'direct', 'status': 'blocked'},
+            {'url': 'https://b.example/y', 'via': 'direct', 'status': 'blocked'},
+            {'url': 'https://b.example/y', 'via': 'webfetch', 'status': 'ok'}]
+    assert sources.retrieval_receipt(rows)['unreachable'] == 1
+
+
+def test_a_paid_search_result_is_a_lead_not_an_opened_page():
+    """A SERP snippet with a bill attached is still a SERP snippet."""
+    rows = [{'url': 'https://a.example/x', 'via': 'serp', 'status': 'ok'}]
+    receipt = sources.retrieval_receipt(rows)
+    assert receipt['opened'] == 0 and receipt['snippet_only'] == 1
+
+
 def test_the_same_page_opened_twice_counts_once():
     rows = [{'url': 'https://a.example/x', 'via': 'direct', 'status': 'ok'},
             {'url': 'https://a.example/x?utm_source=z', 'via': 'webfetch', 'status': 'ok'}]
@@ -319,7 +344,8 @@ def test_the_same_page_opened_twice_counts_once():
 
 def test_the_receipt_line_reads_as_a_receipt():
     assert sources.receipt_line(sources.retrieval_receipt(RECEIPT_ROWS)) == (
-        '6 sources · 4 opened · 1 snippet-only · 1 via Bright Data · 1 blocked · 3 queries')
+        '6 sources · 4 opened · 1 snippet-only · 1 via Bright Data · 1 blocked · 3 queries '
+        '(1 never reached)')
 
 
 # ---------------------------------------------------------------------------

@@ -652,7 +652,46 @@ def cmd_kinds(args):
         print()
 
 
+def _apply_sidecar(args):
+    """Fill the row from the JSON fetch.py (or bd_search.py) wrote beside the page.
+
+    Retyping a URL, a title and a date that a script already has is where they
+    drift, and the drift is invisible: the row looks fine and points at a
+    slightly different page from the one that was read. Explicit flags still
+    win, because the caller may know better than the page's own metadata.
+    """
+    try:
+        with open(args.from_fetch, encoding='utf-8') as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError) as exc:
+        print('error: cannot read --from-fetch: {}'.format(exc), file=sys.stderr)
+        sys.exit(2)
+
+    args.url = args.url or payload.get('canonical') or payload.get('url') or ''
+    args.title = args.title or payload.get('title') or ''
+    args.date = args.date or payload.get('date') or ''
+    args.query = args.query or payload.get('query') or ''
+    if not args.text_file and payload.get('text_file') and os.path.exists(payload['text_file']):
+        args.text_file = payload['text_file']
+    if not args.via:
+        args.via = 'brightdata' if payload.get('provider') == 'brightdata' else 'direct'
+    verdict = (payload.get('verdict') or 'ok').lower()
+    if verdict != 'ok' and args.status == 'ok':
+        # A page that would not open is evidence about the run, not about the
+        # claim. Recording it is what makes the receipt's blocked count real.
+        args.status = verdict
+    return args
+
+
 def cmd_log(args):
+    if args.from_fetch:
+        args = _apply_sidecar(args)
+    if not args.url:
+        print('error: --url is required unless --from-fetch supplies one', file=sys.stderr)
+        sys.exit(2)
+    if not args.via:
+        print('error: --via is required unless --from-fetch supplies one', file=sys.stderr)
+        sys.exit(2)
     kind = args.kind or infer_source_kind(args.url, args.title or '')
     if kind not in SOURCE_KINDS:
         print('error: unknown source kind {!r}; one of: {}'.format(kind, ', '.join(SOURCE_KINDS)), file=sys.stderr)
@@ -762,7 +801,7 @@ def cmd_resume(args):
             print('  {}'.format(url[:88]))
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(prog='sources', description=__doc__.split('\n')[1])
     sub = parser.add_subparsers(dest='command', required=True)
 
@@ -771,10 +810,11 @@ def main():
 
     p_log = sub.add_parser('log', help='Append one retrieval to the fetch log')
     p_log.add_argument('--tsv', required=True)
-    p_log.add_argument('--url', required=True)
+    p_log.add_argument('--url', default='', help='Required unless --from-fetch supplies one')
     p_log.add_argument('--kind', default=None, help='Source kind; inferred from the URL when omitted')
     p_log.add_argument('--angle', required=True, help='The sub-question this retrieval was answering')
-    p_log.add_argument('--via', required=True, choices=list(VIA_VALUES))
+    p_log.add_argument('--via', default='', choices=[''] + list(VIA_VALUES),
+                       help='Required unless --from-fetch supplies one')
     p_log.add_argument('--status', default='ok')
     p_log.add_argument('--quote', default='',
                        help='The sentence that made this source worth citing, verbatim. '
@@ -783,6 +823,8 @@ def main():
     p_log.add_argument('--date', default='', help='Publication date of the source, ISO-8601')
     p_log.add_argument('--text-file', default=None, help='File of fetched page text; numeric tokens are extracted')
     p_log.add_argument('--numbers', default='', help='Comma-separated numeric tokens, if extracted elsewhere')
+    p_log.add_argument('--from-fetch', default=None, dest='from_fetch', metavar='PATH.json',
+                       help='Sidecar JSON from fetch.py or bd_search.py; fills url, title, date and text')
     p_log.add_argument('--query', default='',
                        help='The search query or endpoint call that surfaced this source')
 
@@ -806,9 +848,15 @@ def main():
     p_resume.add_argument('--tsv', required=True)
     p_resume.add_argument('--format', default='table', choices=['table', 'json'])
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     {'kinds': cmd_kinds, 'log': cmd_log, 'receipt': cmd_receipt, 'score': cmd_score,
      'stale': cmd_stale, 'resume': cmd_resume}[args.command](args)
+
+
+# Tests drive the CLI through this rather than through a subprocess, so a bug in
+# argument handling fails a test rather than passing one that only exercised the
+# functions underneath it.
+main_with_args = main
 
 
 if __name__ == '__main__':

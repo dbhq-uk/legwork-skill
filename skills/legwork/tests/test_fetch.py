@@ -188,6 +188,16 @@ class _Response:
         return False
 
 
+@pytest.fixture(autouse=True)
+def _resolvable(monkeypatch):
+    """Every host in these tests resolves to a public address.
+
+    The SSRF guard resolves the hostname before connecting, and a test must
+    never touch DNS. The guard itself is tested below with getaddrinfo patched.
+    """
+    monkeypatch.setattr(fetch, '_is_public', lambda host: True)
+
+
 def _run_main(monkeypatch, capsys, argv, response):
     monkeypatch.setattr(fetch, 'urlopen', lambda *a, **k: response)
     monkeypatch.setattr('sys.argv', ['fetch.py'] + argv)
@@ -292,3 +302,162 @@ def test_the_default_out_path_is_scratch_not_the_run_folder():
     path = fetch.default_out_path('https://acme.example/pricing')
     assert path.endswith('.txt') and '/legwork/' in path
     assert path.startswith(os.environ.get('TMPDIR', '/tmp'))
+
+
+# ---------------------------------------------------------------------------
+# Where this is allowed to connect
+#
+# The URL comes off the open web, from a search result or a link on a page
+# somebody else controls. It is not a URL the user vouched for, so it does not
+# get to name an address on this machine's network.
+# ---------------------------------------------------------------------------
+
+def _resolves_to(monkeypatch, address):
+    monkeypatch.setattr(fetch.socket, 'getaddrinfo',
+                        lambda *a, **k: [(2, 1, 6, '', (address, 0))])
+
+
+@pytest.mark.parametrize('address', [
+    '127.0.0.1',        # loopback
+    '169.254.169.254',  # cloud instance metadata
+    '10.0.0.5',         # RFC1918
+    '192.168.1.1',
+    '172.16.4.4',
+    '0.0.0.0',
+    '::1',
+    'fd00::1',          # unique local
+])
+def test_a_host_resolving_somewhere_private_is_refused(monkeypatch, address):
+    monkeypatch.undo()
+    _resolves_to(monkeypatch, address)
+    assert fetch._is_public('anything.example') is False
+    with pytest.raises(fetch.BlockedAddress):
+        fetch._check_target('https://anything.example/')
+
+
+def test_a_public_address_is_allowed(monkeypatch):
+    monkeypatch.undo()
+    _resolves_to(monkeypatch, '93.184.216.34')
+    assert fetch._is_public('example.com') is True
+
+
+def test_one_private_record_among_public_ones_still_refuses(monkeypatch):
+    """A name with a public and a loopback record must not be dialled."""
+    monkeypatch.undo()
+    monkeypatch.setattr(fetch.socket, 'getaddrinfo',
+                        lambda *a, **k: [(2, 1, 6, '', ('93.184.216.34', 0)),
+                                         (2, 1, 6, '', ('127.0.0.1', 0))])
+    assert fetch._is_public('split.example') is False
+
+
+def test_a_name_that_does_not_resolve_is_refused(monkeypatch):
+    monkeypatch.undo()
+
+    def boom(*_a, **_k):
+        raise fetch.socket.gaierror('no such host')
+    monkeypatch.setattr(fetch.socket, 'getaddrinfo', boom)
+    assert fetch._is_public('nope.invalid') is False
+
+
+@pytest.mark.parametrize('url', ['file:///etc/passwd', 'ftp://x.example/f', 'gopher://x.example/'])
+def test_only_http_and_https_are_dialled(url):
+    with pytest.raises(fetch.BlockedAddress):
+        fetch._check_target(url)
+
+
+def test_a_redirect_to_a_private_address_is_refused(monkeypatch):
+    """Validating only the URL the caller typed is no protection: a public page
+    is free to answer 302 to the instance metadata service."""
+    monkeypatch.undo()
+    _resolves_to(monkeypatch, '169.254.169.254')
+    handler = fetch._ValidatingRedirectHandler()
+    with pytest.raises(fetch.BlockedAddress):
+        handler.redirect_request(None, None, 302, 'Found', {}, 'http://169.254.169.254/latest/meta-data/')
+
+
+# ---------------------------------------------------------------------------
+# Bounded decompression
+# ---------------------------------------------------------------------------
+
+def test_a_compression_bomb_is_truncated_not_expanded():
+    """The byte cap on the wire covers the compressed body, which is no cap at
+    all: this payload is a few kilobytes and expands to 200 MB."""
+    import gzip as gziplib
+    bomb = gziplib.compress(b'A' * (200 * 1024 * 1024))
+    assert len(bomb) < 1024 * 1024
+    out = fetch._decompress(bomb, 'gzip')
+    assert len(out) <= fetch.MAX_DECOMPRESSED
+
+
+def test_ordinary_gzip_still_round_trips():
+    import gzip as gziplib
+    assert fetch._decompress(gziplib.compress(b'hello page'), 'gzip') == b'hello page'
+
+
+def test_a_corrupt_body_is_passed_through_rather_than_crashing():
+    assert fetch._decompress(b'not actually gzip', 'gzip') == b'not actually gzip'
+
+
+# ---------------------------------------------------------------------------
+# Status handling. A 404 with a long branded body was being written as an
+# opened source, because only the blocking codes were checked and the body
+# cleared the length test.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('status,expected', [
+    (200, 'ok'), (203, 'ok'),
+    (404, 'missing'), (410, 'missing'),
+    (403, 'blocked'), (429, 'blocked'), (503, 'blocked'),
+    (500, 'blocked'), (502, 'blocked'), (302, 'blocked'),
+])
+def test_status_decides_before_the_body_does(status, expected):
+    long_error_page = 'Sorry, we could not find that page. ' * 30
+    assert fetch.classify(long_error_page, status)[0] == expected
+
+
+def test_a_missing_page_exits_3_and_does_not_pretend_to_be_a_source(monkeypatch, capsys, tmp_path):
+    code, captured = _run_main(
+        monkeypatch, capsys,
+        ['https://acme.example/gone', '--out', str(tmp_path / 'p.txt')],
+        _Response(('<html><body><p>' + 'Page not found. ' * 40 + '</p></body></html>').encode('utf-8'),
+                  {'Content-Type': 'text/html'}, status=404))
+    payload = json.loads(captured.err)
+    assert code == 3
+    assert payload['verdict'] == 'missing'
+
+
+# ---------------------------------------------------------------------------
+# A failed fetch still leaves a sidecar, because the skill's own instruction is
+# to log the failure before falling back, and that is done with --from-fetch
+# ---------------------------------------------------------------------------
+
+def test_a_blocked_fetch_still_writes_its_sidecar(monkeypatch, capsys, tmp_path):
+    out = str(tmp_path / 'p.txt')
+    _run_main(monkeypatch, capsys, ['https://acme.example/x', '--out', out],
+              _Response(b'<html><body>Forbidden</body></html>', {'Content-Type': 'text/html'}, status=403))
+    sidecar = json.load(open(os.path.splitext(out)[0] + '.json', encoding='utf-8'))
+    assert sidecar['verdict'] == 'blocked'
+    assert sidecar['url'] == 'https://acme.example/x'
+
+
+def test_scratch_is_namespaced_per_run_so_yesterdays_page_is_never_read_back(monkeypatch):
+    monkeypatch.setenv('LEGWORK_RUN_ID', 'run-a')
+    first = fetch.default_out_path('https://acme.example/pricing')
+    monkeypatch.setenv('LEGWORK_RUN_ID', 'run-b')
+    second = fetch.default_out_path('https://acme.example/pricing')
+    assert first != second
+    assert first.endswith(os.path.basename(second))
+
+
+def test_a_refused_address_exits_5_and_tells_the_caller_not_to_escalate(monkeypatch, capsys):
+    """Distinct from a block. A blocked page means try the next rung; a refused
+    address means there is no rung - escalating to a paid scrape would be the
+    wrong answer and would spend money reaching it."""
+    monkeypatch.setattr(fetch, '_is_public', lambda host: False)
+    monkeypatch.setattr('sys.argv', ['fetch.py', 'http://169.254.169.254/latest/meta-data/'])
+    with pytest.raises(SystemExit) as exit_info:
+        fetch.main()
+    assert exit_info.value.code == 5
+    payload = json.loads(capsys.readouterr().err)
+    assert payload['verdict'] == 'refused'
+    assert 'do not fetch' in payload['next']

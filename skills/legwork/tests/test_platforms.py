@@ -12,6 +12,7 @@ import json
 
 import pytest
 
+import fetch
 import platforms
 
 
@@ -27,6 +28,12 @@ class _Response:
 
     def __exit__(self, *_):
         return False
+
+
+@pytest.fixture(autouse=True)
+def _resolvable(monkeypatch):
+    """Feed mode validates the address it is given; a test must not touch DNS."""
+    monkeypatch.setattr(fetch, '_is_public', lambda host: True)
 
 
 def run(monkeypatch, capsys, body, argv):
@@ -157,6 +164,21 @@ def test_an_atom_feed_parses_as_readily_as_rss(monkeypatch, capsys):
     assert row['kind'] == 'vendor_announcement'
 
 
+@pytest.mark.parametrize('href,expected', [
+    ('https://vendor.example/feed.xml', 'https://vendor.example/feed.xml'),
+    ('/feed.xml', 'https://vendor.example/feed.xml'),
+    ('feed.xml', 'https://vendor.example/blog/feed.xml'),
+    ('../rss', 'https://vendor.example/rss'),
+])
+def test_a_relative_feed_link_resolves_against_the_page(monkeypatch, capsys, href, expected):
+    """Only the root-relative form survived the old string surgery."""
+    pages = ['<html><head><link rel="alternate" type="application/rss+xml" '
+             'href="{}"></head></html>'.format(href), NEWS]
+    monkeypatch.setattr(platforms, 'urlopen', lambda *a, **k: _Response(pages.pop(0)))
+    platforms.main_with_args(['search', '--on', 'feed', '--query', 'https://vendor.example/blog/'])
+    assert json.loads(capsys.readouterr().out)['endpoint'] == expected
+
+
 def test_a_feed_is_discovered_from_a_site_page(monkeypatch, capsys):
     pages = ['<html><head><link rel="alternate" type="application/rss+xml" '
              'href="https://vendor.example/feed.xml"></head></html>', NEWS]
@@ -249,3 +271,12 @@ def test_an_archived_snapshot_does_not_invent_a_source_kind(monkeypatch, capsys)
     row = run(monkeypatch, capsys, WAYBACK,
               ['search', '--on', 'wayback', '--query', 'https://gone.example/'])['results'][0]
     assert row['kind'] == 'unknown'
+
+
+def test_feed_mode_refuses_a_private_address(monkeypatch, capsys):
+    """The one mode that takes an arbitrary URL is the one that needs the guard."""
+    monkeypatch.setattr(fetch, '_is_public', lambda host: False)
+    with pytest.raises(SystemExit) as exit_info:
+        platforms.main_with_args(['search', '--on', 'feed', '--query', 'http://192.168.1.1/feed'])
+    assert exit_info.value.code == 1
+    assert 'private' in json.loads(capsys.readouterr().err)['error']

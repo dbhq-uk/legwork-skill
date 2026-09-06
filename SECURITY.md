@@ -21,12 +21,23 @@ requests by design.
    requests go wherever the research leads - arbitrary public sites
 2. **`fetch.py`, a direct request from your machine.** One page per invocation,
    on explicit instruction, with a browser user agent. No cookies are sent or
-   stored, no credentials are read, no JavaScript is executed, and nothing is
-   cached between runs. It does **not** consult `robots.txt`: it opens a single
-   named page the way a browser would, rather than crawling. That is a
-   deliberate choice, stated here so you can disagree with it - if you need
-   robots-respecting behaviour, remove `fetch.py` from the ladder in
-   `SKILL.md` and the run falls back to `WebFetch`
+   stored, no credentials are read, and no JavaScript is executed. It does
+   **not** consult `robots.txt`: it opens a single named page the way a browser
+   would, rather than crawling. That is a deliberate choice, stated here so you
+   can disagree with it - if you need robots-respecting behaviour, remove
+   `fetch.py` from the ladder in `SKILL.md` and the run falls back to
+   `WebFetch`
+
+   **Where it will not go.** The URL comes off the open web - a search result,
+   or a link on somebody else's page - so it is not an address you vouched for.
+   Every hostname is resolved before connecting and refused if any of its
+   addresses is private, loopback, link-local, multicast or reserved. That
+   covers cloud instance metadata (`169.254.169.254`), anything on your LAN, and
+   anything listening on localhost. Redirects are checked the same way at every
+   hop, because a public page is free to redirect somewhere private. Only
+   `http` and `https` are dialled. Response bodies are capped on the wire and
+   again on what they decompress to, so a small payload cannot expand into
+   gigabytes of memory
 3. **`platforms.py`, public APIs that need no key.** Hacker News, Stack
    Exchange, GitHub, npm, PyPI, Wikipedia, Google News, a site's own RSS feed,
    and the Internet Archive. Your query reaches those services. `GITHUB_TOKEN`
@@ -50,10 +61,13 @@ wording is itself confidential - the question is the thing most likely to leak.
 
 - Installs into `~/.claude/skills/legwork` or `~/.codex`, depending on the agent
 - Writes the findings memo where you ask it to
-- Writes page text to a temporary directory (`$TMPDIR/legwork/`) during a run,
-  so figures and quotes can be checked against the page. It is scratch: it never
-  enters the output folder, and the fetch log stores only the quote and the
-  numeric tokens
+- Writes page text to a temporary directory during a run, so figures and quotes
+  can be checked against the page. The directory is namespaced per run
+  (`$TMPDIR/legwork/<run>/`, from `LEGWORK_RUN_ID` or the process id), so one
+  run never reads back another run's pages. It is scratch: it never enters the
+  output folder, and the fetch log stores only the quote and the numeric
+  tokens. Nothing deletes it for you - clear `$TMPDIR/legwork/` if the pages
+  themselves are sensitive
 - Stores no cache of fetched pages between runs
 
 ### Credentials

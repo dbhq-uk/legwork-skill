@@ -56,8 +56,9 @@ judgements about strength, so they inform at standard and block at deep.
 - **Every cited URL appears in the fetch log with an ok status.** A citation to a
   page that was never retrieved at all is a fabricated citation. No heuristics
   are involved, so there is nothing to tune and nothing to false-positive on.
-- **Every cited URL was opened, not just seen.** A row logged `via=websearch` is
-  a search result: a lead, not a page anybody read. Every other transport
+- **Every cited URL was opened, not just seen.** A row logged `via=websearch` or
+  `via=serp` is a search result: a lead, not a page anybody read. `serp` is a
+  paid search result, which is the same thing with a bill attached. Every other transport
   returns the page or the record itself, `api` included, because a registry's
   own JSON is the record and not a snippet about it. Graded, so quick - which is
   snippet-first by design - is not asked. Measured on a run filed on 2026-08-16:
@@ -78,6 +79,13 @@ judgements about strength, so they inform at standard and block at deep.
   somebody opened a page, which is why this check exists: roughly half of real
   findings carry no figure at all, so figure tracing on its own leaves half the
   report unchecked.
+- **A quote must be on the page it is attributed to.** Where the page text was
+  captured, `sources.py log` checks the quote against it and records the verdict
+  in the log. A quote recorded as `false` - checked, and not on the page - is
+  struck out as evidence, so a finding resting on it fails the "rests on
+  something recorded" check as well as being named directly. An empty verdict
+  means nobody could check, which is the ordinary case for `WebFetch` and is not
+  held against the finding.
 - **Every finding states its confidence** on a line of the form
   `**Confidence: Strong|Moderate|Weak** - <one sentence>`.
 - **Every finding can have its age judged.** A finding whose cited sources all

@@ -99,9 +99,10 @@ Work sub-question by sub-question. For each one:
    rung. At standard and deep a snippet is a lead, not evidence, and the gate
    says so.
 5. **Log the failure before the fallback.** A page that would not open is
-   evidence about the run: log it with `--status blocked`, then try the next
-   rung. `--from-fetch` fills the row from the sidecar so the URL, title, date
-   and page text cannot drift.
+   evidence about the run: `fetch.py` writes its sidecar even when it fails, so
+   `log --from-fetch` records the refusal with the right status, and then you
+   try the next rung. The receipt counts what refused you and what nothing ever
+   reached.
 6. **Log every retrieval** with `sources.py log`: the sub-question as `--angle`,
    the query as `--query`, the right `--kind`, and - for anything you intend to
    cite - the sentence that made it worth citing as `--quote`.

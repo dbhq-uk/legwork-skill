@@ -157,10 +157,12 @@ Run `platforms.py list` for the ten free platforms, and `bd_search.py --help`
 for the paid modes. On exit code 2 (auth or quota), tell the user to run
 `brightdata login`. Do not retry.
 
-**A search result is a lead, not a page you read.** At standard and deep, open
-what you cite: the gate treats a citation resting only on `websearch` rows as
-unopened, a warning at standard and an error at deep. Quick is snippet-first by
-design and is not asked.
+**A search result is a lead, not a page you read.** That includes a paid one:
+log SERP and intent-search results `--via serp`, which `bd_search.py` states in
+its own output as `log_via`. At standard and deep, open what you cite: the gate
+treats a citation resting only on `websearch` or `serp` rows as unopened, a
+warning at standard and an error at deep. Quick is snippet-first by design and
+is not asked.
 
 **Log the failure before the fallback.** A page that would not open is evidence
 about the run - `--status blocked` - and the receipt counts it.
@@ -222,8 +224,9 @@ one for every source you intend to cite, as you read it.** Around half of all
 findings carry no figure, so for those the quote is the only evidence there is,
 and it is the only part that survives the page changing. Where the page text is
 on disk - anything opened with `fetch.py`, or a `-m scrape` with `--out` - the
-quote is checked against it and `quote_verified: false` means you have
-misquoted the page.
+quote is checked against it and the verdict is recorded in the log.
+`quote_verified: false` means you have misquoted the page: re-take the sentence
+rather than logging it, because the gate will not accept it as evidence.
 
 `--from-fetch` fills the url, title, date and page text from the sidecar those
 two write, so nothing has to be retyped:

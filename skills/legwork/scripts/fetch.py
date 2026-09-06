@@ -16,9 +16,10 @@ Exit codes tell the caller which rung to try next:
 
     0  text written; log it
     1  network or parse error            -> WebFetch
-    3  blocked, or a shell with no body  -> WebFetch, then bd_search.py -m scrape,
-                                            then -m render for a client-rendered page
-    4  content type this cannot read     -> WebFetch
+    3  blocked, missing, or a shell     -> WebFetch, then bd_search.py -m scrape,
+                                           then -m render for a client-rendered page
+    4  content type this cannot read    -> WebFetch
+    5  address refused by policy        -> nothing; do not fetch it by any route
 
 Stdlib only. Runs on any python3 >= 3.9. No cookies are sent or stored, no
 credentials are read, and no JavaScript is executed. robots.txt is not
@@ -29,19 +30,22 @@ would. That is a policy choice and SECURITY.md states it.
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import html
+import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import zlib
+from datetime import date
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen  # noqa: F401 - urlopen is patched in tests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -70,12 +74,20 @@ MIN_BODY_CHARS = 400
 # list: a client-rendered page's fallback, or an index rather than the article.
 MAX_LINK_DENSITY = 0.6
 BLOCKED_STATUSES = frozenset((401, 402, 403, 407, 429, 451, 503))
+# A 404 or a 500 usually still has a body, and a branded error page carries
+# plenty of text. Without this, "Sorry, we couldn't find that" repeated across a
+# templated 404 clears the body-length test and gets logged as an opened source.
+MISSING_STATUSES = frozenset((404, 410))
 CHALLENGE_MARKERS = (
     'just a moment', 'enable javascript and cookies', 'checking your browser',
     'verify you are human', 'attention required! | cloudflare', 'access denied',
     'ddos protection by', 'please enable js', 'captcha',
 )
 MAX_BYTES = 5 * 1024 * 1024
+# The cap on the wire covers the compressed body only. This one covers what it
+# expands to, which is the number that matters when a server answers with a
+# highly compressible payload.
+MAX_DECOMPRESSED = 20 * 1024 * 1024
 
 
 class _Extractor(HTMLParser):
@@ -166,6 +178,19 @@ _TEXT_DATE_RE = re.compile(
     r')\s+(\d{1,2}),?\s+(\d{4})\b', re.I)
 
 
+def _valid_date(year, month, day):
+    """A date string, or '' if those numbers are not a real date.
+
+    A page is free to carry 2026-02-31. Passing it through gives every check
+    downstream a date-shaped value that is not a date, and the age check reads
+    "has a date" from it. Better to record nothing.
+    """
+    try:
+        return date(int(year), int(month), int(day)).isoformat()
+    except ValueError:
+        return ''
+
+
 def normalise_date(value):
     """Any of the forms a page states a date in, as YYYY-MM-DD. Never guessed."""
     if not value:
@@ -173,17 +198,17 @@ def normalise_date(value):
     value = html.unescape(str(value)).strip()
     match = _ISO_DATE_RE.search(value)
     if match:
-        return '{}-{}-{}'.format(*match.groups())
+        return _valid_date(*match.groups())
     match = _TEXT_DATE_RE.search(value)
     if match:
         day, month, year = (match.group(1), match.group(2), match.group(3)) if match.group(1) \
             else (match.group(5), match.group(4), match.group(6))
-        return '{}-{:02d}-{:02d}'.format(year, _MONTHS.index(month.lower()) + 1, int(day))
+        return _valid_date(year, _MONTHS.index(month.lower()) + 1, day)
     # RFC 1123, as an HTTP Last-Modified header states it.
     match = re.search(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})', value)
     if match and match.group(2).lower() in [m[:3] for m in _MONTHS]:
         month = [m[:3] for m in _MONTHS].index(match.group(2).lower()) + 1
-        return '{}-{:02d}-{:02d}'.format(match.group(3), month, int(match.group(1)))
+        return _valid_date(match.group(3), month, match.group(1))
     return ''
 
 
@@ -206,7 +231,12 @@ def extract_meta(markup, headers=None):
     that check rather than satisfy it.
     """
     markup = markup or ''
-    meta = dict(_meta_pairs(markup))
+    # First occurrence wins. dict() keeps the last, so a page carrying its
+    # publication date and then a later duplicate of the same key reported the
+    # duplicate - which on a syndicated page is usually the scrape date.
+    meta = {}
+    for key, content in _meta_pairs(markup):
+        meta.setdefault(key, content)
 
     title = meta.get('og:title') or meta.get('twitter:title') or ''
     if not title:
@@ -245,8 +275,19 @@ def extract_meta(markup, headers=None):
 
 
 def classify(text, status, markup=''):
-    """ok, blocked or shell - and the reason, so the caller knows the next rung."""
+    """ok, blocked, missing or shell - and the reason, so the caller knows the next rung.
+
+    Any status outside the 2xx range is a failure, whatever the body says. The
+    body-length test cannot stand in for this: a templated 404 or a 500 error
+    page is often longer than the terse pricing page next to it, so a status
+    check that only listed the blocking codes let "page not found" through as
+    an opened source.
+    """
     if status in BLOCKED_STATUSES:
+        return 'blocked', 'HTTP {}'.format(status)
+    if status in MISSING_STATUSES:
+        return 'missing', 'HTTP {} - the page is not there'.format(status)
+    if not 200 <= status < 300:
         return 'blocked', 'HTTP {}'.format(status)
     lowered = (text or '')[:4000].lower()
     for marker in CHALLENGE_MARKERS:
@@ -288,19 +329,98 @@ def find_windows(text, terms, window=300, max_hits=5):
 
 
 def _decompress(raw, encoding):
+    """Bounded decompression.
+
+    The byte cap on the wire is a cap on the *compressed* body, which is no cap
+    at all: a few hundred kilobytes of gzip expands to gigabytes. Decompressing
+    incrementally and stopping at MAX_DECOMPRESSED is the difference between
+    reading a page and being handed a bomb by a site that would rather not be
+    read.
+    """
     encoding = (encoding or '').lower()
+    if 'gzip' in encoding:
+        wbits = zlib.MAX_WBITS | 16
+    elif 'deflate' in encoding:
+        wbits = -zlib.MAX_WBITS
+    else:
+        return raw
     try:
-        if 'gzip' in encoding:
-            return gzip.decompress(raw)
-        if 'deflate' in encoding:
-            return zlib.decompress(raw, -zlib.MAX_WBITS)
+        return zlib.decompressobj(wbits).decompress(raw, MAX_DECOMPRESSED)
     except (OSError, zlib.error):
         return raw
-    return raw
+
+
+class BlockedAddress(Exception):
+    """The URL resolves somewhere a research tool has no business going."""
+
+
+def _is_public(host):
+    """Does this hostname resolve only to public addresses?
+
+    Every address the name resolves to is checked, not just the first: a name
+    with one public and one loopback record would otherwise pass here and
+    connect to the loopback one.
+    """
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError):
+        return False
+    addresses = {info[4][0] for info in infos}
+    if not addresses:
+        return False
+    for address in addresses:
+        try:
+            parsed = ipaddress.ip_address(address)
+        except ValueError:
+            return False
+        if (parsed.is_private or parsed.is_loopback or parsed.is_link_local
+                or parsed.is_multicast or parsed.is_reserved or parsed.is_unspecified):
+            return False
+    return True
+
+
+def _check_target(url):
+    """Raise unless this URL is http(s) to a public host."""
+    parts = urlsplit(url)
+    if parts.scheme not in ('http', 'https'):
+        raise BlockedAddress('refusing scheme {!r}: only http and https'.format(parts.scheme))
+    if not parts.hostname:
+        raise BlockedAddress('no host in URL')
+    if not _is_public(parts.hostname):
+        raise BlockedAddress(
+            'refusing {}: resolves to a private, loopback or link-local address'.format(parts.hostname))
+
+
+class _ValidatingRedirectHandler(HTTPRedirectHandler):
+    """Check every hop, not just the one the caller typed.
+
+    Validating only the first URL is no protection at all. A public page is
+    free to answer 302 to http://169.254.169.254/ or to a host on the machine's
+    own network, and the research question came off the open web, so the URL
+    being followed is not something the user vouched for.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_target(newurl)
+        return HTTPRedirectHandler.redirect_request(self, req, fp, code, msg, headers, newurl)
+
+
+_OPENER = build_opener(_ValidatingRedirectHandler)
+
+# Every request in this module goes through the validating opener. The name is
+# rebound rather than called directly so there is exactly one seam: production
+# gets redirect validation, and a test patching `fetch.urlopen` still replaces
+# the whole transport.
+urlopen = _OPENER.open
 
 
 def fetch(url, timeout=DEFAULT_TIMEOUT):
-    """(status, headers, body_bytes, final_url). HTTP errors return their body."""
+    """(status, headers, body_bytes, final_url). HTTP errors return their body.
+
+    Raises BlockedAddress if the URL, or anything it redirects to, points at a
+    private, loopback or link-local address.
+    """
+    _check_target(url)
     request = Request(url, headers={
         'User-Agent': USER_AGENT,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -308,7 +428,7 @@ def fetch(url, timeout=DEFAULT_TIMEOUT):
         'Accept-Encoding': 'gzip, deflate',
     })
     try:
-        response = urlopen(request, timeout=timeout)  # noqa: S310 - explicit user-supplied URL
+        response = urlopen(request, timeout=timeout)  # noqa: S310 - validated above and per redirect
     except HTTPError as exc:
         body = exc.read(MAX_BYTES) if hasattr(exc, 'read') else b''
         return exc.code, dict(exc.headers or {}), _decompress(body, (exc.headers or {}).get('Content-Encoding')), url
@@ -333,11 +453,24 @@ def _decode(body, headers):
     return body.decode('utf-8', errors='replace')
 
 
+def scratch_dir():
+    """Where page text goes for the life of one run.
+
+    Namespaced by LEGWORK_RUN_ID if the caller sets one, else by process. A
+    plain hash of the URL under a shared directory looked tidy and was not: a
+    later run fetching the same URL would find last week's text sitting there,
+    and a fetch that failed today would hand `log --from-fetch` a sidecar
+    written when the page still worked. Nothing here is read back across runs.
+    """
+    run = os.environ.get('LEGWORK_RUN_ID') or str(os.getpid())
+    folder = os.path.join(os.environ.get('TMPDIR', '/tmp'), 'legwork', run)
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
+
 def default_out_path(url):
     digest = hashlib.sha1(url.encode('utf-8')).hexdigest()[:12]  # noqa: S324 - a filename, not a signature
-    folder = os.path.join(os.environ.get('TMPDIR', '/tmp'), 'legwork')
-    os.makedirs(folder, exist_ok=True)
-    return os.path.join(folder, digest + '.txt')
+    return os.path.join(scratch_dir(), digest + '.txt')
 
 
 def write_outputs(out_path, text, payload):
@@ -394,6 +527,12 @@ def main():
 
     try:
         status, headers, body, final_url = fetch(args.url, timeout=args.timeout)
+    except BlockedAddress as exc:
+        # Its own exit code: this is not "the page would not open, try the next
+        # rung", it is "this address is not a research source". Escalating to a
+        # paid scrape would be the wrong response and would spend money doing it.
+        _fail({'url': args.url, 'verdict': 'refused', 'reason': str(exc),
+               'next': 'nothing - do not fetch this address by any route'}, 5)
     except (URLError, OSError, ValueError) as exc:
         _fail({'url': args.url, 'verdict': 'error', 'reason': str(exc)}, 1)
 
@@ -436,6 +575,12 @@ def main():
     if verdict != 'ok':
         payload['next'] = ('WebFetch, then bd_search.py -m scrape' if verdict == 'blocked'
                            else 'WebFetch, then bd_search.py -m render')
+        # The sidecar is written for a failure too. The skill's own instruction
+        # is to log the failed attempt before falling back, and that is done
+        # with `sources.py log --from-fetch`, which needs a file to read. Its
+        # verdict field carries the failure through, so the row lands with a
+        # non-ok status rather than looking like a page that was read.
+        write_outputs(out_path, text, payload)
         _fail(payload, 3)
 
     write_outputs(out_path, text, payload)

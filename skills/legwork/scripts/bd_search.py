@@ -197,6 +197,11 @@ def run_serp(args) -> None:
             "query": args.query,
             "mode": args.mode,
             "provider": "brightdata",
+            # A paid search result is still a search result. Logging it as
+            # `brightdata` would make it count as an opened page and walk
+            # straight through the gate's snippet rule, so the log value is
+            # stated here rather than left to the caller's judgement.
+            "log_via": "serp",
             "results": results,
         },
         sys.stdout,
@@ -221,6 +226,7 @@ def _emit_page(args, target, body) -> None:
         "url": target,
         "mode": args.mode,
         "provider": "brightdata",
+        "log_via": "brightdata",
         "title": None,
         "date": None,
         "chars": len(text),
@@ -313,8 +319,12 @@ def run_discover(args) -> None:
         })
     if not results:
         _fail("discover returned no results")
+    # With --with-content the page body came back and each result is a page
+    # that was read; without it, these are ranked snippets like any other SERP.
     json.dump({"query": args.query, "mode": "discover", "provider": "brightdata",
-               "intent": args.intent, "results": results}, sys.stdout, ensure_ascii=False)
+               "intent": args.intent,
+               "log_via": "brightdata" if args.with_content else "serp",
+               "results": results}, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
 
 

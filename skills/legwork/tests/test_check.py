@@ -318,3 +318,80 @@ def test_a_receipt_with_no_opened_count_is_not_second_guessed(tmp_path):
     report, tsv = _report_with_receipt(tmp_path, '*standard · 3 angles · 3 sources*')
     problems, _ = check.run(report, tsv, 'brief', 'standard')
     assert not any('receipt says' in message for message in problems.warnings), problems.warnings
+
+
+# ---------------------------------------------------------------------------
+# A quote checked against the page and not found on it is not evidence
+#
+# Verification used to print a warning on stderr at the moment of logging and
+# stop there. Nothing downstream could see it, so a sentence the page never
+# contained still satisfied the "this finding rests on something recorded"
+# check. Recording a check and then ignoring it is worse than not checking.
+# ---------------------------------------------------------------------------
+
+def _one_source_report(tmp_path, verified, quote='A sentence nobody can find on the page.'):
+    report = str(tmp_path / 'run.md')
+    with open(report, 'w', encoding='utf-8') as handle:
+        handle.write(
+            '# A title that states the answer\n\n'
+            '*standard · 1 angle · 1 source (1 opened, 0 via Bright Data)*\n\n'
+            '## Findings\n\n'
+            '### Finding 1: The vendor gates the feature behind the top tier\n\n'
+            '**Confidence: Weak** - one vendor page, no independent confirmation.\n\n'
+            'The vendor says the feature is top-tier only [1].\n\n'
+            '## Limitations\n\nOne source.\n\n'
+            '## Bibliography\n\n'
+            '[1] Vendor (2026). "Pricing". https://vendor.example/pricing\n')
+    tsv = str(tmp_path / 'run.tsv')
+    with open(tsv, 'w', encoding='utf-8') as handle:
+        handle.write('\t'.join(check.read_rows.__globals__['TSV_COLUMNS']) + '\n')
+        handle.write('https://vendor.example/pricing\tvendor_pricing\tan angle\tdirect\t'
+                     '2026-09-06T09:00:00+00:00\tok\t2026-07-01\t\tPricing\t{}\tq\t{}\n'.format(
+                         quote, verified))
+    return report, tsv
+
+
+def test_a_quote_the_page_does_not_contain_cannot_support_a_finding(tmp_path):
+    report, tsv = _one_source_report(tmp_path, verified='false')
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert any('does not contain it' in message for message in problems.errors), problems.errors
+
+
+def test_the_same_finding_is_fine_when_the_quote_checks_out(tmp_path):
+    report, tsv = _one_source_report(tmp_path, verified='true')
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert problems.errors == [], problems.errors
+
+
+def test_an_unverifiable_quote_is_not_punished(tmp_path):
+    """Empty means nobody could check - no page text was supplied. That is the
+    ordinary case for WebFetch and must not be treated as a failed check."""
+    report, tsv = _one_source_report(tmp_path, verified='')
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert problems.errors == [], problems.errors
+
+
+def test_a_misquoted_source_also_stops_carrying_the_finding(tmp_path):
+    """The quote is struck out as evidence, not merely flagged: with no figure
+    and no other source, the finding rests on nothing recorded."""
+    report, tsv = _one_source_report(tmp_path, verified='false')
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert any('rests on no recorded evidence' in message for message in problems.errors), problems.errors
+
+
+# ---------------------------------------------------------------------------
+# A paid search result is still a search result
+# ---------------------------------------------------------------------------
+
+def test_a_serp_row_does_not_launder_a_snippet_into_an_opened_page(tmp_path):
+    """bd_search SERP and intent search return ranked snippets. Logging them as
+    `brightdata` would have walked them straight through the snippet rule, so
+    they log as `serp` and the rule treats them as the leads they are."""
+    report = shutil.copy(fixture('snippet_only.md'), str(tmp_path / 'run.md'))
+    tsv = str(tmp_path / 'run.tsv')
+    with open(fixture('snippet_only.tsv'), encoding='utf-8') as handle:
+        content = handle.read().replace('\twebsearch\t', '\tserp\t')
+    with open(tsv, 'w', encoding='utf-8') as handle:
+        handle.write(content)
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert any('never opened' in message for message in problems.errors), problems.errors

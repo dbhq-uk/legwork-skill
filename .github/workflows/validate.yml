@@ -157,6 +157,7 @@ jobs:
           expect_fail tests/fixtures/no_evidence.md        "finding with neither a traceable figure nor a quote"
           expect_fail tests/fixtures/undated_evidence.md   "finding whose age cannot be judged"
           expect_fail tests/fixtures/concentrated.md       "run resting almost entirely on one party"
+          expect_fail tests/fixtures/snippet_only.md       "cites pages it only ever saw in a search result" brief
 
       - name: Full run lifecycle (log -> score -> group -> gate)
         working-directory: skills/legwork

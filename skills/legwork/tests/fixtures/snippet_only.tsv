@@ -1,0 +1,4 @@
+url	kind	angle	via	fetched_at	status	date	numbers	title	quote	query
+https://supplier.example/transit	vendor_docs	what the supplier lists for this van	websearch	2026-09-06T09:00:00+00:00	ok	2026-08-01		Transit category	All products listed are specified for H3 (high roof) configuration.	supplier transit kit 2026
+https://supplier.example/cubicle-d	vendor_docs	will the wet room fit	websearch	2026-09-06T09:01:00+00:00	ok	2026-08-01	2088	Cubicle D	External dimensions - height 2088mm. Collection only.	supplier cubicle dimensions
+https://roundup.example/transit-kits	blog	alternatives to this supplier	websearch	2026-09-06T09:02:00+00:00	ok	2026-07-15	1886	Transit conversion kits	The medium roof gives roughly 1886 mm of interior load height.	transit conversion kits comparison

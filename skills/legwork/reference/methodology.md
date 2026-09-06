@@ -1,7 +1,16 @@
 # Methodology
 
-Four phases. Read this at the start of a run; the level table in `SKILL.md` says
-which parts apply.
+Four phases. The level table in `SKILL.md` says which parts apply.
+
+## Contents
+
+- [Phase 1: Frame](#phase-1-frame) - the decision, the sub-questions, the falsifiers
+- [Phase 2: Gather](#phase-2-gather) - anchoring the date, rebuilding enumerations, crediting the right source
+- [Phase 3: Challenge](#phase-3-challenge) - the disconfirming case, grouping, concentration, the origin audit
+- [Phase 4: Write](#phase-4-write) - comparisons, confidence, citation discipline, the read-against-itself pass
+
+Read the phase you are in. Reading all four before starting costs context you
+will want later, and Phase 4 tells you nothing useful while you are framing.
 
 ---
 
@@ -198,32 +207,22 @@ still rest mostly on one party.
 python3 ${CLAUDE_SKILL_DIR}/scripts/independence.py portfolio --tsv "$OUT/$BASE.tsv"
 ```
 
-It reports the share of retrievals from the largest party, the number of distinct
-parties, and the share sitting in the largest independence group. The last one is
-the only check that sees syndication: six outlets carrying one wire story are six
-parties and one voice, and every party-level measure calls that diverse.
+The limits and what each one catches are in `quality-gates.md`. What the script
+cannot tell you is the fix, and the two failures need different ones.
 
-When one party is over half the run, that is usually a Gather problem rather than
-a writing problem: go and find a different party, or say plainly in Limitations
-that the picture is largely one party's account of itself. When one *group* is
-most of the run, the fix is different - the run has found one story repeated, so
-go looking for a second story rather than a seventh copy of the first.
+When one **party** is over half the run, that is a Gather problem, not a writing
+problem: go and find a different party, or say plainly in Limitations that the
+picture is largely one party's account of itself. When one **group** is most of
+the run, the run has found one story repeated - go looking for a second story
+rather than a seventh copy of the first.
 
 ### Check the evidence has not gone off
 
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py stale --tsv "$OUT/$BASE.tsv" --claim-kind price
-```
-
-Run it once per claim kind the report actually makes. The horizon is two
-half-lives of that claim kind, so a 400-day-old pricing page is stale while a
-400-day-old filing is fine - which is the whole reason the horizon is not a single
-global number.
-
-Two outcomes, two different fixes. **Stale** needs a newer source, or an explicit
-sentence saying the figure is the most recent available and how old it is.
-**Undated** needs the date recorded: a source with no date is not necessarily old,
-but nobody can tell, and the gate will say so.
+`finish.py` sweeps every claim kind and names the ones whose evidence has aged,
+so this needs no separate command. Two outcomes, two different fixes. **Stale**
+needs a newer source, or an explicit sentence saying the figure is the most
+recent available and how old it is. **Undated** needs the date recorded: a source
+with no date is not necessarily old, but nobody can tell.
 
 ### At deep level: the origin audit
 
@@ -242,15 +241,9 @@ each write under roughly 2,000 words so no single tool call risks truncation.
 
 ### When the question is a comparison
 
-Three or more named options means a `## Comparison matrix` alongside the prose.
 Decide the field list **before** fanning out, or each option comes back described
 in its own terms and the grid cannot be assembled: one agent reports a monthly
 price, another an annual one, a third a "contact us".
-
-Fill the grid honestly. `[unknown]` is a result and belongs in the cell; a blank
-is not, and reads as a confident "no". A whole row of `[unknown]` is worth
-keeping - it says the option was examined, which stops the next reader assuming
-it was skipped.
 
 Then write the findings from the grid rather than restating it. The matrix says
 what each option does; the findings say which one to pick and why, and that is
@@ -265,14 +258,8 @@ section then supports it.
 ### Assign confidence honestly
 
 The band follows from the evidence, not from how much you would like the finding
-to be true:
-
-| Band | Requires |
-|---|---|
-| **Strong** | Primary-tier evidence for the central claim, and corroboration of 2 or more |
-| **Moderate** | Primary evidence but a single group, or secondary evidence with corroboration of 2 or more |
-| **Weak** | Commentary only, or everything traces to one origin |
-| Below floor | Nothing above marketing or hearsay tier, or the only voice is the subject describing itself |
+to be true. The bands are in `SKILL.md` and the gate enforces them; what it
+cannot enforce is the honesty of the reach.
 
 Below-floor material does not become a finding. It can be a sentence in
 Limitations.

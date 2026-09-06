@@ -12,6 +12,8 @@ Guidance for AI agents (and people) working in this repository.
 .claude-plugin/plugin.json     # plugin manifest
 skills/legwork/SKILL.md        # the skill (agent-facing instructions)
 skills/legwork/scripts/        # python, standard library only
+                              #   fetch.py     free direct page fetch, returns text
+                              #   platforms.py ten free platform APIs, no key
 skills/legwork/reference/      # methodology (four phases), quality gates, subagent brief
 skills/legwork/templates/      # brief + report
 skills/legwork/tests/          # offline, no network
@@ -27,7 +29,8 @@ docs/design-notes.md           # why the skill is shaped the way it is
 - Python floor is **3.9**. Every script carries `from __future__ import annotations` so PEP 604 syntax parses there.
 - SKILL.md references scripts via `${CLAUDE_SKILL_DIR}` (the skill's own directory), which Claude Code substitutes for personal, project and plugin installs alike. `install.sh` therefore symlinks the whole skill directory into `~/.claude/skills/` with no rewrite. `install-codex.sh` rewrites the variable, since Codex does not substitute it.
 - Bright Data is a **fallback**, never a requirement. Anything that assumes it is installed is a bug: the built-in `WebSearch`/`WebFetch` are the primary providers and a run must complete without a CLI present.
-- Tests are hermetic - no network, ever. The gate makes no network calls at all.
+- Tests are hermetic - no network, ever. The gate makes no network calls at all. `fetch.py`, `platforms.py` and `bd_search.py` do reach the network in production, so their tests patch `urlopen` and `subprocess.run` and assert the *mapping* - which flag becomes which CLI argument, which field becomes which column. A test that needs a socket is a test that will be skipped, and a skipped test is not a gate.
+- **A retrieval script and the fetch log are one pipeline.** Every source kind `platforms.py` emits must be one `sources.py log --kind` accepts; `_assert_vocabulary_agrees` pins it. A kind only one of them knows fails at the far end of a long run, which is the worst place to find it.
 - **Corroboration must be counted on the layer the pipeline does not amplify.** Gather deliberately fans out to find more sources per finding, so a source count measures our own effort. Independence groups reached from *different search angles* is the real signal. A change that makes corroboration rise with breadth has broken the check, whatever the tests say.
 - **The index is keyed on the folder, never the topic.** Topics get reworded between runs; the folder is stamped once and never moves. Upserting on the folder is what makes a refresh update its row in place instead of leaving two rows competing to describe one report. For the same reason the index header is identified by *position*, not by a cell reading "Topic" - a run whose topic is worded like a column heading is still a run.
 - **A search snippet is not an opened page.** A row logged `via=websearch` is a lead. Every other transport returns the page or the record itself, `api` included - a registry's own JSON is the record, not a snippet about it. The gate treats a citation resting only on snippet rows as unopened: ignored at quick, which is snippet-first by design, a warning at standard, an error at deep. Measured on a run filed on 2026-08-16, 18 of its 29 cited sources were search results nobody opened, and it passed.

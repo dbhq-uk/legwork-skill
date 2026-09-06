@@ -54,8 +54,19 @@ judgements about strength, so they inform at standard and block at deep.
 ## Evidence
 
 - **Every cited URL appears in the fetch log with an ok status.** A citation to a
-  page that was never opened is a fabricated citation. No heuristics are
-  involved, so there is nothing to tune and nothing to false-positive on.
+  page that was never retrieved at all is a fabricated citation. No heuristics
+  are involved, so there is nothing to tune and nothing to false-positive on.
+- **Every cited URL was opened, not just seen.** A row logged `via=websearch` is
+  a search result: a lead, not a page anybody read. Every other transport
+  returns the page or the record itself, `api` included, because a registry's
+  own JSON is the record and not a snippet about it. Graded, so quick - which is
+  snippet-first by design - is not asked. Measured on a run filed on 2026-08-16:
+  18 of its 29 cited sources were search results nobody opened, and it passed.
+- **The receipt agrees with the log.** If the receipt line states an opened
+  count, it is compared against the log and a mismatch warns at every level. It
+  is a warning rather than an error because the log is the record and the
+  receipt is the claim; the point is that the two are now comparable at all.
+  `sources.py receipt --tsv <log>` prints the line rather than counting by hand.
 - **Figures trace to a page that was fetched.** Any number in a sentence that
   also carries a citation must appear in the numeric tokens captured from one of
   that sentence's cited sources. Bare integers below 10 are skipped as prose

@@ -132,26 +132,42 @@ when a run is missing from an index that exists.
 
 ## Retrieval policy
 
-**Built-in `WebSearch` and `WebFetch` first.** Free, no setup, no per-request
-billing.
+Two ladders, free rungs first. Climb only as far as you need to.
 
-**Bright Data (`bd_search.py`) only when that fails.** It is the unblocker, never
-the default retriever:
+**To search:**
 
-- `WebFetch` fails on a page you genuinely need (bot-blocked, paywalled, JS-heavy) -> `bd_search.py "<url>" -m scrape --json`
-- Reddit threads, where both `WebFetch` and the Unlocker zone are blocked -> `bd_search.py "<reddit-url>" -m reddit --json` (billed per record; top threads only)
-- Geo-specific or vertical SERP that `WebSearch` cannot express -> `--country XX`, `-m news`
+| Rung | Call | When |
+|---|---|---|
+| 1 | `WebSearch` | Always. Three query variants per angle. |
+| 2 | `platforms.py search --on ...` | The answer is a record a platform holds: a thread, a package, a repository, a dated news item, a vendor's changelog. Free, keyless, and returns the record rather than a page about it. |
+| 3 | `bd_search.py -m general --engine bing --country XX --language yy` | Thin after three variants, or the question is geo-specific. A second engine is the reason to pay. |
+| 4 | `bd_search.py -m discover --intent "..."` | Two engines still thin. |
 
-No separate spend rule is needed per level. Deep attempts more primary sources,
-more of those attempts get blocked, so paid usage rises on its own.
+**To open a page:**
 
-On exit code 2 (auth or quota), tell the user to run `brightdata login`. Do not
-retry.
+| Rung | Call | When |
+|---|---|---|
+| 1 | `fetch.py "<url>" --find "term"` | Always first. Free, and the only free transport that yields page text, so figures trace and quotes can be checked. |
+| 2 | `WebFetch` | `fetch.py` exited 3 and the page is not worth paying for. |
+| 3 | `bd_search.py "<url>" -m scrape` | Blocked: bot protection, paywall, 403. |
+| 4 | `bd_search.py "<url>" -m render` | A client-rendered shell. |
+| 5 | `bd_search.py "<url>" -m pipeline --pipeline NAME` | A platform that blocks everything above. Billed per record; `-m reddit` is the one where it is the only route, not a last resort. |
 
-**Cap what you pull back.** Pass `--max-chars 8000` on scrape calls unless you
-have a specific reason to need more; the wrapper's own default is 20000. A
-research run reads dozens of pages and almost none of them need 20,000 characters
-in context to yield the sentence you are after.
+Run `platforms.py list` for the ten free platforms, and `bd_search.py --help`
+for the paid modes. On exit code 2 (auth or quota), tell the user to run
+`brightdata login`. Do not retry.
+
+**A search result is a lead, not a page you read.** At standard and deep, open
+what you cite: the gate treats a citation resting only on `websearch` rows as
+unopened, a warning at standard and an error at deep. Quick is snippet-first by
+design and is not asked.
+
+**Log the failure before the fallback.** A page that would not open is evidence
+about the run - `--status blocked` - and the receipt counts it.
+
+**Cap what you pull back.** `--max-chars 8000` on scrape calls, and prefer
+`--find` to a blind cap: on a long page the first eight thousand characters are
+usually the navigation.
 
 ### Whose sources you may use
 
@@ -204,7 +220,20 @@ silently destroys the check, and no script can tell that you did.
 `--quote` is the verbatim sentence that made the source worth citing. **Record
 one for every source you intend to cite, as you read it.** Around half of all
 findings carry no figure, so for those the quote is the only evidence there is,
-and it is the only part that survives the page changing.
+and it is the only part that survives the page changing. Where the page text is
+on disk - anything opened with `fetch.py`, or a `-m scrape` with `--out` - the
+quote is checked against it and `quote_verified: false` means you have
+misquoted the page.
+
+`--from-fetch` fills the url, title, date and page text from the sidecar those
+two write, so nothing has to be retyped:
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py log --tsv "$OUT/$BASE.tsv" \
+  --from-fetch /tmp/legwork/ab12cd34ef56.json \
+  --angle "what does the incumbent charge" --kind vendor_pricing \
+  --query "site:acme.example pricing" --quote "Team plan: 30 US dollars ..."
+```
 
 `sources.py log --help` covers the rest: `--via` transports (including `api`,
 `local` and `mcp`), `--text-file` numeric extraction, `--kind`. Log the transport
@@ -239,7 +268,10 @@ All stdlib-only. No virtualenv. Any `python3` >= 3.9.
 
 | Script | Purpose |
 |---|---|
+| `fetch.py "<url>" --find TERM` | Open a page for free and keep its text; exits 3 on a block or a shell |
+| `platforms.py list \| search --on X` | Ten free platform-native sources, returning records rather than pages |
 | `sources.py kinds \| log \| score` | Source-kind vocabulary, the fetch log, fitness scoring per claim kind |
+| `sources.py receipt` | The retrieval counts for the receipt line, taken from the log |
 | `sources.py stale --claim-kind K` | Which logged sources have gone off, on that claim kind's half-life |
 | `sources.py resume` | What a previous run already fetched, so a re-run skips it |
 | `independence.py groups \| check` | Collapse sources into independent voices; count angle-aware corroboration |
@@ -305,7 +337,11 @@ Two lines are mandatory in both formats:
 **The receipt**, italic, directly under the H1, so the weight of the document is
 visible before reading it:
 
-> *deep · 6 angles · 14 primary sources (9 via Bright Data) · 7 disconfirming searches · 2 findings downgraded, 1 dropped below floor*
+> *deep · 6 angles · 14 sources (12 opened, 9 via Bright Data) · 7 disconfirming searches · 2 findings downgraded, 1 dropped below floor*
+
+Do not count those by hand at the end of a long run. `sources.py receipt --tsv
+"$OUT/$BASE.tsv"` prints them from the log, and the gate compares the opened
+count against it.
 
 **A confidence line** as the first line of every finding:
 

@@ -106,6 +106,7 @@ and every other case's result is uninterpretable if it does not.
 | Run | Model | Result |
 |---|---|---|
 | [2026-08-13](runs/2026-08-13-sonnet-baseline.md) | Sonnet, both arms | First baseline. Cases 1 and 2 discriminate strongly, 4 moderately, 3 weakly |
+| [2026-09-06](runs/2026-09-06-search-pipeline-aborted.md) | Sonnet, both arms | **Aborted on a rate limit; nothing scored.** One arm's partial fetch log shows blocked pages recorded as blocked and every row carrying its query, both firsts. Cases 5 and 6 remain unrun |
 
 ### What the first run changed
 

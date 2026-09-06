@@ -1,5 +1,6 @@
 """Fitness scoring, claim-aware recency, and the fetch log."""
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -319,3 +320,69 @@ def test_the_same_page_opened_twice_counts_once():
 def test_the_receipt_line_reads_as_a_receipt():
     assert sources.receipt_line(sources.retrieval_receipt(RECEIPT_ROWS)) == (
         '6 sources · 4 opened · 1 snippet-only · 1 via Bright Data · 1 blocked · 3 queries')
+
+
+# ---------------------------------------------------------------------------
+# --from-fetch: the sidecar fetch.py writes becomes the log row, so the URL,
+# title, date and page text cannot drift between opening a page and recording it
+# ---------------------------------------------------------------------------
+
+def _sidecar(tmp_path, **overrides):
+    text_file = tmp_path / 'page.txt'
+    text_file.write_text('Team plan: 30 US dollars per user per month, billed annually.\n',
+                         encoding='utf-8')
+    payload = {'url': 'https://acme.example/pricing', 'title': 'Acme pricing',
+               'date': '2026-07-01', 'text_file': str(text_file), 'verdict': 'ok'}
+    payload.update(overrides)
+    path = tmp_path / 'page.json'
+    path.write_text(json.dumps(payload), encoding='utf-8')
+    return str(path)
+
+
+def test_from_fetch_fills_the_row_from_the_sidecar(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    sources.main_with_args([
+        'log', '--tsv', tsv, '--from-fetch', _sidecar(tmp_path),
+        '--angle', 'what it costs', '--kind', 'vendor_pricing',
+        '--quote', 'Team plan: 30 US dollars per user per month, billed annually.',
+        '--query', 'site:acme.example pricing'])
+    result = json.loads(capsys.readouterr().out)
+    assert result['quote_verified'] is True
+    assert result['numbers_from'] == 'text'
+    row = sources.read_rows(tsv)[0]
+    assert row['url'] == 'https://acme.example/pricing'
+    assert row['title'] == 'Acme pricing'
+    assert row['date'] == '2026-07-01'
+    assert row['via'] == 'direct'
+    assert '30' in row['numbers']
+
+
+def test_explicit_flags_beat_the_sidecar(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    sources.main_with_args([
+        'log', '--tsv', tsv, '--from-fetch', _sidecar(tmp_path),
+        '--angle', 'a', '--kind', 'vendor_pricing', '--via', 'brightdata',
+        '--date', '2026-08-08', '--title', 'Mine'])
+    row = sources.read_rows(tsv)[0]
+    assert row['via'] == 'brightdata' and row['date'] == '2026-08-08' and row['title'] == 'Mine'
+
+
+def test_a_blocked_sidecar_logs_the_failure_rather_than_a_source(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    sources.main_with_args([
+        'log', '--tsv', tsv, '--angle', 'a', '--kind', 'vendor_docs',
+        '--from-fetch', _sidecar(tmp_path, verdict='blocked', text_file='')])
+    row = sources.read_rows(tsv)[0]
+    assert row['status'] == 'blocked'
+    assert sources.retrieval_receipt(sources.read_rows(tsv))['blocked'] == 1
+
+
+def test_a_quote_the_page_does_not_carry_is_reported(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    sources.main_with_args([
+        'log', '--tsv', tsv, '--from-fetch', _sidecar(tmp_path),
+        '--angle', 'a', '--kind', 'vendor_pricing',
+        '--quote', 'Team plan: 40 US dollars per user per month.'])
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)['quote_verified'] is False
+    assert 'not found in the page text' in captured.err

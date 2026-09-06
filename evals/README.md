@@ -106,7 +106,8 @@ and every other case's result is uninterpretable if it does not.
 | Run | Model | Result |
 |---|---|---|
 | [2026-08-13](runs/2026-08-13-sonnet-baseline.md) | Sonnet, both arms | First baseline. Cases 1 and 2 discriminate strongly, 4 moderately, 3 weakly |
-| [2026-09-06](runs/2026-09-06-search-pipeline-aborted.md) | Sonnet, both arms | **Aborted on a rate limit; nothing scored.** One arm's partial fetch log shows blocked pages recorded as blocked and every row carrying its query, both firsts. Cases 5 and 6 remain unrun |
+| [2026-09-06 (aborted)](runs/2026-09-06-search-pipeline-aborted.md) | Sonnet, both arms | Killed by a rate limit; nothing scored. Kept because one partial log raised the `fetch.py` adherence question the completed run then answered |
+| [2026-09-06](runs/2026-09-06-search-pipeline.md) | Sonnet, both arms | Cases 5 and 6 both pass and both discriminate, on reach rather than honesty. Case 6: baseline opened 1 page of 4 attempts, skill opened 33 of 40. The paid rungs were never climbed - that is the run's finding |
 
 ### What the first run changed
 

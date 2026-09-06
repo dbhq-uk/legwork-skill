@@ -194,60 +194,44 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py log \
   --text-file /tmp/page.txt
 ```
 
-`--angle` is the sub-question this retrieval was answering, and it is the most
-important field in the file. Legwork's own fan-out inflates the number of sources
-behind a finding, so a source count measures our effort rather than
-corroboration. The angle is the layer we do not amplify, so corroboration is
-counted there. **Record the angle honestly** - reusing one angle string across a
-whole run silently destroys the check.
+Two fields carry the weight, and neither can be checked by anything downstream.
 
-`--quote` is the sentence that made the source worth citing, verbatim, truncated
-at 300 characters. **Record one for every source you intend to cite.** Around half
-of all findings carry no figure at all, so without a quote those findings are
-backed by nothing but proof that somebody opened the page - and the gate will say
-so. It is also the only part of the evidence that survives the page changing or
-going dead six months from now.
+`--angle` is the sub-question this retrieval was answering. Corroboration is
+counted on angles rather than sources because legwork's own fan-out inflates
+source counts. **Record the angle honestly** - reusing one string across a run
+silently destroys the check, and no script can tell that you did.
 
-`--text-file` extracts the numeric tokens from a fetched page so the gate can
-later confirm that a figure you quote actually appeared on a page you opened. No
-page text beyond the quote is stored.
+`--quote` is the verbatim sentence that made the source worth citing. **Record
+one for every source you intend to cite, as you read it.** Around half of all
+findings carry no figure, so for those the quote is the only evidence there is,
+and it is the only part that survives the page changing.
 
-`--via` records how the page was reached: `websearch`, `webfetch`, `brightdata`,
-`api` for a structured endpoint queried directly, `local` for evidence read from
-disk, `mcp` for a connected tool. Log the transport you actually used. Re-fetching
-a page through a different one to make it loggable distorts the trail rather than
-recording it. Local evidence is cited with a `file://` locator and counts as a
-single party however many files it spans.
-
-Run `sources.py kinds` for the source kinds and which claims they suit.
+`sources.py log --help` covers the rest: `--via` transports (including `api`,
+`local` and `mcp`), `--text-file` numeric extraction, `--kind`. Log the transport
+you actually used - re-fetching a page through a different one to make it
+loggable distorts the trail rather than recording it. `sources.py kinds` prints
+which source kinds suit which claims.
 
 ## Subagents
 
-Retrieval is the one phase worth parallelising. Brief them from
-[subagent-brief.md](./reference/subagent-brief.md), which carries the template
-verbatim and the reasons each line is in it.
+Retrieval is the one phase worth parallelising, one subagent per angle. Brief
+them from [subagent-brief.md](./reference/subagent-brief.md), which carries the
+template verbatim, the required return shape, and the reason each line is in it.
+A subagent has zero context, so everything it needs goes in the brief.
 
-- **A subagent has zero context.** It cannot see this skill, the conversation or
-  the decision. Everything it needs goes in the brief, including today's literal
-  date and how much effort the angle is worth.
+Three things stay with you rather than the brief:
+
 - **Match the model to the shape of the angle.** Snippet gathering and pinning a
   known figure run fine on a cheap model - pass the override explicitly, never let
   one inherit the session model by accident. But **deep-level primary-source work,
-  and anything that rebuilds an enumeration, stays on the orchestrator's model**:
-  small models drop rows when a task means opening a dozen pages and keeping every
-  figure exact, and they report success while doing it.
-- **They return structured evidence, never prose.** One JSON object per source:
-  `{url, kind, angle, date, title, quote}`, then a required `{gaps: [...]}` object
-  saying what they searched for and did not find. An empty gaps list on a
-  non-trivial angle means the negative case was never looked for.
-- **Never paste a subagent's transcript into your synthesis.** Take its structured
-  return, check the angle string came back unchanged, log each row with
-  `sources.py log`, and work from the log.
-- **The orchestrator keeps scoping, challenge and synthesis.** Those are
-  judgement, and they stay on the main model.
-
-One subagent per search angle is the natural split, and it keeps the angle
-attribution honest because each agent only ever writes its own angle.
+  and anything that rebuilds an enumeration, stays on the orchestrator's model**.
+  Measured: on one comparison, orchestrators opened 3, 8 and 32 vendor pages
+  across the cheap-to-capable range, and only the weakest filled every cell of the
+  grid from a single aggregator while reporting success.
+- **Never paste a subagent's transcript into your synthesis.** Take the structured
+  return, check the angle string came back unchanged, log each row, work from the
+  log.
+- **Scoping, challenge and synthesis are judgement.** They stay on the main model.
 
 ## Scripts
 
@@ -276,8 +260,8 @@ BASE="[Topic]_Research_$(date +%Y%m%d)"
 OUT="$OUTPUT_BASE/$BASE"; mkdir -p "$OUT"
 ```
 
-The folder and every file in it share one base name, so they group and sort
-together, and `index.md` at the base is the dispatcher across all of them:
+The folder and every file in it share one base name, and `index.md` at the base
+is the dispatcher across all of them:
 
 ```
 docs/research/
@@ -287,11 +271,9 @@ docs/research/
     Outlook_Email_SaaS_Research_20260728.tsv
 ```
 
-The date in the folder name is when the run was **created**. A refresh keeps that
-name and records the new date in `## Timeline` and in the index, so the folder
-stays a stable address rather than multiplying.
-
-Supporting documents keep their own descriptive names inside the folder.
+The date is when the run was **created**; a refresh keeps it, so the folder stays
+a stable address rather than multiplying. Supporting documents keep their own
+descriptive names inside it.
 
 **Markdown only.** No HTML, no PDF.
 
@@ -300,26 +282,18 @@ Supporting documents keep their own descriptive names inside the folder.
 **brief** (quick, and standard when the question is small) - 800 to 2,500 words.
 Template: [brief_template.md](./templates/brief_template.md).
 
-**A comparison across three or more named options adds a matrix.** "Which of
-these should we use" is a grid question, and prose alone loses the grid. Add a
-`## Comparison matrix` section: one row per option, one column per field that
-would decide it. The matrix carries the data, the findings still carry the
-argument, and neither repeats the other.
+**A comparison across three or more named options adds a `## Comparison
+matrix`** - one row per option, one column per deciding field. The matrix
+carries the data, the findings carry the argument. One agent per option is the
+natural fan-out, filling the same field list decided up front.
 
-One agent per option is the natural fan-out, filling the same field list. Every
-cell must say something - a claim, or `[unknown]` - because a blank cell reads as
-"no" when it means "we never found out", and that is the commonest way a
-comparison misleads. A row that is entirely `[unknown]` still belongs in the
-table: it records that the option was examined and came back empty, which is
-exactly the option a reader would otherwise assume was overlooked.
+Every cell says something: a claim, or `[unknown]`. Never blank. A row that is
+entirely `[unknown]` still belongs in the table. Rules and rationale:
+[quality-gates.md](./reference/quality-gates.md).
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/matrix.py check --report "$OUT/$BASE.md"
 ```
-
-Table cells are not sentences, so none of the gate's sentence-level checks can
-see inside them. This is what stops a grid of confident-looking values citing
-nothing from passing a gate that would reject the same claim written as prose.
 
 **report** (deep, and standard when the question warrants it) - Executive
 Summary, Introduction, Findings, Synthesis, Limitations, Recommendations,
@@ -365,14 +339,15 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/finish.py \
 A run that fails the gate is **not** filed, because the index is what the next
 session trusts instead of searching again.
 
-Structural problems are always errors. Evidence and independence problems are
-warnings at standard and errors at deep. **After two failed cycles, stop and
-report to the user** rather than grinding. Details in
-[quality-gates.md](./reference/quality-gates.md).
+Structural problems are errors at every level; evidence and independence
+problems warn at standard and block at deep. Which is which, and why, is in
+[quality-gates.md](./reference/quality-gates.md). **After two failed cycles, stop
+and report to the user** rather than grinding.
 
-`check.py` still runs the gate alone if you want it without the filing. If the
-Stop hook is installed (`install.sh --with-hook`) it gates any report written in
-the session anyway, so skipping this step is loud rather than silent.
+`check.py` runs the gate alone if you want it without the filing. With the Stop
+hook installed (`install.sh --with-hook`), any report written in the session is
+gated at the level its own receipt line claims, so skipping this is loud rather
+than silent.
 
 ## Trust boundary
 

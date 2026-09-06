@@ -1,5 +1,13 @@
 # Quality gates
 
+## Contents
+
+- [What runs when](#what-runs-when) - the level grading
+- [Structural](#structural), [Evidence](#evidence), [Independence](#independence), [Comparison matrix](#comparison-matrix), [Filing](#filing) - the layers
+- [The "could not answer" shape](#the-could-not-answer-shape)
+- [Failure protocol](#failure-protocol) - and the two-cycle cap
+- [Trust boundary](#trust-boundary)
+
 One script, three layers, graded by level.
 
 ```bash

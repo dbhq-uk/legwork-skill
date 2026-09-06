@@ -244,7 +244,16 @@ def check_structure(content, fmt, problems, report_path):
         if not re.search(r'^##\s+.*' + re.escape(section), content, re.M | re.I):
             problems.structural('missing section: {}'.format(section))
 
-    found = [p for p in PLACEHOLDERS if p.lower() in content.lower()]
+    # Word-boundary match on the bare-word placeholders. A plain substring test
+    # fires on ordinary vocabulary that happens to contain one - Italian
+    # "metodo" contains "todo", and any URL slug carrying it trips the gate.
+    found = []
+    for p in PLACEHOLDERS:
+        pattern = re.escape(p)
+        if p.isalpha():
+            pattern = r'\b' + pattern + r'\b'
+        if re.search(pattern, content, re.I):
+            found.append(p)
     if found:
         problems.structural('placeholder text present: {}'.format(', '.join(found)))
 

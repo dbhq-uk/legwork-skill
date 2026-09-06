@@ -1,5 +1,12 @@
 # The retrieval subagent brief
 
+## Contents
+
+- [Which model](#which-model) - the carve-out, and why it is not unconditional
+- [The brief](#the-brief) - the template, verbatim, to fill and paste
+- [Why the last line is the last line](#why-the-last-line-is-the-last-line)
+- [When the return comes back](#when-the-return-comes-back) - what to check before logging any of it
+
 Retrieval is the one phase worth parallelising. It is also the phase where a
 vague brief costs the most, because a subagent that guesses wrong produces
 evidence that looks fine and is not.

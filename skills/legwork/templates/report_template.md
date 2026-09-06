@@ -8,6 +8,10 @@ WHAT THIS IS: the full shape, for a decision worth documenting. No word target. 
 when the question is answered - a question fully answered in 3,000 words ships at
 3,000 words. Padding to a length band is the failure this format is most prone to.
 
+AFTER GATING: in the conversation, give the receipt line, the Executive Summary, every
+finding heading with its confidence band, Limitations, then the file path. Not the whole
+report - it has no word target.
+
 RECEIPT COUNTS: do not count them by hand. Run
   python3 scripts/sources.py receipt --tsv [path]
 and paste what it prints. The gate compares the opened count against the log.

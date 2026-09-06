@@ -363,6 +363,31 @@ the strongest sub-floor signal, and a bibliography. No findings.
 
 An honest empty answer is a result. Hedged length is not.
 
+### Answer in the chat as well as in the file
+
+**A file path is not an answer.** Once the run is gated, give the answer in the
+conversation too. The person asked a question; making them open a file to learn
+what you found is a worse experience than a plain reply, and they lose the
+thread of what they were doing to get it.
+
+What to say, after the gate passes and in this order:
+
+1. The receipt line, verbatim, so the weight of the work is visible first.
+2. **A brief in full.** It is 800 to 2,500 words by design - short enough to
+   read in the conversation, and splitting it between two places helps nobody.
+3. **A report in summary**: the Executive Summary, then every finding's heading
+   with its confidence band, then Limitations. Never the whole report - it has
+   no word target and can run to thousands of words.
+4. The path to the file, last, for whoever wants the full text and the log.
+
+Say it in your own reply, not by inviting them to read the file. If the run
+could not answer, say *that* in the chat, with the `Closest thing found:` line -
+an empty result is the one a reader is most likely to miss if it is only on
+disk, and the one they most need to know before acting.
+
+Two things do not change. The file is still the deliverable, and the gate still
+runs against the file. Nothing here relaxes either.
+
 ## Gates
 
 Close the run with one call. It gates the report, sweeps the evidence for

@@ -41,6 +41,12 @@ DISCOVER_BODY = json.dumps({'results': [
      'date': '2026-08-01', 'content': '<p>Body text of the post.</p>'}]})
 
 
+@pytest.fixture(autouse=True)
+def _no_waiting(monkeypatch):
+    """The render settle delay is real time; a test must not spend it."""
+    monkeypatch.setattr(bd_search.time, 'sleep', lambda _s: None)
+
+
 def run(monkeypatch, capsys, argv, recorder):
     monkeypatch.setattr(bd_search.subprocess, 'run', recorder)
     monkeypatch.setattr(bd_search.shutil, 'which', lambda _: '/usr/bin/brightdata')
@@ -98,7 +104,7 @@ def test_a_retired_vertical_fails_loudly_rather_than_searching_the_web(monkeypat
 def test_a_scrape_is_cleaned_windowed_and_written_with_a_sidecar(monkeypatch, capsys, tmp_path):
     out = str(tmp_path / 'page.txt')
     body = ('<html><body><nav><a href="/">Home</a></nav><p>Team plan: 30 US dollars '
-            'per user per month.</p></body></html>')
+            'per user per month. ' + 'Further pricing detail. ' * 30 + '</p></body></html>')
     payload = run(monkeypatch, capsys,
                   ['https://acme.example/pricing', '-m', 'scrape', '--out', out,
                    '--find', '30 US dollars'], _Recorder(body))
@@ -111,24 +117,45 @@ def test_a_scrape_is_cleaned_windowed_and_written_with_a_sidecar(monkeypatch, ca
 
 def test_the_cap_applies_after_cleaning_not_before(monkeypatch, capsys, tmp_path):
     """Head-truncating raw markup returns the navigation and none of the page."""
-    body = '<nav>' + ('<a href="/x">nav link</a>' * 200) + '</nav><p>The figure is 1,600 seats.</p>'
+    body = ('<nav>' + ('<a href="/x">nav link</a>' * 200) + '</nav><p>The figure is 1,600 seats. '
+            + 'Supporting sentence about the plan. ' * 30 + '</p>')
     payload = run(monkeypatch, capsys,
                   ['https://acme.example/x', '-m', 'scrape', '--max-chars', '200',
                    '--out', str(tmp_path / 'p.txt')], _Recorder(body))
     assert '1,600 seats' in payload['content']
 
 
-def test_render_opens_gets_and_always_closes_the_session(monkeypatch, capsys, tmp_path):
-    recorder = _Recorder('', '<p>' + 'Rendered body text. ' * 20 + '</p>', '')
+def test_render_opens_gets_html_and_always_closes_the_session(monkeypatch, capsys, tmp_path):
+    """The full argv, not just the verb.
+
+    The earlier version of this test asserted the verb sequence only, and
+    passed while `render` sent a bare `browser get` - which is a command group,
+    not a leaf, so the CLI printed its own usage and exited 0 and the usage text
+    was taken for the page. An eval arm found that, not this test.
+    """
+    recorder = _Recorder('', '<p>' + 'Rendered body text. ' * 40 + '</p>', '')
     run(monkeypatch, capsys, ['https://app.example/', '-m', 'render',
                               '--out', str(tmp_path / 'p.txt')], recorder)
-    verbs = [cmd[cmd.index('browser') + 3] if '--session' in cmd else cmd[2] for cmd in recorder.calls]
-    assert verbs == ['open', 'get', 'close']
-    assert all('--session' in cmd for cmd in recorder.calls)
+    tails = [cmd[cmd.index('--session') + 2:] for cmd in recorder.calls]
+    assert tails == [['open', 'https://app.example/'], ['get', 'html'], ['close']]
+
+
+def test_usage_text_is_never_mistaken_for_a_page(monkeypatch, capsys, tmp_path):
+    """A CLI that answers a bad invocation with its own help and exit 0 must not
+    end up quoted as evidence."""
+    usage = 'Usage: brightdata browser get [options] [command]\n\nGet page content\n'
+    monkeypatch.setattr(bd_search.subprocess, 'run', _Recorder('', usage, ''))
+    monkeypatch.setattr(bd_search.shutil, 'which', lambda _: '/usr/bin/brightdata')
+    monkeypatch.setattr('sys.argv', ['bd_search.py', 'https://app.example/', '-m', 'render',
+                                     '--out', str(tmp_path / 'p.txt')])
+    with pytest.raises(SystemExit) as exit_info:
+        bd_search.main()
+    assert exit_info.value.code == 1
+    assert 'usage text' in json.loads(capsys.readouterr().err)['error']
 
 
 def test_two_renders_do_not_share_a_browser_session(monkeypatch, capsys, tmp_path):
-    recorder = _Recorder('', '<p>' + 'Body. ' * 40 + '</p>', '')
+    recorder = _Recorder('', '<p>' + 'Body of the rendered page. ' * 40 + '</p>', '')
     run(monkeypatch, capsys, ['https://app.example/', '-m', 'render', '--session', 'run-a',
                               '--out', str(tmp_path / 'p.txt')], recorder)
     assert recorder.calls[0][recorder.calls[0].index('--session') + 1] == 'run-a'
@@ -234,3 +261,34 @@ def test_a_missing_cli_is_an_auth_class_failure_not_a_crash(monkeypatch, capsys)
         bd_search.main()
     assert exit_info.value.code == 2
     assert 'npm install' in json.loads(capsys.readouterr().err)['error']
+
+
+def test_a_paid_fetch_that_returns_a_challenge_page_is_not_called_a_page(monkeypatch, capsys, tmp_path):
+    """Paying for a page does not mean getting one: the Unlocker returns
+    challenge pages with a clean exit code."""
+    challenge = '<html><body><h1>Just a moment...</h1><p>' + 'Checking your browser. ' * 40 + '</p></body></html>'
+    monkeypatch.setattr(bd_search.subprocess, 'run', _Recorder(challenge))
+    monkeypatch.setattr(bd_search.shutil, 'which', lambda _: '/usr/bin/brightdata')
+    monkeypatch.setattr('sys.argv', ['bd_search.py', 'https://acme.example/x', '-m', 'scrape',
+                                     '--out', str(tmp_path / 'p.txt')])
+    with pytest.raises(SystemExit) as exit_info:
+        bd_search.main()
+    assert exit_info.value.code == 3
+    assert json.loads(capsys.readouterr().out)['verdict'] == 'blocked'
+
+
+def test_a_paid_fetch_of_a_real_page_still_succeeds(monkeypatch, capsys, tmp_path):
+    body = '<html><body><p>' + 'Team plan: 30 US dollars per user per month. ' * 20 + '</p></body></html>'
+    payload = run(monkeypatch, capsys, ['https://acme.example/pricing', '-m', 'scrape',
+                                        '--out', str(tmp_path / 'p.txt')], _Recorder(body))
+    assert payload['verdict'] == 'ok'
+
+
+def test_render_lets_a_single_page_app_settle_before_reading_it(monkeypatch, capsys, tmp_path):
+    waited = []
+    monkeypatch.setattr(bd_search.time, 'sleep', lambda seconds: waited.append(seconds))
+    run(monkeypatch, capsys,
+        ['https://app.example/', '-m', 'render', '--settle', '2',
+         '--out', str(tmp_path / 'p.txt')],
+        _Recorder('', '<p>' + 'Rendered body text. ' * 40 + '</p>', ''))
+    assert waited == [2.0]

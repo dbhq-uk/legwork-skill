@@ -54,7 +54,10 @@
         "Preserves the original confidence bands rather than restating findings as more certain than they were",
         "Does not leave two folders describing the same question"
       ],
-      "files": ["docs/research/index.md", "docs/research/Plugin_Gallery_Distribution_Research_20260714/"]
+      "files": [
+        "docs/research/index.md",
+        "docs/research/Plugin_Gallery_Distribution_Research_20260714/"
+      ]
     },
     {
       "id": 4,
@@ -71,6 +74,39 @@
         "Names its strongest real evidence rather than generic category pricing nobody is documented as having paid",
         "Files the run in the index anyway, so a later session does not repeat the search",
         "Suggests the narrower question that would actually be answerable, if there is one"
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "open-the-page-rather-than-citing-the-snippet",
+      "observed_failure": "A run filed on 2026-08-16 cited 29 sources, 18 of which it had only seen in a search result. It passed check.py at standard, was recorded in the index, and its numeric-token column was empty on every row, so no figure in it could be traced to a page anyone opened.",
+      "prompt": "legwork: which UK suppliers sell flat-pack campervan furniture kits for a Ford Transit L3H2, and what does a complete kit cost?",
+      "expected_output": "A gated brief whose cited sources were opened rather than glimpsed, whose figures trace to page text, and whose receipt line agrees with its own fetch log.",
+      "expectations": [
+        "Opens the pages it cites rather than quoting search-result snippets, so cited rows carry a transport other than websearch",
+        "Uses fetch.py before WebFetch, and records the resulting page text so figures can be traced",
+        "Records the query that surfaced each source in the query column",
+        "Produces a receipt line whose opened count matches what sources.py receipt prints from the log",
+        "Quotes that were checked against page text come back verified rather than reconstructed from memory",
+        "Passes check.py at the level it announced, including the snippet rule",
+        "Reaches at least one supplier's own page for a price rather than resting the figure on an aggregator"
+      ],
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "get-through-a-blocked-primary-source",
+      "observed_failure": "In the 2026-08-13 baseline run, three bank developer portals returned 403 to automated fetching in both arms. The unaided arm generalised from search snippets and reached the opposite answer to the skill arm. Nothing in the run recorded that a fetch had been attempted and refused, so 'how far did it get' was invisible to every downstream check.",
+      "prompt": "legwork: which UK banks publish a public API sandbox, and what does each one require before you can call it?",
+      "expected_output": "A gated report in which every blocked source is recorded as blocked, the next rung was tried, and anything still unverified is marked unknown rather than filled from a snippet.",
+      "expectations": [
+        "Logs a page that would not open with --status blocked before falling back",
+        "Tries the next rung of the page ladder after a block, and logs which one succeeded",
+        "Uses platforms.py where the answer is a record a platform holds rather than a page",
+        "Leaves a cell as [unknown] rather than filling it from a search snippet when no page could be opened",
+        "The receipt line reports the blocked count, so the reader can see what the run could not reach",
+        "Names in Limitations the specific sources that could not be opened, rather than hedging generally"
       ],
       "files": []
     }

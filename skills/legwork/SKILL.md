@@ -363,22 +363,34 @@ the strongest sub-floor signal, and a bibliography. No findings.
 
 An honest empty answer is a result. Hedged length is not.
 
-### Answer in the chat as well as in the file
+### Answer in the chat, in plain words
 
-**A file path is not an answer.** Once the run is gated, give the answer in the
-conversation too. The person asked a question; making them open a file to learn
-what you found is a worse experience than a plain reply, and they lose the
-thread of what they were doing to get it.
+**A file path is not an answer.** Once the run is gated, answer the question in
+the conversation too. The person asked something; making them open a file to
+learn what you found is worse than a plain reply, and they lose the thread of
+what they were doing to get it.
 
-What to say, after the gate passes and in this order:
+**Explain the research, do not paste it.** The chat answer is your own
+plain-English account of what the run found. Short sentences, ordinary words, no
+term the reader did not use first. Someone who never opens the file should still
+be able to act on what you said.
+
+After the gate passes, in this order:
 
 1. The receipt line, verbatim, so the weight of the work is visible first.
-2. **A brief in full.** It is 800 to 2,500 words by design - short enough to
-   read in the conversation, and splitting it between two places helps nobody.
-3. **A report in summary**: the Executive Summary, then every finding's heading
-   with its confidence band, then Limitations. Never the whole report - it has
-   no word target and can run to thousands of words.
-4. The path to the file, last, for whoever wants the full text and the log.
+2. **The answer in one or two sentences** - what the evidence says to do about
+   the decision that prompted the run.
+3. **Each finding in a sentence or two**, with its confidence band. Lead with
+   the one that most changes the answer. Say what it means, rather than
+   restating its heading. If there are more than about five, cover the ones that
+   move the decision and say how many others are in the file.
+4. **What would change the answer**, if a limitation or open question is load-bearing.
+5. The path to the file, last, for whoever wants the full text and the log.
+
+That is a handful of short paragraphs at every level. **Never paste the document
+into the conversation** - not a brief, not a report, not a section of one. The
+file carries the argument, the citations and the log; the chat carries what they
+mean. Length in the chat buries the answer instead of supporting it.
 
 Say it in your own reply, not by inviting them to read the file. If the run
 could not answer, say *that* in the chat, with the `Closest thing found:` line -

@@ -146,9 +146,10 @@ Outlook_Email_SaaS_Research_20260728/
 
 **Markdown only.** No HTML, no PDF.
 
-**And the answer comes back in the conversation**, not only as a path: the
-receipt line, a brief in full or a report's summary and finding headings with
-their confidence bands, then the file for the full text and the evidence log.
+**And the answer comes back in the conversation**, not only as a path - explained
+in plain words rather than pasted: the receipt line, the answer in a sentence or
+two, each finding with its confidence band, then the file for the full text and
+the evidence log. A handful of short paragraphs, whatever the level.
 
 The fetch log is one row per retrieval: URL, source kind, the search angle that surfaced it, the query that found it, how it was retrieved, the numeric tokens found on the page, and one verbatim sentence - the line that made the source worth citing.
 

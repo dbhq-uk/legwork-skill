@@ -1,4 +1,4 @@
-# Legwork eval run - 6 September 2026, second run
+# legwork eval run - 6 September 2026, second run
 
 Cases 5 and 6, skill arms only, Claude Sonnet. Skill at `feat/answer-in-chat`,
 which is `main` after the external-review fixes plus the rule that the answer is

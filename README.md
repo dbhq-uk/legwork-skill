@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="Legwork skill for Claude Code, by DBHQ" width="420">
+<img src="assets/logo.svg" alt="legwork skill for Claude Code, by DBHQ" width="420">
 
-# Legwork
+# legwork
 
 **Multi-source research that shows its working - every claim tied to a source you can check**
 
@@ -16,13 +16,13 @@ A free, open-source tool by [DBHQ](https://dbhq.uk)
 
 ---
 
-Research that settles a decision. Ask a real question, get a memo where every factual claim carries an inline `[N]`, every finding states how well it is supported, and a claim that cannot be supported does not ship. Legwork picks a level, announces it, and starts - no questionnaire before it will do anything.
+Research that settles a decision. Ask a real question, get a memo where every factual claim carries an inline `[N]`, every finding states how well it is supported, and a claim that cannot be supported does not ship. legwork picks a level, announces it, and starts - no questionnaire before it will do anything.
 
 ## What makes it different
 
-**A source is judged by the claim it backs, not by its domain.** A vendor's own pricing page is the best evidence available for what something costs and the worst evidence available for whether anyone likes it. Legwork scores fitness per claim kind rather than keeping a list of respectable websites, and recency decays at a rate set by the claim: a two-year-old price is worthless, a two-year-old filing is fine.
+**A source is judged by the claim it backs, not by its domain.** A vendor's own pricing page is the best evidence available for what something costs and the worst evidence available for whether anyone likes it. legwork scores fitness per claim kind rather than keeping a list of respectable websites, and recency decays at a rate set by the claim: a two-year-old price is worthless, a two-year-old filing is fine.
 
-**Three sources only count if they could have disagreed.** Pages on one vendor's domains are one voice. Syndicated copies of one wire story are one story. And because Legwork's own search fan-out inflates the number of sources behind a finding, corroboration is counted on the layer it does not amplify: independent groups reached from *different search angles*. Five sources from one query score one confirmation, however many publishers they span.
+**Three sources only count if they could have disagreed.** Pages on one vendor's domains are one voice. Syndicated copies of one wire story are one story. And because legwork's own search fan-out inflates the number of sources behind a finding, corroboration is counted on the layer it does not amplify: independent groups reached from *different search angles*. Five sources from one query score one confirmation, however many publishers they span.
 
 **It can tell you it could not answer.** If nothing clears the evidence floor, the run says so and names the closest thing it found, rather than producing four thousand hedged words. An honest empty answer is a result.
 
@@ -191,7 +191,7 @@ Each case runs twice - once with the skill and once without. The baseline arm is
 
 ## Known limitations
 
-- **Publish dates are often missing** from SERP results. Legwork reports an unknown date rather than assuming one, but the recency signal is weaker for those sources. Backfill from page meta tags where you have the page anyway.
+- **Publish dates are often missing** from SERP results. legwork reports an unknown date rather than assuming one, but the recency signal is weaker for those sources. Backfill from page meta tags where you have the page anyway.
 - **Source kinds are inferred conservatively** when you do not pass `--kind`: an unrecognised URL is logged as `unknown` and scored below commentary, because a confident wrong guess silently moves a source between tiers.
 - **The Reddit pipeline is slow** (10-60s typical, occasionally minutes) and billed per record. Prefer top-relevance threads.
 - **Trustpilot cannot be scraped** - the Unlocker zone blocks it and there is no pipeline equivalent. Use SERP snippets and quote only what the snippet shows.

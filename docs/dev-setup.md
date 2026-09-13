@@ -1,4 +1,4 @@
-# Developer setup - Legwork
+# Developer setup - legwork
 
 Set the skill up from source with a **live symlink install**, so your edits are active immediately in Claude Code (and Codex). End users don't need this - they install via the [DBHQ marketplace](../README.md#install).
 

@@ -1,12 +1,12 @@
 # Design notes
 
-Why Legwork is shaped the way it is. The previous design, for a version aimed at
+Why legwork is shaped the way it is. The previous design, for a version aimed at
 academic research, is archived at
 [`archive/2026-07-pre-redesign-notes.md`](archive/2026-07-pre-redesign-notes.md).
 
 ## The problem the redesign solved
 
-Legwork was built for academic research and used for decision research. Those are
+legwork was built for academic research and used for decision research. Those are
 not the same job, and the gap showed up in the output rather than in any test.
 
 Auditing a run of real research questions - market validation, build-or-buy,
@@ -56,7 +56,7 @@ pattern documented in [`mvanhorn/last30days-skill`](https://github.com/mvanhorn/
 (MIT). The generalised rule there: a gate requiring corroboration must measure it
 on a signal layer the system does not itself amplify.
 
-Legwork's Gather phase fans out across sub-questions *in order to* find more
+legwork's Gather phase fans out across sub-questions *in order to* find more
 sources per finding. So any count downstream of that fan-out is partly a measure
 of how hard we looked. A gate reading "this finding has five sources" is checking
 that retrieval works, not that the finding is corroborated.

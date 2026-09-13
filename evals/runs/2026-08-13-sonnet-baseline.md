@@ -1,4 +1,4 @@
-# Legwork eval run - 12 August 2026
+# legwork eval run - 12 August 2026
 
 First baseline. Writer model: Claude Sonnet, both arms. Skill at
 `dbhq-uk/legwork-skill@feat/enforce-and-measure`.
@@ -140,7 +140,7 @@ first-hand read. It also flagged that it could not confirm Revolut's current UK
 banking licence status.
 
 Note the ratio - **19 searches to 5 fetches**. Three of the pages that mattered
-most were blocked, and the baseline had no way through them. Legwork's Bright
+most were blocked, and the baseline had no way through them. legwork's Bright
 Data fallback exists for exactly this, so "gets further on blocked primary
 sources" is a discriminator this case should measure and does not currently
 mention.
@@ -174,7 +174,7 @@ never sees. Nothing about it is checkable, countable, or enforceable:
 - Case 1's baseline built three rows from snippets and disclosed it in a
   section. A reader of the table sees a requirement.
 
-Legwork's claim was never that it makes a model more honest. It is that it makes
+legwork's claim was never that it makes a model more honest. It is that it makes
 honesty **land in an artefact a machine can check** - a fetch log, a traceable
 figure, a confidence band, a gate that refuses. The baselines suggest that is
 the whole of the marginal value, and the eval set should be rewritten to measure
@@ -350,7 +350,7 @@ the right shape to watch.
 
 Four cases, eight arms, one writer model. Not a benchmark - a first baseline.
 
-**Legwork earns its place, and not for the reasons the eval set assumed.**
+**legwork earns its place, and not for the reasons the eval set assumed.**
 
 | Case | Discriminates? | What actually separates the arms |
 |---|---|---|
@@ -379,7 +379,7 @@ announcement did not fire in one of three runs. And the eval harness itself
 needs `docs/research/` copied into the output base so the refresh-in-place path
 is reachable.
 
-**Not yet done: the model sweep.** Every arm here is Sonnet. Legwork's own
+**Not yet done: the model sweep.** Every arm here is Sonnet. legwork's own
 model carve-out - cheap models for snippet gathering, the orchestrator's model
 for rebuilding an enumeration - is still borrowed from someone else's benchmark.
 Case 2 is the case that tests it and it has not been run on Haiku or Opus.

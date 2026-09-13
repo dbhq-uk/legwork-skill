@@ -8,7 +8,7 @@ response within 48 hours.
 
 ## What this skill does
 
-Legwork researches a question and produces a cited memo. Research means reading
+legwork researches a question and produces a cited memo. Research means reading
 the public web, so unlike the other skills in this collection it makes outbound
 requests by design.
 
@@ -54,7 +54,7 @@ skill uses the built-in tools alone.
 ### What leaves your machine
 
 Search queries and the URLs being fetched. The research question itself reaches
-the search provider as a query string. Do not run Legwork on a question whose
+the search provider as a query string. Do not run legwork on a question whose
 wording is itself confidential - the question is the thing most likely to leak.
 
 ### On disk

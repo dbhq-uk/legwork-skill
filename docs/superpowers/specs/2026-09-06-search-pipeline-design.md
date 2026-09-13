@@ -100,7 +100,7 @@ somebody has on disk.
 
 A search engine returns pages *about* a thing. A platform's own API returns
 the thing: the thread, the issue, the package record, the news item with its
-date. Legwork's own doctrine already says the complaints are primary evidence
+date. legwork's own doctrine already says the complaints are primary evidence
 of sentiment and the article about the complaints is not, and that
 enumerations must be rebuilt from the items. Platform-native retrieval is how
 that is done without paying, so it sits above paid SERP rather than below it.

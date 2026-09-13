@@ -4,7 +4,7 @@ Guidance for AI agents (and people) working in this repository.
 
 ## What this is
 
-**Legwork** - a decision-research skill for AI coding agents. It produces cited findings where every claim states how well it is supported, judges a source by whether it suits the claim it backs, and refuses to ship a finding it cannot support. It follows the [Agent Skills](https://agentskills.io) layout (`skills/<name>/SKILL.md`) and ships as a [Claude Code plugin](https://code.claude.com/docs/en/plugins).
+**legwork** - a decision-research skill for AI coding agents. It produces cited findings where every claim states how well it is supported, judges a source by whether it suits the claim it backs, and refuses to ship a finding it cannot support. It follows the [Agent Skills](https://agentskills.io) layout (`skills/<name>/SKILL.md`) and ships as a [Claude Code plugin](https://code.claude.com/docs/en/plugins).
 
 ## Layout
 

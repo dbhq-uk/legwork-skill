@@ -10,7 +10,7 @@
 
 ## Why this exists
 
-Legwork asserts that its methodology works. Until this directory existed, it had
+legwork asserts that its methodology works. Until this directory existed, it had
 no evidence for that claim about itself.
 
 The scripts have unit tests, and those tests prove the maths is right. They
@@ -39,7 +39,7 @@ source, a capability or an answer that legwork's instructions assert does not
 exist. A skill arm that beats a baseline arm on rigour while losing to it on
 facts is a skill that has taught the agent something false.
 
-Run both arms on every model the skill is expected to run on. Legwork's own
+Run both arms on every model the skill is expected to run on. legwork's own
 model carve-out - cheap models for snippet gathering, the orchestrator's model
 for rebuilding an enumeration - is currently borrowed from someone else's
 benchmark and has never been checked here. Case 2 is the one that tests it.

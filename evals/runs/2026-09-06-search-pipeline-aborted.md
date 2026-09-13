@@ -1,4 +1,4 @@
-# Legwork eval run - 6 September 2026 (aborted)
+# legwork eval run - 6 September 2026 (aborted)
 
 Cases 5 and 6, both arms, writer model Claude Sonnet. Skill at
 `dbhq-uk/legwork-skill@feat/search-pipeline`.

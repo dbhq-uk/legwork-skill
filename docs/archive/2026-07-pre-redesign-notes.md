@@ -1,4 +1,4 @@
-> **Superseded.** This records the design of Legwork *before* the July 2026
+> **Superseded.** This records the design of legwork *before* the July 2026
 > redesign, when it was still shaped for academic research. The scripts it
 > discusses (`validate_report.py`, `verify_citations.py`, `citation_manager.py`,
 > `evidence_store.py`, `extract_claims.py`, `verify_claim_support.py`,

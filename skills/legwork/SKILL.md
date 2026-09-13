@@ -3,7 +3,7 @@ name: legwork
 description: Use when the user needs research that settles a decision - market validation, build-or-buy, competitor and pricing scans, "is there demand for X", "where should we publish this", "what does the incumbent actually do". Produces a cited findings memo or report where every claim states how well it is supported. Triggers on "legwork", "deep research", "research report", "compare X vs Y", "should we build", "is there demand". Not for simple lookups, debugging, or anything one or two searches would answer.
 ---
 
-# Legwork
+# legwork
 
 ## What this is for
 

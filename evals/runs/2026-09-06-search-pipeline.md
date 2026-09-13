@@ -1,4 +1,4 @@
-# Legwork eval run - 6 September 2026
+# legwork eval run - 6 September 2026
 
 Cases 5 and 6, both arms, writer model Claude Sonnet. Skill at `main`,
 commit `2b737a2`, the first run after the search pipeline landed.

@@ -6,7 +6,6 @@ and the next session re-runs it. These tests pin the table's identity rules.
 
 from datetime import datetime, timezone
 
-import pytest
 
 import index
 

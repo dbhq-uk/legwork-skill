@@ -411,7 +411,7 @@ _OPENER = build_opener(_ValidatingRedirectHandler)
 # rebound rather than called directly so there is exactly one seam: production
 # gets redirect validation, and a test patching `fetch.urlopen` still replaces
 # the whole transport.
-urlopen = _OPENER.open
+urlopen = _OPENER.open  # noqa: F811 - deliberate rebind, see above
 
 
 def fetch(url, timeout=DEFAULT_TIMEOUT):

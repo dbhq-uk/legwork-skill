@@ -9,7 +9,6 @@ Neither failure was in the checks. Both were in what the checks were allowed to
 see, and how loudly they were allowed to complain.
 """
 
-import os
 
 import pytest
 

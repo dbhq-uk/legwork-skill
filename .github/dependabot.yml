@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # GitHub Actions only. There is deliberately no pip ecosystem here: legwork is
+  # instructions and Python standard library, with the agent's own tools doing
+  # the retrieval, so there is nothing pinned to fall behind. Nothing to keep up
+  # to date is the point, not an omission.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"

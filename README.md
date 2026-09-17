@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="legwork skill for Claude Code, by DBHQ" width="420">
+<img src="assets/logo.svg" alt="legwork skill for Claude Code, by DBHQ" width="560">
 
 # legwork
 
@@ -10,7 +10,7 @@
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Plugin-blueviolet)](https://code.claude.com/docs/en/plugins)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20WSL-lightgrey)]()
 
-A free, open-source tool by [DBHQ](https://dbhq.uk)
+A free, open-source tool by [DBHQ](https://dbhq.uk) - documented at [skills.dbhq.uk](https://skills.dbhq.uk/legwork/)
 
 </div>
 
@@ -49,30 +49,23 @@ Research that settles a decision. Ask a real question, get a memo where every fa
 npx skills add dbhq-uk/legwork-skill
 ```
 
-The [skills.sh](https://skills.sh) CLI installs into whichever agent directories it finds, so this works outside Claude Code and Codex too.
+The [skills.sh](https://skills.sh) CLI installs into whichever agent directories
+it finds, so this works outside Claude Code and Codex too.
 
 ### Local install (Claude Code or Codex)
 
 ```bash
 git clone https://github.com/dbhq-uk/legwork-skill.git
 cd legwork-skill
-./install.sh              # Claude Code: symlinks into ~/.claude/skills (edits are live)
-./install.sh --with-hook  # ...and gate every report automatically (see below)
-./install-codex.sh        # Codex: installs into ~/.codex/skills
+./install.sh          # Claude Code: symlinks into ~/.claude/skills (edits are live)
+./install-codex.sh    # Codex: installs into ~/.codex/skills
 ```
 
-**`--with-hook` is the one worth taking.** It registers a `Stop` hook that runs the gate on any legwork report written during a session and refuses to end the turn on one that fails. Without it the gate fires only when the agent remembers to run it, at the end of a long run - and measured against real runs, that is often enough not to happen. It edits `~/.claude/settings.json`, backing it up first, which is why it is opt-in rather than the default.
-
-**No virtualenv, no packages.** Every script is Python standard library only, on 3.9 or newer. That is the whole dependency list.
-
-Optional, for the fallback provider:
-
-```bash
-npm install -g @brightdata/cli   # or: curl -fsSL https://cli.brightdata.com/install.sh | sh
-brightdata login                 # or: export BRIGHTDATA_API_KEY=...
-```
-
-Setup succeeds without it - you simply lose fallback scraping.
+[`install.sh`](install.sh) and [`install-codex.sh`](install-codex.sh) are the
+same install two ways: Claude Code substitutes `${CLAUDE_SKILL_DIR}`, so the
+whole skill directory is symlinked untouched, while Codex does not, so its
+`SKILL.md` is rewritten at install time. Re-run the Codex one after editing
+`SKILL.md`.
 
 ## Usage
 
@@ -199,6 +192,29 @@ Each case runs twice - once with the skill and once without. The baseline arm is
 ## Development
 
 See [`docs/dev-setup.md`](docs/dev-setup.md). Design rationale is in [`docs/design-notes.md`](docs/design-notes.md).
+
+## Also from DBHQ
+
+Fifteen free agent skills, all of them installable from the same marketplace and
+all documented at **[skills.dbhq.uk](https://skills.dbhq.uk)**.
+
+| Skill | What it does |
+|---|---|
+| [outlook](https://skills.dbhq.uk/outlook/) | Microsoft 365 mail and calendar, from the terminal |
+| [trello](https://skills.dbhq.uk/trello/) | Your boards, run from your agent |
+| [dovetail](https://skills.dbhq.uk/dovetail/) | Checks whether your repository still agrees with itself |
+| [verve](https://skills.dbhq.uk/verve/) | Strips AI tells from prose and puts a voice back |
+| [vela](https://skills.dbhq.uk/vela/) | Compiler-exact code search for .NET |
+| [garmin](https://skills.dbhq.uk/garmin/) | Your Garmin data, answered in the terminal |
+| [imager](https://skills.dbhq.uk/imager/) | Images from GPT Image 2, costed before it spends |
+| [gitview](https://skills.dbhq.uk/gitview/) | Which branches are finished, and safe to delete |
+| [atlassian](https://skills.dbhq.uk/atlassian/) | Jira issues and Confluence pages |
+| [pennyblack](https://skills.dbhq.uk/pennyblack/) | A physical letter, posted from the terminal |
+| [buildwork](https://skills.dbhq.uk/buildwork/) | Your open issues, run as parallel agents |
+| [deskwork](https://skills.dbhq.uk/deskwork/) | What an agent noticed, tracked as real work |
+| [groupwork](https://skills.dbhq.uk/groupwork/) | A second agent on the work, adversary or partner |
+
+Plus [heliograph](https://skills.dbhq.uk/heliograph/), for a machine you cannot log into.
 
 ## License
 

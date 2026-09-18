@@ -67,6 +67,14 @@ whole skill directory is symlinked untouched, while Codex does not, so its
 `SKILL.md` is rewritten at install time. Re-run the Codex one after editing
 `SKILL.md`.
 
+## Requirements
+
+**Python 3.9 or newer**, standard library only. CI runs the suite across
+3.9 to 3.13.
+
+**The Bright Data CLI is optional.** It is the retrieval fallback for pages
+that block a plain fetch; setup succeeds without it and says so.
+
 ## Usage
 
 ```
@@ -216,6 +224,6 @@ all documented at **[skills.dbhq.uk](https://skills.dbhq.uk)**.
 
 Plus [heliograph](https://skills.dbhq.uk/heliograph/), for a machine you cannot log into.
 
-## License
+## Licence
 
 [MIT](LICENSE) © 2026 DBHQ Consulting Ltd

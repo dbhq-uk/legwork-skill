@@ -204,7 +204,7 @@ all documented at **[skills.dbhq.uk](https://skills.dbhq.uk)**.
 | [trello](https://skills.dbhq.uk/trello/) | Your boards, run from your agent |
 | [dovetail](https://skills.dbhq.uk/dovetail/) | Checks whether your repository still agrees with itself |
 | [verve](https://skills.dbhq.uk/verve/) | Strips AI tells from prose and puts a voice back |
-| [vela](https://skills.dbhq.uk/vela/) | Compiler-exact code search for .NET |
+| [vela](https://skills.dbhq.uk/vela/) | Compiler-exact code search, in any language you index |
 | [garmin](https://skills.dbhq.uk/garmin/) | Your Garmin data, answered in the terminal |
 | [imager](https://skills.dbhq.uk/imager/) | Images from GPT Image 2, costed before it spends |
 | [gitview](https://skills.dbhq.uk/gitview/) | Which branches are finished, and safe to delete |

@@ -154,7 +154,9 @@ the evidence log. A handful of short paragraphs, whatever the level.
 
 The fetch log is one row per retrieval: URL, source kind, the search angle that surfaced it, the query that found it, how it was retrieved, the numeric tokens found on the page, and one verbatim sentence - the line that made the source worth citing.
 
-That last field earns its place twice. Around **half of real findings carry no figure at all**, so without a quote they would be backed by nothing but proof that somebody opened the page; the gate now fails a finding that has neither a traceable figure nor a quote on any source it cites. And it is the only part of the evidence that survives the page changing or going dead six months later.
+That last field earns its place twice. Around **half of real findings carry no figure at all**, so without a quote they would be backed by nothing but proof that somebody opened the page. The gate now fails a finding that has neither a traceable figure nor a quote on any source it cites.
+
+It is also the only part of the evidence that survives the page changing or going dead six months later.
 
 ## Scripts
 

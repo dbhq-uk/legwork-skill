@@ -235,6 +235,31 @@ def test_a_403_exits_3_and_names_the_next_rung(monkeypatch, capsys, tmp_path):
     assert 'scrape' in payload['next']
 
 
+def test_a_block_names_the_republication_rung_not_only_harder_transports(
+        monkeypatch, capsys, tmp_path):
+    """A publisher refusing by policy refuses every transport.
+
+    `fetch.py`, WebFetch and `-m scrape` all ask the same host for the same URL,
+    so a ladder made only of those three can only fail against a policy block.
+    The last rung has to change the address: find the same document republished
+    somewhere else. Measured on 2026-09-22 against two Royal Mail price-guide
+    PDFs - 403 on every transport, while a third party's copy of the same guide
+    opened on the free rung with 400 numeric tokens in it.
+
+    Pinned because the guidance is a string nothing else reads, which is exactly
+    the kind of thing that rots without being noticed.
+    """
+    code, captured = _run_main(
+        monkeypatch, capsys,
+        ['https://acme.example/price-guide.pdf', '--out', str(tmp_path / 'p.txt')],
+        _Response(b'<html><body>Forbidden</body></html>', {'Content-Type': 'text/html'}, status=403))
+    payload = json.loads(captured.err)
+    assert code == 3
+    assert payload['verdict'] == 'blocked'
+    assert 'republication' in payload['next']
+    assert 'another address' in payload['next']
+
+
 def test_a_client_rendered_shell_exits_3_and_points_at_render(monkeypatch, capsys, tmp_path):
     code, captured = _run_main(
         monkeypatch, capsys,

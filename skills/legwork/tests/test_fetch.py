@@ -251,13 +251,36 @@ def test_a_block_names_the_republication_rung_not_only_harder_transports(
     """
     code, captured = _run_main(
         monkeypatch, capsys,
-        ['https://acme.example/price-guide.pdf', '--out', str(tmp_path / 'p.txt')],
+        ['https://acme.example/price-guide', '--out', str(tmp_path / 'p.txt')],
         _Response(b'<html><body>Forbidden</body></html>', {'Content-Type': 'text/html'}, status=403))
     payload = json.loads(captured.err)
     assert code == 3
     assert payload['verdict'] == 'blocked'
     assert 'republication' in payload['next']
     assert 'another address' in payload['next']
+
+
+def test_a_blocked_pdf_is_blocked_rather_than_unsupported(monkeypatch, capsys, tmp_path):
+    """The refusal is decided before the body is parsed.
+
+    A 403 on a `.pdf` used to reach the PDF branch first and exit 4 - 'content
+    type this cannot read, use WebFetch' - on any machine without `pdftotext` on
+    PATH. Wrong twice: the document was refused rather than unreadable, and
+    WebFetch will be refused too. It passed on a developer machine and failed in
+    CI, which is the only reason it was found.
+
+    Royal Mail's price guides are this exact case, and the 2026-09-17 run that
+    hit them is what the republication rung above came out of.
+    """
+    monkeypatch.setattr(fetch.shutil, 'which', lambda _name: None)
+    code, captured = _run_main(
+        monkeypatch, capsys,
+        ['https://acme.example/price-guide.pdf', '--out', str(tmp_path / 'p.txt')],
+        _Response(b'<html><body>Forbidden</body></html>', {'Content-Type': 'text/html'}, status=403))
+    payload = json.loads(captured.err)
+    assert code == 3
+    assert payload['verdict'] == 'blocked'
+    assert 'republication' in payload['next']
 
 
 def test_a_client_rendered_shell_exits_3_and_points_at_render(monkeypatch, capsys, tmp_path):

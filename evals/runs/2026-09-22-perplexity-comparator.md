@@ -109,7 +109,22 @@ republication is logged and cited as the host that served it, never as the
 original publisher, its effective date is checked against the original, and
 Limitations still records that the original refused.
 
-**A second, smaller miss, and the comparator found it by accident.** Postworks
+**A second defect, found while fixing the first.** The test pinning the new rung
+used a `.pdf` URL. It passed here and failed on all five CI Pythons. The cause is
+a real bug rather than a bad fixture: `fetch.py` dispatched on content type
+*before* it looked at the HTTP status, so a 403 on a `.pdf` reached the PDF
+branch, found no `pdftotext` on PATH, and exited 4 - *"content type this cannot
+read; use WebFetch"*. Wrong twice over. The document was refused, not unreadable,
+and WebFetch would be refused too. It only passed locally because this machine
+has `pdftotext` installed.
+
+Royal Mail's price guides are precisely this case, so on a clean machine the
+run that started all of this would have been told the wrong rung about the exact
+document that mattered. The refusal is now decided before the body is parsed.
+Worth recording how it surfaced: the comparison found the missing rung, and CI
+found the bug underneath it. Neither would have found the other.
+
+**A third, smaller miss, and the comparator found it by accident.** Postworks
 sells ClearSend - *"certified, time-stamped proof of postage"* through the Royal
 Mail network, via its API, at no extra cost. legwork's Finding 5 had reasoned its
 way to exactly this: under CPR 6.26 what you must certify is the date of posting,

@@ -547,6 +547,28 @@ def main():
         _fail({'url': args.url, 'verdict': 'error', 'reason': str(exc)}, 1)
 
     content_type = (headers.get('Content-Type') or '').split(';')[0].strip().lower()
+
+    # A refusal is decided before the body is parsed, because a refused request
+    # has no body worth parsing and the parser can fail for its own unrelated
+    # reasons. A 403 on a .pdf used to reach the PDF branch first and exit 4,
+    # 'content type this cannot read - use WebFetch', on any machine without
+    # pdftotext on PATH. That is the wrong rung twice over: the page was not
+    # unreadable, it was refused, and WebFetch will be refused too. Royal Mail's
+    # price guides are exactly this case.
+    early, early_reason = classify('', status)
+    if early in ('blocked', 'missing'):
+        payload = {'url': args.url, 'final_url': final_url, 'http_status': status,
+                   'content_type': content_type, 'verdict': early, 'reason': early_reason,
+                   'chars': 0, 'numbers': 0}
+        payload['next'] = (
+            'WebFetch, then bd_search.py -m scrape, then search the document title '
+            'for a republication at another address' if early == 'blocked'
+            else 'check the URL, then wayback via platforms.py')
+        out_path = args.out or default_out_path(args.url)
+        write_outputs(out_path, '', payload)
+        payload['text_file'] = out_path
+        _fail(payload, 3)
+
     markup = ''
     if content_type == 'application/pdf' or args.url.lower().endswith('.pdf'):
         text = _pdf_to_text(body, args.url)

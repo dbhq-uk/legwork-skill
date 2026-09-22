@@ -103,7 +103,24 @@ Work sub-question by sub-question. For each one:
    `log --from-fetch` records the refusal with the right status, and then you
    try the next rung. The receipt counts what refused you and what nothing ever
    reached.
-6. **Log every retrieval** with `sources.py log`: the sub-question as `--angle`,
+6. **When every transport is refused, change the address rather than the
+   transport.** `fetch.py`, WebFetch and `-m scrape` all ask the same host for
+   the same URL, so a publisher refusing by policy refuses all three. Search the
+   document's own title, with `filetype:pdf` where it is a PDF, and open a
+   republication on another host - a trade body, a supplier, a consultancy
+   reposting a price list or a standard.
+
+   The copy is a *different party* for independence purposes and must be logged
+   and cited as the host that served it, never as the original publisher. Check
+   it carries the original's effective date before using a figure from it, and
+   say in Limitations that the original refused you.
+
+   This rung was added on 2026-09-22 after a run recorded "403 to every route
+   tried" against two Royal Mail price-guide PDFs and carried an unverified
+   price into its Limitations. Both still return 403. A third party's copy of
+   the same guide was rank 1 on a one-line title search and opened on the free
+   rung with 400 numeric tokens in it.
+7. **Log every retrieval** with `sources.py log`: the sub-question as `--angle`,
    the query as `--query`, the right `--kind`, and - for anything you intend to
    cite - the sentence that made it worth citing as `--quote`.
 

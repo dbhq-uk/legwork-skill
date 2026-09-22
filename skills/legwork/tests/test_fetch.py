@@ -235,6 +235,54 @@ def test_a_403_exits_3_and_names_the_next_rung(monkeypatch, capsys, tmp_path):
     assert 'scrape' in payload['next']
 
 
+def test_a_block_names_the_republication_rung_not_only_harder_transports(
+        monkeypatch, capsys, tmp_path):
+    """A publisher refusing by policy refuses every transport.
+
+    `fetch.py`, WebFetch and `-m scrape` all ask the same host for the same URL,
+    so a ladder made only of those three can only fail against a policy block.
+    The last rung has to change the address: find the same document republished
+    somewhere else. Measured on 2026-09-22 against two Royal Mail price-guide
+    PDFs - 403 on every transport, while a third party's copy of the same guide
+    opened on the free rung with 400 numeric tokens in it.
+
+    Pinned because the guidance is a string nothing else reads, which is exactly
+    the kind of thing that rots without being noticed.
+    """
+    code, captured = _run_main(
+        monkeypatch, capsys,
+        ['https://acme.example/price-guide', '--out', str(tmp_path / 'p.txt')],
+        _Response(b'<html><body>Forbidden</body></html>', {'Content-Type': 'text/html'}, status=403))
+    payload = json.loads(captured.err)
+    assert code == 3
+    assert payload['verdict'] == 'blocked'
+    assert 'republication' in payload['next']
+    assert 'another address' in payload['next']
+
+
+def test_a_blocked_pdf_is_blocked_rather_than_unsupported(monkeypatch, capsys, tmp_path):
+    """The refusal is decided before the body is parsed.
+
+    A 403 on a `.pdf` used to reach the PDF branch first and exit 4 - 'content
+    type this cannot read, use WebFetch' - on any machine without `pdftotext` on
+    PATH. Wrong twice: the document was refused rather than unreadable, and
+    WebFetch will be refused too. It passed on a developer machine and failed in
+    CI, which is the only reason it was found.
+
+    Royal Mail's price guides are this exact case, and the 2026-09-17 run that
+    hit them is what the republication rung above came out of.
+    """
+    monkeypatch.setattr(fetch.shutil, 'which', lambda _name: None)
+    code, captured = _run_main(
+        monkeypatch, capsys,
+        ['https://acme.example/price-guide.pdf', '--out', str(tmp_path / 'p.txt')],
+        _Response(b'<html><body>Forbidden</body></html>', {'Content-Type': 'text/html'}, status=403))
+    payload = json.loads(captured.err)
+    assert code == 3
+    assert payload['verdict'] == 'blocked'
+    assert 'republication' in payload['next']
+
+
 def test_a_client_rendered_shell_exits_3_and_points_at_render(monkeypatch, capsys, tmp_path):
     code, captured = _run_main(
         monkeypatch, capsys,

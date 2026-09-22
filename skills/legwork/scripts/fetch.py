@@ -17,9 +17,19 @@ Exit codes tell the caller which rung to try next:
     0  text written; log it
     1  network or parse error            -> WebFetch
     3  blocked, missing, or a shell     -> WebFetch, then bd_search.py -m scrape,
-                                           then -m render for a client-rendered page
+                                           then -m render for a client-rendered page,
+                                           then search the document's own title for
+                                           a republication at another address
     4  content type this cannot read    -> WebFetch
     5  address refused by policy        -> nothing; do not fetch it by any route
+
+The last rung is the only one that changes the *address* rather than the
+transport. A publisher that refuses by policy refuses every transport, so a
+harder fetch of the same URL cannot succeed; a copy of the same document on
+another host often opens on the free rung. Measured on 2026-09-22: two Royal
+Mail price-guide PDFs returned 403 here to every route, while a third party's
+republication of the same guide returned 200 with 64,571 characters and 400
+numeric tokens.
 
 Stdlib only. Runs on any python3 >= 3.9. No cookies are sent or stored, no
 credentials are read, and no JavaScript is executed. robots.txt is not
@@ -537,6 +547,28 @@ def main():
         _fail({'url': args.url, 'verdict': 'error', 'reason': str(exc)}, 1)
 
     content_type = (headers.get('Content-Type') or '').split(';')[0].strip().lower()
+
+    # A refusal is decided before the body is parsed, because a refused request
+    # has no body worth parsing and the parser can fail for its own unrelated
+    # reasons. A 403 on a .pdf used to reach the PDF branch first and exit 4,
+    # 'content type this cannot read - use WebFetch', on any machine without
+    # pdftotext on PATH. That is the wrong rung twice over: the page was not
+    # unreadable, it was refused, and WebFetch will be refused too. Royal Mail's
+    # price guides are exactly this case.
+    early, early_reason = classify('', status)
+    if early in ('blocked', 'missing'):
+        payload = {'url': args.url, 'final_url': final_url, 'http_status': status,
+                   'content_type': content_type, 'verdict': early, 'reason': early_reason,
+                   'chars': 0, 'numbers': 0}
+        payload['next'] = (
+            'WebFetch, then bd_search.py -m scrape, then search the document title '
+            'for a republication at another address' if early == 'blocked'
+            else 'check the URL, then wayback via platforms.py')
+        out_path = args.out or default_out_path(args.url)
+        write_outputs(out_path, '', payload)
+        payload['text_file'] = out_path
+        _fail(payload, 3)
+
     markup = ''
     if content_type == 'application/pdf' or args.url.lower().endswith('.pdf'):
         text = _pdf_to_text(body, args.url)
@@ -573,7 +605,9 @@ def main():
     }
 
     if verdict != 'ok':
-        payload['next'] = ('WebFetch, then bd_search.py -m scrape' if verdict == 'blocked'
+        payload['next'] = ('WebFetch, then bd_search.py -m scrape, then search the '
+                           'document title for a republication at another address'
+                           if verdict == 'blocked'
                            else 'WebFetch, then bd_search.py -m render')
         # The sidecar is written for a failure too. The skill's own instruction
         # is to log the failed attempt before falling back, and that is done

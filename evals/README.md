@@ -109,6 +109,7 @@ and every other case's result is uninterpretable if it does not.
 | [2026-09-06 (aborted)](runs/2026-09-06-search-pipeline-aborted.md) | Sonnet, both arms | Killed by a rate limit; nothing scored. Kept because one partial log raised the `fetch.py` adherence question the completed run then answered |
 | [2026-09-06](runs/2026-09-06-search-pipeline.md) | Sonnet, both arms | Cases 5 and 6 both pass and both discriminate, on reach rather than honesty. Case 6: baseline opened 1 page of 4 attempts, skill opened 33 of 40. The paid rungs were never climbed - that is the run's finding |
 | [2026-09-06 (second)](runs/2026-09-06-after-review.md) | Sonnet, skill arms | Re-run after the external-review fixes. Paid rungs climbed this time; quote verification caught a false quote on a real run; found that `-m render` was returning the CLI's own help text as the page, which its unit test could not see |
+| [2026-09-22](runs/2026-09-22-perplexity-comparator.md) | A real legwork report against `perplexity/sonar-deep-research` | Third arm, run once. The paid model missed the answer entirely, recommended a route that cannot do what was asked, and priced its fallback off an adjacent product - on 3.6x the length and 27% of the sources. It also exposed a real defect: the blocked-source ladder escalated transport and never source, so a document behind a policy 403 was recorded as unreachable while a copy of it opened on the free rung |
 
 ### What the first run changed
 

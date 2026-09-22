@@ -2,7 +2,7 @@
 
 **Question run:** which UK API posts a physical letter as Royal Mail Signed For and hands back the tracking number.
 **Arms:** legwork's real run of 2026-09-17, against `perplexity/sonar-deep-research` via OpenRouter, given the same question and nothing else.
-**Cost of the comparator arm:** $0.95, 7.1 minutes, 18,182 completion tokens.
+**Cost of the comparator arm:** $1.80 over two calls - once at default parameters, once at high reasoning effort and high search context. Both missed the answer. See "The run was repeated at full strength" below.
 
 ## Why this run exists
 
@@ -149,9 +149,65 @@ that moves with Perplexity's retrieval rather than with legwork's methodology,
 and the README is explicit that a measurement habit which stops discriminating is
 worse than none.
 
+## The run was repeated at full strength, because the first one was not
+
+The first call passed only `model` and `messages`. `sonar-deep-research` also
+accepts `reasoning` effort and `web_search_options.search_context_size`, and both
+default to medium. On a comparison whose headline number is *coverage* - 19
+sources against legwork's 70 - those are the two settings most likely to move the
+result, so the first arm could not carry the claim on its own.
+
+Repeated the same day with `reasoning: {effort: high}` and
+`web_search_options: {search_context_size: high}`. 458.5s, $0.85, 9,840 words, 19
+citations.
+
+**The settings changed what it read and not what it concluded.** Only **2 of 19**
+sources are shared with the first run; the other 17 are different pages. Same
+count, near-disjoint sets, same answer.
+
+| | first run (defaults) | high effort, high search context |
+|---|---|---|
+| Sources | 19 | 19, of which 2 shared |
+| Words | 12,652 | 9,840 |
+| Found Intelliprint | No | **No** |
+| Found Docsaway, PC2Paper, PostGrid, GOV.UK Notify | No | **No** |
+| Primary recommendation | Click & Drop / ShipEngine | **Royal Mail Pro Shipping / ShipEngine** |
+| Answered the price question | Yes, wrongly | **No** |
+
+It corrected one of its own errors: Postworks is now ruled out properly -
+*"does not advertise Signed For or Recorded Delivery in its public marketing nor
+document an API that would return Royal Mail tracking numbers"* - where the
+first run had recommended it on a misread price.
+
+It also got worse on the half of the brief that asked for prices, and says so
+plainly: *"the publicly accessible material reviewed provides limited direct
+pricing information."* The first run gave figures that were wrong; this one gives
+none. Neither delivers the rate card legwork published from a vendor's own page.
+
+And it repeats the category error. Royal Mail's Pro Shipping API and ShipEngine
+buy Signed For postage and produce a label for an item **you** print and hand
+over. The brief asked for an API that posts a letter. Two runs, two settings,
+near-disjoint evidence, the same wrong shape of answer - which is the useful
+result here, because it says the miss is structural rather than a sampling
+accident.
+
+**One thing not proven.** `reasoning_tokens` came back 0 and the `reasoning`
+field empty on both runs, despite `include_reasoning: true` on the second, so
+there is no direct evidence the effort setting took effect. The near-total change
+of sources is evidence the search-context setting did. Recorded rather than
+argued away.
+
+**And one practical note for anyone repeating this:** the high-effort call
+exceeds OpenRouter's 300-second non-streaming timeout and returns 504. It has to
+be run with `stream: true`.
+
 ## Reproducing
 
-The comparator arm was a single OpenRouter call, `perplexity/sonar-deep-research`,
-default parameters, one user message carrying the brief and no other context. The
-brief withheld legwork's conclusion, its provider list and its findings - the arm
-had to find Intelliprint on its own, and did not.
+Two OpenRouter calls to `perplexity/sonar-deep-research`, one user message
+carrying the brief and no other context: the first at default parameters, the
+second at high reasoning effort and high search context, streamed. The brief
+withheld legwork's conclusion, its provider list and its findings - both arms had
+to find Intelliprint on their own, and neither did.
+
+Generation ids `gen-1790068776-7sGGiG1YOuDML7DqEDKS` and
+`gen-1790078320-rBojmpk3GRf4cDPOUCOQ`. $1.80 the pair.

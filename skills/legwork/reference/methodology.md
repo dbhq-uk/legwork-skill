@@ -221,6 +221,16 @@ When every finding falls below the floor, name the closest signal in the
 could-not-answer shape. It tells the reader the search actually ran, and it
 usually points at the narrower question that would work.
 
+The harder case is a question that cannot be answered as asked while the
+questions around it can. "How many practices bought this, and what did they
+pay" may have no answer when "what does it cost" and "who sells it to whom" do.
+The pull is to write the neighbouring findings as the answer, and the reader
+then has to dig the non-answer out from under them. That is what the partial
+shape in `SKILL.md` step 5 is for. Measured on 2026-09-24: with no partial
+shape, both skill arms on eval case 4 said the number did not exist in their
+first line and then wrote over two thousand words of neighbouring findings,
+two of them banded Strong.
+
 ### Credit
 
 The failure looks harmless: "Acme's 2026 market review reports that the segment

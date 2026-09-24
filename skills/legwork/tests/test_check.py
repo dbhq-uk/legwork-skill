@@ -150,6 +150,83 @@ def test_could_not_answer_cannot_also_ship_findings(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# The partial answer: the question as asked has no answer, a neighbouring one does
+# ---------------------------------------------------------------------------
+
+def test_a_partial_answer_is_a_valid_outcome():
+    problems, summary = run('partial_answer.md', level='deep')
+    assert problems.errors == [], problems.errors
+    assert summary['outcome'] == 'partial-answer'
+
+
+def test_a_partial_answer_is_gated_whatever_format_it_is_called_with():
+    for fmt in ('report', 'brief'):
+        problems, _ = run('partial_answer.md', level='deep', fmt=fmt)
+        assert problems.errors == [], (fmt, problems.errors)
+
+
+def test_partial_answer_findings_get_the_full_evidence_check(tmp_path):
+    """The shape must not become a way round the gate: its findings are findings."""
+    shutil.copy(fixture('partial_answer.tsv'), tmp_path / 'unfetched.tsv')
+    source = open(fixture('partial_answer.md'), encoding='utf-8').read()
+    target = tmp_path / 'unfetched.md'
+    target.write_text(source.replace('https://registry.example/add', 'https://never-fetched.example/add'),
+                      encoding='utf-8')
+    problems, _ = check.run(str(target), str(tmp_path / 'unfetched.tsv'), 'report', 'deep')
+    assert any('never fetched' in error or 'nobody opened' in error for error in problems.errors), \
+        messages(problems)
+
+
+def test_partial_answer_must_still_name_the_closest_thing_found(tmp_path):
+    source = open(fixture('partial_answer.md'), encoding='utf-8').read()
+    target = tmp_path / 'nameless.md'
+    target.write_text(source.replace('Closest thing found:', 'Nearby:'), encoding='utf-8')
+    shutil.copy(fixture('partial_answer.tsv'), tmp_path / 'nameless.tsv')
+    problems, _ = check.run(str(target), str(tmp_path / 'nameless.tsv'), 'report', 'deep')
+    assert any('closest' in error.lower() for error in problems.errors)
+
+
+def test_a_finding_outside_what_can_be_said_instead_fails(tmp_path):
+    """A finding above the heading reads as an answer to the question that has none."""
+    source = open(fixture('partial_answer.md'), encoding='utf-8').read()
+    moved = source.replace(
+        '## What can be said instead\n',
+        '### Finding 3: A finding presented as the answer\n\n'
+        '**Confidence: Weak** - one page.\n\nThe registry lists 50 host agents [2].\n\n'
+        '## What can be said instead\n')
+    target = tmp_path / 'misplaced.md'
+    target.write_text(moved, encoding='utf-8')
+    shutil.copy(fixture('partial_answer.tsv'), tmp_path / 'misplaced.tsv')
+    problems, _ = check.run(str(target), str(tmp_path / 'misplaced.tsv'), 'report', 'deep')
+    assert any('What can be said instead' in error for error in problems.errors), messages(problems)
+
+
+def test_could_not_answer_must_come_before_what_can_be_said_instead(tmp_path):
+    source = open(fixture('partial_answer.md'), encoding='utf-8').read()
+    head, rest = source.split('## Could not answer', 1)
+    cna, instead = rest.split('## What can be said instead', 1)
+    instead_body, tail = instead.split('## Limitations', 1)
+    swapped = (head + '## What can be said instead' + instead_body
+               + '## Could not answer' + cna + '## Limitations' + tail)
+    target = tmp_path / 'swapped.md'
+    target.write_text(swapped, encoding='utf-8')
+    shutil.copy(fixture('partial_answer.tsv'), tmp_path / 'swapped.tsv')
+    problems, _ = check.run(str(target), str(tmp_path / 'swapped.tsv'), 'report', 'deep')
+    assert any('must come first' in error for error in problems.errors), messages(problems)
+
+
+def test_a_partial_answer_without_findings_is_told_to_use_the_plain_shape(tmp_path):
+    source = open(fixture('partial_answer.md'), encoding='utf-8').read()
+    start = source.index('### Finding 1')
+    end = source.index('## Limitations')
+    target = tmp_path / 'empty.md'
+    target.write_text(source[:start] + source[end:], encoding='utf-8')
+    shutil.copy(fixture('partial_answer.tsv'), tmp_path / 'empty.tsv')
+    problems, _ = check.run(str(target), str(tmp_path / 'empty.tsv'), 'report', 'deep')
+    assert any('plain "could not answer" shape' in error for error in problems.errors), messages(problems)
+
+
+# ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
 

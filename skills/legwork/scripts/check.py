@@ -85,11 +85,20 @@ REQUIRED_SECTIONS = {
     'report': ('Executive Summary', 'Introduction', 'Findings', 'Synthesis',
                'Limitations', 'Recommendations', 'Bibliography'),
     'brief': ('Findings', 'Limitations', 'Bibliography'),
+    'partial': ('Could not answer', 'What can be said instead', 'Limitations', 'Bibliography'),
 }
 
 # The honest-empty outcome is a different document shape, not a failed report.
 COULD_NOT_ANSWER_RE = re.compile(r'^##\s+Could not answer\b', re.M | re.I)
 CLOSEST_RE = re.compile(r'^\s*\*{0,2}Closest\b', re.M | re.I)
+
+# The partial answer: the question as asked has no answer, and a neighbouring
+# one does. Measured on 2026-09-24 (eval case 4): with only the empty shape
+# available, both skill arms answered the neighbouring questions as findings and
+# buried the non-answer under two thousand words. This heading is where those
+# findings go, so a reader meets the non-answer first and cannot mistake what
+# follows for it. Its findings are gated exactly like a report's.
+INSTEAD_RE = re.compile(r'^##\s+What can be said instead\b', re.M | re.I)
 
 RECEIPT_RE = re.compile(r'^\s*\*(quick|standard|deep)\b[^*]*\*\s*$', re.M | re.I)
 FINDING_RE = re.compile(r'^#{2,3}\s+Finding\s+(\d+)\s*[:.]\s*(.+)$', re.M)
@@ -525,8 +534,26 @@ def check_could_not_answer(content, problems):
     if not CLOSEST_RE.search(content):
         problems.structural(
             'a "could not answer" report must name the closest thing found, on a line starting "Closest"')
-    if FINDING_RE.search(content):
-        problems.structural('a "could not answer" report must not also ship findings')
+    instead = INSTEAD_RE.search(content)
+    if not instead:
+        if FINDING_RE.search(content):
+            problems.structural(
+                'a "could not answer" report must not also ship findings - findings that answer '
+                'a neighbouring question go under "## What can be said instead"')
+        return
+    if instead.start() < COULD_NOT_ANSWER_RE.search(content).start():
+        problems.structural(
+            '"## Could not answer" must come first, before "## What can be said instead", '
+            'so the reader meets the non-answer before anything that could be mistaken for one')
+    if not FINDING_RE.search(content, instead.end()):
+        problems.structural(
+            '"## What can be said instead" carries no findings - if nothing clears the floor, '
+            'drop the heading and use the plain "could not answer" shape')
+    misplaced = [m.group(1) for m in FINDING_RE.finditer(content) if m.start() < instead.start()]
+    if misplaced:
+        problems.structural(
+            'finding {} sits outside "## What can be said instead", where it reads as an answer '
+            'to the question that has none'.format(', '.join(misplaced)))
 
 
 # ---------------------------------------------------------------------------
@@ -540,9 +567,15 @@ def run(report_path, tsv_path, fmt, level):
 
     problems = Problems(level)
 
+    outcome = 'report'
     if COULD_NOT_ANSWER_RE.search(content):
         check_could_not_answer(content, problems)
-        return problems, {'outcome': 'could-not-answer'}
+        if not INSTEAD_RE.search(content):
+            return problems, {'outcome': 'could-not-answer'}
+        # A partial answer carries findings, so it gets every check a report
+        # gets, against its own required sections. Never fewer checks than a
+        # full report: otherwise the shape becomes the way round the gate.
+        fmt, outcome = 'partial', 'partial-answer'
 
     if not RECEIPT_RE.search(content):
         problems.graded('no receipt line under the title, e.g. *standard - 4 angles, 9 sources, 3 fetched directly*')
@@ -575,7 +608,7 @@ def run(report_path, tsv_path, fmt, level):
 
     check_registered(report_path, problems)
 
-    return problems, {'outcome': 'report', 'sources': len(entries), 'fetched': len(rows)}
+    return problems, {'outcome': outcome, 'sources': len(entries), 'fetched': len(rows)}
 
 
 def main():

@@ -301,10 +301,21 @@ Every document carries:
   the finding, then name each source where its own part appears. Never open a
   finding by handing all of it to one document.
 
-**If no finding clears the floor, do not pad and do not lower the bar.** Write
-the could-not-answer shape instead: a `## Could not answer` section saying what
-was searched and why nothing held, a line starting `Closest thing found:` naming
-the strongest signal below the floor, and a bibliography. No findings.
+**When the question as asked cannot be answered, say so first.** Do not pad and
+do not lower the bar. There are two shapes, and the template for both is at the
+foot of [report_template.md](./templates/report_template.md):
+
+- **Nothing clears the floor:** a `## Could not answer` section saying what was
+  searched and why nothing held, a line starting `Closest thing found:` naming
+  the strongest signal below the floor, and a bibliography. No findings.
+- **The question as asked has no answer, but a neighbouring one does** - no
+  source counts the buyers, say, but what the tools cost can be established: the
+  same `## Could not answer` section and `Closest thing found:` line, then
+  `## What can be said instead`, opening with one sentence naming the question
+  its findings do answer. Findings go under that heading and nowhere else, then
+  Limitations and a bibliography. Never answer the neighbouring question as
+  though it were the one asked: that buries the non-answer, which is the thing
+  the reader most needs.
 
 **Then read the draft against itself** with the six questions in
 [methodology.md](./reference/methodology.md#read-the-finished-draft-against-itself).
@@ -353,8 +364,10 @@ on what you said. In this order:
 
 That is a handful of short paragraphs at every level. **Never paste the document
 into the conversation** - not a brief, not a report, not a section of one. If
-the run could not answer, say that, with the `Closest thing found:` line: an
-empty result is the one a reader most needs to know before acting.
+the run could not answer, say that first, with the `Closest thing found:` line:
+an empty result is the one a reader most needs to know before acting. For a
+partial answer, the non-answer still comes first; then say which neighbouring
+question the findings answer, and give them as step 3 does.
 
 None of this changes the file: it is still the deliverable, and the gate still
 runs against it.

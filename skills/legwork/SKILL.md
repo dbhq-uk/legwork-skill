@@ -210,10 +210,22 @@ competitor, every plan, every release - open the items and rebuild the list from
 them. A table lifted from one roundup is one source, not one per row. If the
 items cannot be opened, say so in the finding and lower its band.
 
-**Parallelise retrieval, one subagent per angle.** Brief each one from
-[subagent-brief.md](./reference/subagent-brief.md), which carries the template
-and the return shape. A subagent has zero context, so everything it needs goes
-in the brief, including the date string. Then:
+**Parallelise retrieval, one subagent per angle.** Write each brief with
+`brief.py`, then copy the text it prints into the subagent's prompt, word for
+word, as the whole prompt. The prompt is text, not a shell: `$(cat file)` or a
+file path reaches the subagent as those characters, not as the brief.
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/brief.py --angle "what does the incumbent charge" \
+  --effort narrow --date "$TODAY"
+```
+
+`--effort comparison` is for an angle that spans several options. The script
+fills the template in [subagent-brief.md](./reference/subagent-brief.md), which
+also says why each line is there, with the date, the angle and the real path to
+`fetch.py`. **Never retype or summarise a brief.** A subagent has zero context,
+and a paraphrased brief loses the command that keeps page text: on 2026-09-24
+one did, and 103 subagent fetches reached the log with nothing to check. Then:
 
 - **Choose the model by the shape of the angle.** Snippet gathering and pinning
   one known figure run fine on a cheap model; pass it explicitly. Rebuilding a
@@ -383,6 +395,7 @@ All standard library only, on any `python3` 3.9 or newer.
 |---|---|
 | `fetch.py "<url>" --find TERM` | Open a page for free and keep its text; exit 3 is a block or a shell |
 | `platforms.py list \| search --on X` | Ten free platforms that return records rather than pages |
+| `brief.py --angle "..." --effort narrow\|comparison` | The brief for one retrieval subagent, filled and ready to pass unchanged |
 | `bd_search.py "<query\|url>" -m MODE` | The paid Bright Data rungs; `--help` lists the modes |
 | `sources.py log \| kinds \| score \| receipt \| resume \| stale` | The fetch log, source kinds and their fitness per claim, the receipt counts, what a past run fetched, what has gone stale |
 | `independence.py groups \| check \| portfolio` | Independent voices, corroboration per finding, concentration across the run |

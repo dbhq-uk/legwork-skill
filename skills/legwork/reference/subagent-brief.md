@@ -37,8 +37,15 @@ is cheap. "What does every vendor in this segment charge" is not.
 
 ## The brief
 
-Fill every `{placeholder}`. Nothing here is optional: each line is in the template
-because leaving it out produced a specific, repeated failure.
+**Do not fill this by hand.** `scripts/brief.py` fills every `{placeholder}` -
+the date, the angle, the effort line and the real path to the skill's scripts -
+and prints the brief to pass to the subagent unchanged. It reads the template
+from this block, so this block stays the one copy; if a placeholder is renamed
+here, the script refuses to run until it is updated to match.
+
+Nothing in it is optional: each line is in the template because leaving it out
+produced a specific, repeated failure. A brief retyped from this page lost its
+`fetch.py` command on 2026-09-24, which is why the script exists.
 
 ```
 You have zero prior context. Everything you need is in this brief.

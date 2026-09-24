@@ -48,7 +48,7 @@ sense of what year it is.
 
 ## Your angle
 
-{the single sub-question this agent is answering, verbatim from Phase 1}
+{the single sub-question this agent is answering, verbatim from Frame}
 
 This is the only question you are answering. Do not broaden it, and do not answer
 a neighbouring question because it came up.
@@ -61,15 +61,18 @@ across the options rather than going deep on the first one."}
 
 ## How to work
 
-1. Run three query variants: a plain one, one targeting the primary party's own
+1. Run at least three query variants: a plain one, one targeting the primary party's own
    domain (`site:`, an exact phrase, or `filetype:pdf`), and one searching the
    negative case. Year-pin only queries about prices, releases, regulation or
    news. Read the results before opening anything.
 2. Open the sources that would settle the question, with
-   `python3 {SKILL_DIR}/scripts/fetch.py "<url>" --find "<term>"`. It returns
+   `python3 {SKILL_DIR}/scripts/fetch.py "<url>" --find "<term>"`. It keeps the
    page text and prints the passages around your terms. If it exits 3 the page
-   is blocked or client-rendered: say so in your return rather than quoting the
-   search snippet as though you had read the page.
+   is blocked or client-rendered: try WebFetch. If that is refused too, search
+   the document's own title (add `filetype:pdf` for a PDF) for a copy on another
+   host and open that. Return the copy under its own URL, never the original's,
+   and name the original that refused you in your gaps. Never quote a search
+   snippet as though you had read the page.
    Where the answer lives on a platform rather than on a page - a forum thread,
    a package, a repository, a dated news item, a vendor's changelog - use
    `python3 {SKILL_DIR}/scripts/platforms.py search --on <platform> --query "..."`
@@ -89,7 +92,15 @@ One JSON object per source, and nothing else:
 
 {"url": "...", "kind": "...", "angle": "{the angle above, unchanged}",
  "date": "YYYY-MM-DD or empty", "title": "...", "quote": "the verbatim sentence",
- "query": "the query that surfaced it", "opened": true}
+ "query": "the query that surfaced it", "opened": true,
+ "via": "direct | webfetch | websearch | api", "status": "ok | blocked",
+ "fetch_json": "fetch.py's text_file path with .json in place of .txt, or empty"}
+
+A page that refused you is returned too, as its own object with
+`"opened": false` and `"status": "blocked"`, even when you then found a copy
+elsewhere. Use `"via": "direct"` for fetch.py, `"webfetch"` for WebFetch,
+`"websearch"` for anything you only saw in a search result, and `"api"` for a
+platforms.py record.
 
 Then one final object recording what you could NOT establish:
 
@@ -137,7 +148,9 @@ The subagent's structured output is not evidence yet. Before logging any of it:
 - **Check dates are present.** Undated sources are the gate's problem later; they
   are cheaper to fix now, while the page is still open.
 
-Then log each row with `sources.py log` and work from the log. **Never paste a
+Then log each row with `sources.py log` and work from the log. Where a row
+carries `fetch_json`, log it with `--from-fetch` so the quote is checked against
+the page text. Log blocked rows with `--status blocked`. **Never paste a
 subagent's transcript into the synthesis.**
 
 Small gaps are cheaper to fill yourself than to re-spawn for. Re-spawn when a

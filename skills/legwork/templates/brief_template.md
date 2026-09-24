@@ -16,8 +16,9 @@ WHAT IT KEEPS (non-negotiable - brief drops ceremony, never rigour):
   - Honest limitations
   - Prose-first (>=80%); bullets only for genuinely enumerable things
 
-AFTER GATING: give this brief in full in the conversation as well, with the receipt
-line first and the file path last. A path is not an answer.
+AFTER GATING: answer in the conversation as SKILL.md step 7 says - the receipt line,
+then the answer and each finding in your own plain words, then the file path. Never
+paste this brief into the conversation. A path on its own is not an answer.
 
 RECEIPT COUNTS: do not count them by hand. Run
   python3 scripts/sources.py receipt --tsv [path]
@@ -101,7 +102,7 @@ sources say and what you conclude from them.]
 
 ## Limitations
 
-[2-4 sentences, honest and specific. Start from the falsifiers you named in Phase 1 -
+[2-4 sentences, honest and specific. Start from the falsifiers you named in Frame -
 those are the real limitations, not generic hedging. Then:
 
 - What couldn't be verified, and why (paywalled, no primary source, contested)

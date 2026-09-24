@@ -168,6 +168,7 @@ All standard library only, Python 3.9+.
 |--------|---------|
 | `fetch.py "<url>" --find TERM` | Open a page directly and keep its text; reads the publication date; exits 3 on a block or a client-rendered shell |
 | `platforms.py list \| search --on X` | Ten free platform-native sources, returning records rather than pages about them |
+| `brief.py --angle "..." --effort narrow\|comparison` | The retrieval subagent's brief, filled from the template with the date, the angle and real script paths, so it is passed rather than retyped |
 | `sources.py kinds \| log \| receipt \| score \| stale \| resume` | The source-kind vocabulary, the fetch log, the retrieval receipt, fitness scoring per claim kind, staleness, resume |
 | `independence.py groups \| check \| portfolio` | Collapse sources into independent voices; angle-aware corroboration; run-wide concentration |
 | `check.py --report P --level L` | The shippability gate: structural, evidence, independence, matrix |

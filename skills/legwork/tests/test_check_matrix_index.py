@@ -83,6 +83,75 @@ def test_matrix_problems_are_graded_like_the_rest(tmp_path):
     assert not any('blank' in e for e in standard.errors)
 
 
+def contoso_seen_only_in_search(log):
+    """Rewrite the log so Contoso's page [2] was only ever a search result."""
+    text = open(log, encoding='utf-8').read()
+    lines = [line.replace('\twebfetch\t', '\twebsearch\t') if 'contoso' in line else line
+             for line in text.splitlines(keepends=True)]
+    open(log, 'w', encoding='utf-8').write(''.join(lines))
+
+
+def contoso_never_logged(log):
+    text = open(log, encoding='utf-8').read()
+    open(log, 'w', encoding='utf-8').write(
+        ''.join(line for line in text.splitlines(keepends=True) if 'contoso' not in line))
+
+
+def snippet_row_errors(problems):
+    return [e for e in problems.errors if 'Contoso' in e and 'opened' in e]
+
+
+def test_a_matrix_row_resting_only_on_snippets_fails_at_standard(tmp_path):
+    """Measured on 2026-09-24: a banks run widened its matrix on eight search
+    snippets and shipped, because at standard the snippet rule only warned."""
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    contoso_seen_only_in_search(log)
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert snippet_row_errors(problems), messages_of(problems)
+
+
+def test_a_matrix_row_resting_only_on_snippets_fails_at_deep(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    contoso_seen_only_in_search(log)
+    problems, _ = check.run(report, log, 'report', 'deep')
+    assert snippet_row_errors(problems), messages_of(problems)
+
+
+def test_a_matrix_row_citing_a_page_never_logged_fails_at_standard(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    contoso_never_logged(log)
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert snippet_row_errors(problems), messages_of(problems)
+
+
+def test_quick_is_not_asked_about_snippet_rows(tmp_path):
+    """Quick is snippet-first by design."""
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    contoso_seen_only_in_search(log)
+    problems, _ = check.run(report, log, 'report', 'quick')
+    assert not snippet_row_errors(problems), problems.errors
+
+
+def test_a_row_with_one_opened_citation_passes(tmp_path):
+    """Acme cites its own opened page [1] and the snippet [2]: one page was read."""
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    contoso_seen_only_in_search(log)
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert not [e for e in problems.errors if 'Acme' in e], problems.errors
+
+
+def test_snippet_citations_in_prose_stay_a_warning_at_standard(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    contoso_seen_only_in_search(log)
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert any('cited from a search snippet' in w for w in problems.warnings), messages_of(problems)
+    assert not any('cited from a search snippet' in e for e in problems.errors), problems.errors
+
+
+def messages_of(problems):
+    return ' | '.join(problems.errors + problems.warnings)
+
+
 # ---------------------------------------------------------------------------
 # Index registration
 # ---------------------------------------------------------------------------

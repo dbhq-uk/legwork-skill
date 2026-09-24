@@ -491,7 +491,17 @@ def check_portfolio(rows, problems):
         problems.graded(failure)
 
 
-def check_matrix_section(content, problems):
+def opened_urls(rows):
+    """Canonical URLs of pages actually read: an ok row on a transport that
+    returns the page or the record, never a search result."""
+    return {
+        canonicalize(row.get('url', '')) for row in rows
+        if (row.get('status') or 'ok').lower() == 'ok'
+        and (row.get('via') or '').strip().lower() not in SNIPPET_VIA
+    }
+
+
+def check_matrix_section(content, problems, entries=None, rows=None):
     """A comparison matrix, if the report carries one.
 
     Table cells are not sentences, so none of the sentence-level checks above can
@@ -509,6 +519,24 @@ def check_matrix_section(content, problems):
         # graded, it passes at standard - which is how a matrix citing nothing
         # shipped and was gated green.
         (problems.structural if problem in uncited else problems.graded)(problem)
+
+    # A row whose every citation is a page nobody opened. In prose that is a
+    # warning at standard; in a matrix it is an error at standard and deep,
+    # because a cell reads as settled and a reader cannot tell a snippet from a
+    # page. Measured on 2026-09-24: a banks run widened its matrix from twelve
+    # rows to sixteen on eight search snippets and shipped through the warning.
+    # Quick is snippet-first by design and is not asked.
+    if problems.level not in ('standard', 'deep') or not entries or not rows:
+        return
+    opened = opened_urls(rows)
+    for row in parsed['rows']:
+        cited = sorted({int(n) for n in re.findall(r'\[(\d+)\]', ' '.join(row['cells'].values()))})
+        urls = [entries[n]['url'] for n in cited if n in entries and entries[n]['url']]
+        if urls and not any(canonicalize(url) in opened for url in urls):
+            problems.structural(
+                '{}: every citation in this row is a search result or a page nobody opened ({}) - '
+                'open one of them, or mark the cells [unknown]'.format(
+                    row['entity'], ', '.join('[{}]'.format(n) for n in cited)))
 
 
 def check_registered(report_path, problems):
@@ -604,7 +632,7 @@ def run(report_path, tsv_path, fmt, level):
     # and the body-text equivalent - "no inline [N] citations" - has always been
     # checked at quick. Only the uncited-row problem is an error at quick; blank
     # cells and column counts stay graded.
-    check_matrix_section(content, problems)
+    check_matrix_section(content, problems, entries, rows)
 
     check_registered(report_path, problems)
 

@@ -27,7 +27,7 @@ Exit status is 0 when there are no errors. Warnings do not fail the run.
 | Structural | error | error | error |
 | Evidence | not run | warning | error |
 | Independence | not run | warning | error |
-| Comparison matrix | not run | warning | error |
+| Comparison matrix | uncited rows only, as errors | warning, except an uncited or snippet-only row, which is an error | error |
 | Filing | warning | warning | warning |
 
 Structural problems are always errors because they make a document unusable
@@ -148,6 +148,14 @@ Runs only when the report carries a `## Comparison matrix` section.
   out".
 - **A row stating any established value cites something.** A row that is entirely
   `[unknown]` needs no citation and is not a problem.
+- **A row rests on at least one page somebody opened.** When every citation in a
+  row is a search result or a page absent from the log, the row fails - an
+  error at standard and deep, not asked at quick, which is snippet-first by
+  design. In prose the same citation only warns at standard; in a table it does
+  not, because a cell reads as settled and a reader cannot tell a snippet from a
+  page. Measured on 2026-09-24: a banks run grew its matrix from twelve rows to
+  sixteen on search snippets and shipped through the warning. A row that cites
+  one opened page alongside a snippet passes.
 - **Rows have the table's column count.**
 
 Table cells are not sentences, so figure tracing and the confidence checks cannot

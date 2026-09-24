@@ -64,10 +64,13 @@ judgements about strength, so they inform at standard and block at deep.
   snippet-first by design - is not asked. Measured on a run filed on 2026-08-16:
   18 of its 29 cited sources were search results nobody opened, and it passed.
 - **The receipt agrees with the log.** If the receipt line states an opened
-  count, it is compared against the log and a mismatch warns at every level. It
-  is a warning rather than an error because the log is the record and the
-  receipt is the claim; the point is that the two are now comparable at all.
-  `sources.py receipt --tsv <log>` prints the line rather than counting by hand.
+  count, it is compared against the log and a mismatch warns at every level. So
+  is its blocked count, and a receipt carrying counts that leaves the blocked
+  count out when the log has refused pages warns too: what the run could not
+  reach belongs in the first line a reader sees. Warnings rather than errors
+  because the log is the record and the receipt is the claim; the point is that
+  the two are comparable at all. `sources.py receipt --tsv <log>` prints the
+  counts rather than counting by hand.
 - **Figures trace to a page that was fetched.** Any number in a sentence that
   also carries a citation must appear in the numeric tokens captured from one of
   that sentence's cited sources. Bare integers below 10 are skipped as prose

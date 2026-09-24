@@ -35,7 +35,7 @@ Comparison" but "Postgres+pgvector covers our scale; a dedicated vector DB doesn
 for itself until ~10M embeddings".
 -->
 
-*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data) · [N] disconfirming searches · [what changed]*
+*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data, [N] blocked) · [N] disconfirming searches · [what changed]*
 
 **Question:** [The research question, verbatim as asked]
 **Scope:** [What's in, what's out. Assumptions made. 1-2 sentences.]

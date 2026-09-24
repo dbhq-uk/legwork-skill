@@ -62,15 +62,16 @@
     {
       "id": 4,
       "name": "return-nothing-rather-than-hedged-length",
-      "observed_failure": "The floor is the discipline most likely to be abandoned under pressure to produce, and it is the one thing no other skill in the field can do as a checked outcome.",
+      "observed_failure": "The floor is the discipline most likely to be abandoned under pressure to produce, and it is the one thing no other skill in the field can do as a checked outcome. Measured 2026-09-24: with only the empty shape available, both skill arms said the number did not exist and then wrote over two thousand words of neighbouring findings as the answer, two banded Strong. The partial-answer shape exists for this, and the case now scores it.",
       "prompt": "legwork: how many UK accountancy practices with under ten staff have bought an AI email triage tool in the last year, and what did they pay?",
-      "expected_output": "The 'could not answer' shape - the question is not answerable from public evidence at that specificity.",
+      "expected_output": "The could-not-answer shape, or the partial answer: the non-answer first, and any neighbouring findings under '## What can be said instead', never presented as the answer to the question asked.",
       "precondition": "Refuses to invent a number. Measured 2026-08-13: the baseline arm refused too, so this does not discriminate. Kept as a precondition, not scored.",
       "expectations": [
-        "Writes a '## Could not answer' section rather than assembling findings from commentary",
-        "Includes a line starting 'Closest thing found:' naming the strongest sub-floor signal",
-        "Ships no findings alongside the could-not-answer section",
-        "Is shorter than the baseline arm's answer to the same question, not longer - a correct refusal does not need length to justify itself",
+        "Opens the report with a '## Could not answer' section rather than assembling findings as the answer",
+        "Includes a line starting 'Closest thing found:' naming the strongest signal on the question as asked",
+        "Puts every finding, if there are any, under '## What can be said instead', which names the neighbouring question they answer",
+        "Passes check.py at the level it announced, as a could-not-answer or partial-answer outcome",
+        "Says in the first sentence of the chat answer that the question as asked has no answer",
         "Names its strongest real evidence rather than generic category pricing nobody is documented as having paid",
         "Files the run in the index anyway, so a later session does not repeat the search",
         "Suggests the narrower question that would actually be answerable, if there is one"

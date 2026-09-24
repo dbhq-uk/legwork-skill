@@ -1,0 +1,4 @@
+url	kind	angle	via	fetched_at	status	date	numbers	title	quote
+https://docs.vendor.example/plugins	vendor_docs	official submission route	webfetch	2026-07-28T09:00:00+00:00	ok	2026-07-10		Plugins	This page covers installing plugins. Publishing to the official catalogue is not currently supported.
+https://registry.example/add	registry	generic installer route	webfetch	2026-07-28T09:01:00+00:00	ok	2026-07-02	50	Adding a skill	Add your skill by opening a pull request. Works across 50 host agents. There is no review step.
+https://forum.example/t/publishing	community	what practitioners report	brightdata	2026-07-28T09:02:00+00:00	ok	2026-06-15		Publishing agent plugins	I looked for a submission form for two hours and there is not one. You install by URL or not at all.

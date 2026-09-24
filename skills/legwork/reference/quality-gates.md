@@ -169,6 +169,21 @@ A report containing `## Could not answer` is checked differently: it must name
 the closest sub-floor signal on a line starting `Closest`, and it must not also
 ship findings. Everything else is skipped.
 
+**The partial answer** adds `## What can be said instead` after it, for when the
+question as asked has no answer but a neighbouring one does. Then:
+
+- `## Could not answer` must come first, so the reader meets the non-answer
+  before anything that could be mistaken for one.
+- Every finding sits under `## What can be said instead`; one above it reads as
+  an answer to the question that has none.
+- The section must carry findings. Empty, it is the plain shape with an extra
+  heading, and the gate says to drop it.
+- **Everything a report gets, the partial answer gets too** - receipt,
+  citations, bibliography, evidence, confidence, independence, portfolio,
+  matrix, filing - against its own required sections: Could not answer, What
+  can be said instead, Limitations, Bibliography. The shape is never a way round
+  the gate.
+
 This is a valid outcome, not a failure. A run that says "nothing here cleared the
 bar, the closest thing was X" is more useful than one that ranks noise, and it
 preserves trust in the runs that do produce findings.

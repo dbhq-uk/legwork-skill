@@ -217,4 +217,41 @@ Closest thing found: [the strongest sub-floor signal, named, with why it fell sh
 ## Bibliography
 
 [1] ...
+
+=============================================================================
+THE PARTIAL ANSWER
+
+Use this INSTEAD of everything above when the question as asked has no answer but a
+neighbouring question does. The non-answer comes first; the findings go under "What
+can be said instead" and nowhere else. The gate checks the order, and gives these
+findings every check a report's findings get.
+=============================================================================
+
+# [The question, as asked - and that it has no answer]
+
+*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data) · [N] disconfirming searches*
+
+## Could not answer
+
+[What was asked, what was searched, and why the question as asked has no answer.]
+
+Closest thing found: [the strongest signal on the question as asked, and why it falls short.]
+
+## What can be said instead
+
+[One sentence naming the neighbouring question these findings answer.]
+
+### Finding 1: [The finding as a claim]
+
+**Confidence: Strong|Moderate|Weak** - [what backs it]
+
+[Prose, cited as in a report.]
+
+## Limitations
+
+[...]
+
+## Bibliography
+
+[1] ...
 -->

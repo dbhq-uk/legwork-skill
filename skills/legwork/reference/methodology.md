@@ -1,38 +1,30 @@
 # Methodology
 
-Four phases. The level table in `SKILL.md` says which parts apply.
+The detail behind steps 2 to 5 of the run. `SKILL.md` holds the rules and the
+commands; this file holds what they look like in practice, and why. It does not
+repeat them, so read the step in `SKILL.md` first.
 
 ## Contents
 
-- [Phase 1: Frame](#phase-1-frame) - the decision, the sub-questions, the falsifiers
-- [Phase 2: Gather](#phase-2-gather) - anchoring the date, rebuilding enumerations, crediting the right source
-- [Phase 3: Challenge](#phase-3-challenge) - the disconfirming case, grouping, concentration, the origin audit
-- [Phase 4: Write](#phase-4-write) - comparisons, confidence, citation discipline, the read-against-itself pass
+- [Frame](#frame) - good angles, and falsifiers worth naming
+- [Gather](#gather) - queries, platforms, copies on another host, quotes, lists, source kinds
+- [Challenge](#challenge) - the disconfirming case, independence, concentration, age, origin
+- [Write](#write) - comparisons, confidence, credit, citations, the read against itself
 
-Read the phase you are in. Reading all four before starting costs context you
-will want later, and Phase 4 tells you nothing useful while you are framing.
+Read the section for the step you are on. Reading all four before starting costs
+context you will want later, and Write tells you nothing useful while you are
+framing.
 
 ---
 
-## Phase 1: Frame
+## Frame
 
-Turn the request into three things. Write them down before searching, because
-everything downstream keys off them.
+### The decision
 
-### 1. The decision
+If the user gave you a topic, infer the decision from context and state your
+inference in the Introduction rather than asking.
 
-Not the topic. The decision. "Outlook triage" is a topic; "should we build
-Outlook triage for small accounting practices, or is the gap too narrow" is a
-decision. If the user gave you a topic, infer the decision from context and state
-your inference in the Introduction rather than asking.
-
-Before writing any of it down, check the index (`SKILL.md`, "Before you start").
-A decision already settled by a run that still holds does not need framing again.
-
-### 2. The sub-questions that would settle it
-
-Between two and eight, depending on level. Each must be answerable by evidence,
-and each becomes an **angle** recorded against every source it surfaces.
+### Good angles
 
 Good sub-questions are independent lines of enquiry, not rephrasings. "What does
 the incumbent charge" and "what do buyers say they will pay" are two angles.
@@ -40,334 +32,237 @@ the incumbent charge" and "what do buyers say they will pay" are two angles.
 counting them separately is how a run fools itself into thinking it has
 corroboration.
 
-### 3. What would change the answer
+### Falsifiers
 
-Name the falsifiers explicitly. "If the platform ships this natively, the gap
-closes." "If practices already pay more than we assumed, the ceiling argument
-dies."
+"If the platform ships this natively, the gap closes." "If practices already pay
+more than we assumed, the ceiling argument dies."
 
-This is the most valuable output of the phase. It gives Challenge something
-concrete to hunt for, and it becomes the substance of the Limitations section
-instead of generic hedging.
+This is the most valuable output of Frame. It gives Challenge something concrete
+to hunt for, and it becomes the substance of Limitations instead of generic
+hedging.
 
-At **quick** level, skip the falsifiers. At **deep**, add second-order angles:
-who has tried this before and what happened, what the incumbent would do in
-response, what the adjacent market says.
+At **deep**, add second-order angles: who has tried this before and what
+happened, what the incumbent would do in response, what the adjacent market says.
 
 ---
 
-## Phase 2: Gather
+## Gather
 
-**Anchor the date before the first search.** Run `date -u +%Y-%m-%d` and use that
-string. Then **year-pin every query** that could return dated material: "acme
-pricing 2026", not "acme pricing". A model's prior about what year it is cannot be
-trusted, and a query that silently searches the wrong year poisons everything
-downstream of it - the sources are real, the figures trace, and the whole finding
-is a year stale. Pass the literal date string to every subagent; never let one
-work it out for itself.
+### Queries
 
-Work sub-question by sub-question. For each one:
+The three variants, for the angle "what does Acme charge":
 
-1. **Three query variants, minimum.** A plain one. A targeted one - `site:` the
-   primary party's own domain, an exact phrase in quotes, or `filetype:pdf` for
-   a filing or a specification. A negative one built from the angle's falsifier:
-   "X limitations", "why we left X", "X price increase".
-2. **Year-pin dated material only.** Prices, releases, regulation and news carry
-   the year. An evergreen primary page does not, and pinning it pulls round-ups
-   written about it instead of the page itself.
-3. **Ask the platform, not the search engine, for what a platform holds.**
-   `platforms.py` returns the record rather than a page about it, free and
-   keyless, with the platform's own numbers attached.
+- plain: `acme pricing 2026`
+- targeted: `site:acme.example pricing`, or `"per user per month" acme`, or
+  `acme price list filetype:pdf`
+- negative: `acme price increase 2026`, `why we left acme`
 
-   ```bash
-   python3 ${CLAUDE_SKILL_DIR}/scripts/platforms.py search --on hn --query "..."
-   ```
+**Year-pin dated material only.** A query that silently searches the wrong year
+poisons everything downstream of it: the sources are real, the figures trace,
+and the whole finding is a year stale. But an evergreen primary page does not
+carry a year, and pinning it pulls in round-ups written about the page instead
+of the page itself.
 
-   `platforms.py list` prints the ten. Sentiment and practitioner experience:
-   `hn`, `stackexchange`, `githubissues`. Adoption: `github`, `npm`, `pypi`.
-   Dated news with real country control: `news`. A vendor's own changelog:
-   `feed`. What a dead or changed page used to say: `wayback`.
-4. **Open every page you intend to cite.** `fetch.py` first - free, and the only
-   free transport that yields page text, which is what lets a figure be traced
-   and a quote be checked against the page it came from.
+### Platforms by question
 
-   ```bash
-   python3 ${CLAUDE_SKILL_DIR}/scripts/fetch.py "<url>" --find "per user" --find "price"
-   ```
+`platforms.py` returns the record rather than a page about it, with the
+platform's own numbers attached.
 
-   It exits 3 on a blocked page or a client-rendered shell and names the next
-   rung. At standard and deep a snippet is a lead, not evidence, and the gate
-   says so.
-5. **Log the failure before the fallback.** A page that would not open is
-   evidence about the run: `fetch.py` writes its sidecar even when it fails, so
-   `log --from-fetch` records the refusal with the right status, and then you
-   try the next rung. The receipt counts what refused you and what nothing ever
-   reached.
-6. **When every transport is refused, change the address rather than the
-   transport.** `fetch.py`, WebFetch and `-m scrape` all ask the same host for
-   the same URL, so a publisher refusing by policy refuses all three. Search the
-   document's own title, with `filetype:pdf` where it is a PDF, and open a
-   republication on another host - a trade body, a supplier, a consultancy
-   reposting a price list or a standard.
+| The angle is about | Ask |
+|---|---|
+| Sentiment, practitioner experience | `hn`, `stackexchange`, `githubissues` |
+| Adoption | `github`, `npm`, `pypi` |
+| Dated news, with real country control | `news` |
+| What a vendor shipped and when | `feed` |
+| What a dead or changed page used to say | `wayback` |
 
-   The copy is a *different party* for independence purposes and must be logged
-   and cited as the host that served it, never as the original publisher. Check
-   it carries the original's effective date before using a figure from it, and
-   say in Limitations that the original refused you.
+### Thin
 
-   This rung was added on 2026-09-22 after a run recorded "403 to every route
-   tried" against two Royal Mail price-guide PDFs and carried an unverified
-   price into its Limitations. Both still return 403. A third party's copy of
-   the same guide was rank 1 on a one-line title search and opened on the free
-   rung with 400 numeric tokens in it.
-7. **Log every retrieval** with `sources.py log`: the sub-question as `--angle`,
-   the query as `--query`, the right `--kind`, and - for anything you intend to
-   cite - the sentence that made it worth citing as `--quote`.
+Thin means fewer than two independent parties after three variants. Still thin
+after the paid search rungs is a finding in its own right: say what was searched.
 
-**Thin means fewer than two independent parties after three variants.** Thin
-routes to `platforms.py` where the angle suits one, then Bright Data SERP on a
-*different engine* with `--country` and `--language`, then `discover` with an
-intent line. Still thin after that is a finding: say what was searched.
+### A copy on another host
 
-### Capture the quote as you read, not afterwards
+`fetch.py`, `WebFetch` and a paid scrape all ask the same host for the same URL,
+so a publisher refusing by policy refuses all three, and climbing further can
+only fail. Measured on 2026-09-22: two Royal Mail price-guide PDFs returned 403
+to every route, while a search for the guide's own title found a third party's
+copy at rank 1, which opened on the free rung with 400 numeric tokens in it.
 
-The quote is the sentence you would point at if someone asked "what makes you say
-that". Take it at the moment you decide the source is worth citing; reconstructing
-it later means refetching, and in six months the page may not say the same thing
-or exist at all.
+Where to look: a trade body, a supplier, a consultancy, or a regulator reposting
+a price list, a standard or a filing.
 
-Around half of real findings carry no figure, so for those the quote is the only
-evidence recorded. The gate fails a finding that has neither a traceable figure
-nor a quote on any of its cited sources - not because the finding is wrong, but
-because nothing about it can be checked.
+Three conditions make the copy safe to use:
 
-### Rebuild enumerations from the items, never from the aggregator
+- **It is a different party.** Log and cite the host that served it. Crediting it
+  to the original publisher would claim a read that never happened.
+- **It is the same document.** Check it carries the original's effective date or
+  version before using a figure from it.
+- **The refusal is recorded.** Limitations says the original refused you, so the
+  reader knows the figure came second-hand.
 
-When a sub-question needs a *list* - every competitor in a segment, every plan on
-a pricing page, every release in a changelog, every firm named in a market study -
-open the enumerated items themselves and rebuild the list from them.
+### Take the quote as you read
+
+The quote is the sentence you would point at if someone asked "what makes you
+say that". Taking it later means refetching, and in six months the page may not
+say the same thing, or exist at all.
+
+The gate fails a finding that has neither a traceable figure nor a quote on any
+of its cited sources. Not because the finding is wrong, but because nothing about
+it can be checked.
+
+### Rebuild lists from their items
 
 A table lifted whole out of one review, roundup or analyst note is **one source,
-not one source per row**. This is the single easiest way for a run to look
-thoroughly evidenced while resting entirely on one document, and legwork is
-unusually exposed to it because competitor scans and pricing comparisons are
-exactly this shape. The aggregator is a lead worth following, not the evidence.
+not one source per row**. It is the easiest way for a run to look thoroughly
+evidenced while resting on one document, and competitor scans and pricing
+comparisons are exactly this shape.
 
 Log the aggregator if you used it, then log each item you opened under the same
-angle. `independence.py` will then see what is actually there: several parties
+angle. `independence.py` then sees what is actually there: several parties
 rather than one.
 
-If rebuilding genuinely is not possible - the underlying items are paywalled, or
-the aggregator is the only party that ever collected them - say so in the finding
-and downgrade the band. A single-origin list presented as corroborated is worse
-than a single-origin list labelled as one.
+If rebuilding is genuinely impossible - the items are paywalled, or the
+aggregator is the only party that ever collected them - say so in the finding
+and lower the band. A single-origin list labelled as one is honest; the same
+list presented as corroborated is not.
 
-### Credit the source a fact comes from, not the one you read it in
+### Source kinds
 
-State the finding first. Name each source at the point where its own
-contribution appears. Never open a finding by handing the whole answer to one
-document before any finding has been stated.
-
-The failure looks harmless: "Acme's 2026 market review reports that the segment
-has four vendors, with pricing from 20 to 90 dollars per seat [3]." Every fact
-there may be right, every figure traceable. But the sentence sources the entire
-finding to Acme's review, including the parts that came from four vendors' own
-pricing pages. A reader cannot tell which is which, and neither can the
-independence check.
-
-Write it the other way round: state what is known, then attribute each part where
-it belongs. A vendor's price belongs to that vendor's pricing page even when a
-review is where you first saw it collected. Credit the aggregator for what is
-genuinely its own - its selection, its pooled analysis, its argument.
-
-### Getting the source kind right
-
-`sources.py kinds` prints the vocabulary and which claims each kind suits. The
-kind is inferred from the URL when omitted, but inference returns `unknown` for
-anything it does not recognise, and `unknown` scores below commentary. Pass
-`--kind` when you know.
+The kind is inferred from the URL when omitted, but inference returns `unknown`
+for anything it does not recognise.
 
 The distinction that matters most is **vendor primary versus vendor marketing**.
 A pricing page and a "why customers love us" page are both on the vendor's
-domain; one is the best evidence available for what something costs, the other is
-the worst evidence available for whether it is any good.
+domain. One is the best evidence available for what something costs; the other
+is the worst evidence available for whether it is any good. The same goes for
+complaints: the complaint itself is primary evidence of sentiment, and an article
+about the complaints is not.
 
-### Depth changes what you reach for, not how much you write
+### Depth
 
-- **quick**: SERP snippets. Open a page only to pin a specific figure.
-- **standard**: open every source that anchors a finding.
-- **deep**: get a primary source for every finding. The vendor's own pricing
-  page, not the analyst's summary of it. The filing, not the article about the
-  filing. This is where Bright Data usage rises, because primary sources are
-  disproportionately the ones that block you.
-
-### Stop conditions
-
-Stop gathering on a sub-question when a further search returns nothing new, or
-when the sub-question is answered by primary evidence. Do not gather to a quota.
+- **quick**: search snippets. Open a page only to pin a specific figure.
+- **standard**: open every source a finding rests on.
+- **deep**: a primary source for every finding. The vendor's own pricing page,
+  not the analyst's summary of it. The filing, not the article about the filing.
+  Paid usage rises here on its own, because primary sources are the ones most
+  likely to block you.
 
 ---
 
-## Phase 3: Challenge
+## Challenge
 
-A finding that has only been supported has not been tested.
+### The disconfirming case
 
-### Look for the disconfirming case
+A finding that survives a real attempt to break it is worth more than one that
+was never attacked, and the reader should be able to see the attempt. That is
+why what the disconfirming search finds goes inside the finding.
 
-For each finding, run at least one search designed to find evidence **against**
-it, using the falsifiers from Phase 1. Search the negative directly: "X
-limitations", "why we stopped using X", "X alternatives", "X price increase".
+### What counts as one voice
 
-If disconfirming evidence exists it belongs inside the finding, not in a caveats
-paragraph at the end. A finding that survives a real attempt to break it is worth
-more than one that was never attacked, and the reader should be able to see the
-attempt.
+`independence.py groups` collapses three things into one voice: the same page
+reached twice, every page on one party's own domains, and near-duplicate
+headlines across outlets. What comes out is the number of independent groups
+actually behind the work.
 
-At **quick** level this phase is grouping only, no searches.
+Corroboration is then the number of those groups reached from **different
+angles**. Five sources from one line of enquiry score 1, however many publishers
+they span, because your own fan-out produced all five. If a finding you believed
+was strong scores 1, that is the check working.
 
-### Group the sources
+### Concentration across the run
 
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/independence.py groups --tsv "$OUT/$BASE.tsv"
-```
+A report can pass on every finding and still rest mostly on one party, which is
+why `portfolio` looks at the run as a whole. The limits are in
+`quality-gates.md`. The two failures need different fixes:
 
-Three things collapse into one voice: the same page reached twice, every page on
-one party's own domains, and near-duplicate headlines across outlets. What comes
-out is the number of **independent groups** actually behind the work.
+- **One party is over half the run.** That is a Gather problem, not a writing
+  problem. Find a different party, or say plainly in Limitations that the picture
+  is largely one party's account of itself.
+- **One group is most of the run.** The run has found one story, repeated. Look
+  for a second story rather than a seventh copy of the first.
 
-### Check corroboration per finding
+### Evidence that has gone off
 
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/independence.py check \
-  --tsv "$OUT/$BASE.tsv" --urls "https://a.example/x,https://b.example/y" --min 2
-```
+`finish.py` names the claim kinds whose evidence has aged. **Stale** needs a
+newer source, or a sentence saying the figure is the most recent available and
+how old it is. **Undated** needs the date recorded: a source with no date is not
+necessarily old, but nobody can tell.
 
-Corroboration is the number of independent groups reached from **different
-angles**. Five sources from one line of enquiry score 1, however many distinct
-publishers they span, because our own fan-out produced all five.
+### The origin audit
 
-If a finding you believed was strong scores 1, that is the system working. Either
-go and find a genuinely different angle, or downgrade the confidence.
-
-### Check the run as a whole, not only each finding
-
-Corroboration is asked per finding, so a report can pass on every finding and
-still rest mostly on one party.
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/independence.py portfolio --tsv "$OUT/$BASE.tsv"
-```
-
-The limits and what each one catches are in `quality-gates.md`. What the script
-cannot tell you is the fix, and the two failures need different ones.
-
-When one **party** is over half the run, that is a Gather problem, not a writing
-problem: go and find a different party, or say plainly in Limitations that the
-picture is largely one party's account of itself. When one **group** is most of
-the run, the run has found one story repeated - go looking for a second story
-rather than a seventh copy of the first.
-
-### Check the evidence has not gone off
-
-`finish.py` sweeps every claim kind and names the ones whose evidence has aged,
-so this needs no separate command. Two outcomes, two different fixes. **Stale**
-needs a newer source, or an explicit sentence saying the figure is the most
-recent available and how old it is. **Undated** needs the date recorded: a source
-with no date is not necessarily old, but nobody can tell.
-
-### At deep level: the origin audit
-
-For any finding claiming Strong, check whether the corroborating sources trace
-back to a single origin. Three articles citing the same analyst estimate is one
-estimate. Grouping catches near-duplicate headlines but not "everyone is quoting
-the same figure from the same place", so read the sources and see where the
-number came from.
+Grouping catches near-duplicate headlines, but not "everyone is quoting the same
+figure from the same place". For every Strong finding at deep, read the sources
+and see where the number came from.
 
 ---
 
-## Phase 4: Write
+## Write
 
-Pick the format (`SKILL.md` says which per level), then write section by section,
-each write under roughly 2,000 words so no single tool call risks truncation.
+Write section by section, each write under about 2,000 words, so no single tool
+call risks truncation.
 
-### When the question is a comparison
+### Comparisons
 
-Decide the field list **before** fanning out, or each option comes back described
-in its own terms and the grid cannot be assembled: one agent reports a monthly
-price, another an annual one, a third a "contact us".
+Decide the field list **before** fanning out, or each option comes back
+described in its own terms and the grid cannot be assembled: one agent reports a
+monthly price, another an annual one, a third "contact us".
 
 Then write the findings from the grid rather than restating it. The matrix says
-what each option does; the findings say which one to pick and why, and that is
-still the part the report exists for.
+what each option does; the findings say which one to pick and why.
 
-### Findings carry their own claim
+### Confidence
 
-`### Finding 3: Microsoft is the biggest risk, but the gate is 96% wide` is worth
-more than `### Finding 3: Platform risk`. State the finding in the heading; the
-section then supports it.
+The band follows from the evidence, not from how much you would like the
+finding to be true. The gate enforces the bands; what it cannot enforce is the
+honesty of the reach.
 
-### Assign confidence honestly
+When every finding falls below the floor, name the closest signal in the
+could-not-answer shape. It tells the reader the search actually ran, and it
+usually points at the narrower question that would work.
 
-The band follows from the evidence, not from how much you would like the finding
-to be true. The bands are in `SKILL.md` and the gate enforces them; what it
-cannot enforce is the honesty of the reach.
+### Credit
 
-Below-floor material does not become a finding. It can be a sentence in
-Limitations.
+The failure looks harmless: "Acme's 2026 market review reports that the segment
+has four vendors, with pricing from 20 to 90 dollars per seat [3]." Every fact
+there may be right and every figure traceable. But the sentence sources the whole
+finding to the review, including the parts that came from four vendors' own
+pricing pages, and neither the reader nor the independence check can tell which
+is which.
 
-If **every** finding is below floor, write the "could not answer" shape described
-in `SKILL.md`. Naming the closest sub-floor signal matters: it tells the reader
-the search actually ran, and it usually suggests the narrower question that would
-work.
+Write it the other way round: state what is known, then attribute each part where
+it belongs. A vendor's price belongs to that vendor's pricing page, even when a
+review is where you first saw it collected. Credit the aggregator for what is
+genuinely its own: its selection, its pooled analysis, its argument.
 
-### Citation discipline
+### Citations
 
-- Every factual claim carries `[N]` in the same sentence.
-- Never write "research suggests", "studies show" or "experts believe". Name the
-  source or drop the claim.
 - Label inference as inference. "This suggests" is fine; presenting it as fact is
   not.
-- If you could not find something, say so. "No source addresses X directly" is a
-  finding. A fabricated citation is a defect the gate will catch anyway.
+- "No source addresses X directly" is a finding. A fabricated citation is a
+  defect the gate catches anyway.
 - Prose first. Bullets are for genuine lists, not for delivering content.
 
 ### Read the finished draft against itself
 
-Challenge tests each finding as it is gathered, which is the right place for it.
-But findings interact, and nothing has yet read the assembled document as a
-whole. Do that once, before the gate, asking five questions:
+Challenge tests each finding as it is gathered. But findings interact, and
+nothing has yet read the assembled document as a whole. Do that once, before the
+gate:
 
 1. Could the central recommendation be wrong, and what would have to be true?
 2. Which high-impact claim rests on a single party, however many URLs back it?
 3. Does any finding contradict another, or quietly assume one is false?
 4. Does the Synthesis claim anything no individual finding supports?
 5. Does any finding open by attributing itself to one document?
+6. **Did a finding change what the answer has to do?** If one shows the decision
+   turns on something no sub-question asked - a legal test, a hidden
+   requirement, a constraint - go back and search for options that meet it
+   before you recommend anything. On 2026-09-22 a run worked out that proof of
+   posting, not proof of delivery, was what the law required, and never
+   searched for a provider selling proof of posting. One existed.
 
-**Find at least three issues, or run it again.** A pass that returns "no problems
-found" on a document of this size has almost always not been run - that is what
-the forcing function is for, and it is cheaper to re-read than to ship. Fix what
-you find; where an issue is real but unfixable within the run, it belongs in
-Limitations, named specifically rather than as generic hedging.
+**Find at least three issues, or read it again.** A pass that finds nothing on a
+document this size has almost always not been run. Fix what you find. Where an
+issue is real but cannot be fixed within the run, name it in Limitations.
 
-### Then gate it
-
-Run `check.py` at your level, fix what it reports, re-run. After two failed
-cycles, stop and tell the user what is wrong rather than continuing to patch.
-
-### Then say it
-
-Give the answer in the conversation as well as in the file: the receipt line, a
-brief in full or a report's Executive Summary and finding headings with their
-bands, then the path. `SKILL.md` has the shape. A path on its own is not an
-answer to a question somebody asked.
-
-### Then file it
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/index.py add --base "$OUTPUT_BASE" \
-  --folder "$BASE" --topic "..." --level "$LEVEL" --one-liner "..."
-```
-
-A run that never reaches the index is a run the next session cannot find, so the
-next session repeats it. That applies to a "could not answer" run too: "we looked
-and nothing held" is exactly what saves the next person the search.
+Then finish the run: steps 6 and 7 in `SKILL.md`.

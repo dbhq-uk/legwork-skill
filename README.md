@@ -118,6 +118,8 @@ Two ladders, free rungs first.
 | Blocked and not worth paying for | `WebFetch` (free) |
 | Bot-blocked, paywalled, 403 | Bright Data `-m scrape` |
 | A client-rendered shell | Bright Data `-m render`, a real browser |
+| Refused by every route above | Search the document's own title for a copy on another host, and cite the host that served it |
+| A page that has moved or gone | The Wayback Machine, through `platforms.py` |
 | A platform that blocks everything above | Bright Data `-m pipeline`, billed per record. Reddit is the one where this is the only route |
 
 **The ten free platforms** (`platforms.py list`): Hacker News, Stack Exchange,

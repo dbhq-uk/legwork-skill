@@ -272,7 +272,10 @@ Markdown only.
 **Comparing three or more named options adds a `## Comparison matrix`.** Fix the
 field list before you fan out, one row per option; one subagent per option,
 filling that same field list, is the natural split. Every cell holds a claim or
-`[unknown]`, never a blank, and a row that is all `[unknown]` stays in.
+`[unknown]`, never a blank, and a row that is all `[unknown]` stays in. **A row
+rests on at least one page you opened**: if every citation in it is a search
+result, open one of those pages or mark the cells `[unknown]`. The gate fails
+that row at standard and deep, because a cell reads as settled.
 `python3 ${CLAUDE_SKILL_DIR}/scripts/matrix.py check --report "$OUT/$BASE.md"`
 checks it. The matrix carries the
 data; the findings still carry the argument.

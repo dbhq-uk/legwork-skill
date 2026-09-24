@@ -393,6 +393,7 @@ def check_evidence(content, entries, rows, problems):
 
 
 RECEIPT_OPENED_RE = re.compile(r'(\d+)\s+opened\b', re.I)
+RECEIPT_BLOCKED_RE = re.compile(r'(\d+)\s+blocked\b', re.I)
 
 
 def check_receipt(content, rows, problems):
@@ -404,15 +405,32 @@ def check_receipt(content, rows, problems):
     warning rather than an error at every level: the log is the record, and a
     report that simply predates the count is not disagreeing with anything.
     """
-    match = RECEIPT_OPENED_RE.search(RECEIPT_RE.search(content).group(0)) if RECEIPT_RE.search(content) else None
+    line = RECEIPT_RE.search(content)
+    match = RECEIPT_OPENED_RE.search(line.group(0)) if line else None
     if not match:
         return
+    counts = retrieval_receipt(rows)
     claimed = int(match.group(1))
-    actual = retrieval_receipt(rows)['opened']
-    if claimed != actual:
+    if claimed != counts['opened']:
         problems.warn(
             'receipt says {} opened, the log has {} - run '
-            '`sources.py receipt --tsv <log>` and paste what it prints'.format(claimed, actual))
+            '`sources.py receipt --tsv <log>` and paste what it prints'.format(claimed, counts['opened']))
+
+    # The blocked count is how a reader sees what the run could not reach.
+    # Measured on 2026-09-24: of the day's eleven eval reports whose logs held
+    # refused pages - up to eleven of them - not one receipt gave the number,
+    # because the example receipt the skill showed had no place for it. Asked only of a receipt that already
+    # carries counts, so a report that predates them is left alone.
+    blocked = RECEIPT_BLOCKED_RE.search(line.group(0))
+    if blocked and int(blocked.group(1)) != counts['blocked']:
+        problems.warn(
+            'receipt says {} blocked, the log has {} - copy the blocked count from '
+            '`sources.py receipt --tsv <log>`'.format(int(blocked.group(1)), counts['blocked']))
+    elif not blocked and counts['blocked']:
+        problems.warn(
+            'the log has {} blocked page{} and the receipt does not say so - add "{} blocked" '
+            'beside the opened count, so a reader can see what the run could not reach'.format(
+                counts['blocked'], '' if counts['blocked'] == 1 else 's', counts['blocked']))
 
 
 def check_confidence(content, entries, rows, problems, run_independence):

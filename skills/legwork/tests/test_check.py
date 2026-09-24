@@ -390,6 +390,54 @@ def test_a_receipt_that_agrees_with_the_log_is_silent(tmp_path):
     assert not any('receipt says' in message for message in problems.warnings), problems.warnings
 
 
+def _report_with_blocked(tmp_path, receipt):
+    """The snippet fixture, with one refused page added to its log."""
+    report, tsv = _report_with_receipt(tmp_path, receipt)
+    with open(tsv, 'a', encoding='utf-8') as handle:
+        handle.write('https://bank.example/portal\tvendor_docs\twhat the bank requires\tdirect\t'
+                     '2026-09-24T09:00:00+00:00\tblocked\t\t\tPortal\t\tbank portal sandbox\n')
+    return report, tsv
+
+
+def test_a_receipt_silent_about_blocked_pages_is_flagged(tmp_path):
+    """Measured on 2026-09-24: eleven eval reports had refused pages in their
+    logs, and not one receipt said so. The receipt is where a reader sees how
+    much of the evidence the run could not reach."""
+    report, tsv = _report_with_blocked(
+        tmp_path, '*standard · 3 angles · 4 sources (0 opened, 0 via Bright Data)*')
+    problems, _ = check.run(report, tsv, 'brief', 'standard')
+    assert any('blocked' in w and 'receipt' in w for w in problems.warnings), problems.warnings
+
+
+def test_a_receipt_with_the_wrong_blocked_count_is_flagged(tmp_path):
+    report, tsv = _report_with_blocked(
+        tmp_path, '*standard · 3 angles · 4 sources (0 opened, 0 via Bright Data, 3 blocked)*')
+    problems, _ = check.run(report, tsv, 'brief', 'standard')
+    assert any('receipt says 3 blocked' in w for w in problems.warnings), problems.warnings
+
+
+def test_a_receipt_with_the_right_blocked_count_is_silent(tmp_path):
+    report, tsv = _report_with_blocked(
+        tmp_path, '*standard · 3 angles · 4 sources (0 opened, 0 via Bright Data, 1 blocked)*')
+    problems, _ = check.run(report, tsv, 'brief', 'standard')
+    assert not any('blocked' in w and 'receipt' in w for w in problems.warnings), problems.warnings
+
+
+def test_a_receipt_need_not_mention_blocked_when_nothing_was(tmp_path):
+    report, tsv = _report_with_receipt(
+        tmp_path, '*standard · 3 angles · 3 sources (0 opened, 0 via Bright Data)*')
+    problems, _ = check.run(report, tsv, 'brief', 'standard')
+    assert not any('blocked' in w for w in problems.warnings), problems.warnings
+
+
+def test_an_old_receipt_with_no_counts_is_not_asked_about_blocked(tmp_path):
+    """Absence is not a disagreement: a receipt that predates the counts says
+    nothing about opened pages either."""
+    report, tsv = _report_with_blocked(tmp_path, '*standard · 3 angles · 4 sources*')
+    problems, _ = check.run(report, tsv, 'brief', 'standard')
+    assert not any('blocked' in w and 'receipt' in w for w in problems.warnings), problems.warnings
+
+
 def test_a_receipt_with_no_opened_count_is_not_second_guessed(tmp_path):
     """Old reports predate the count. Absence is not a disagreement."""
     report, tsv = _report_with_receipt(tmp_path, '*standard · 3 angles · 3 sources*')

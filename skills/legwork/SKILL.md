@@ -294,11 +294,16 @@ data; the findings still carry the argument.
 
 Every document carries:
 
-- **The receipt line**, in italics directly under the H1. Print it with
+- **The receipt line**, in italics directly under the H1. Its retrieval counts -
+  sources, opened, via Bright Data, blocked - come from
   `python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py receipt --tsv "$OUT/$BASE.tsv"`;
-  never count by hand.
+  never count them by hand. The level, angles, disconfirming searches and
+  downgrades are yours to add.
 
-  > *deep · 6 angles · 14 sources (12 opened, 9 via Bright Data) · 7 disconfirming searches · 2 findings downgraded, 1 dropped below floor*
+  > *deep · 6 angles · 14 sources (12 opened, 9 via Bright Data, 3 blocked) · 7 disconfirming searches · 2 findings downgraded, 1 dropped below floor*
+
+  The blocked count is what the run could not reach on the first try, and the
+  gate warns when a receipt leaves it out or disagrees with the log.
 
 - **A confidence line as the first line of every finding:**
 

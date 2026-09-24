@@ -26,7 +26,7 @@ IF NOTHING CLEARS THE FLOOR: do not use this template. Use the "could not answer
 shape at the bottom of this file.
 -->
 
-*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data) · [N] disconfirming searches · [N] findings downgraded, [N] dropped below floor*
+*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data, [N] blocked) · [N] disconfirming searches · [N] findings downgraded, [N] dropped below floor*
 
 ## Executive Summary
 
@@ -203,7 +203,7 @@ points at the narrower question that would work.
 
 # [The question, as asked]
 
-*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data) · [N] disconfirming searches*
+*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data, [N] blocked) · [N] disconfirming searches*
 
 ## Could not answer
 
@@ -229,7 +229,7 @@ findings every check a report's findings get.
 
 # [The question, as asked - and that it has no answer]
 
-*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data) · [N] disconfirming searches*
+*[level] · [N] angles · [N] sources ([N] opened, [N] via Bright Data, [N] blocked) · [N] disconfirming searches*
 
 ## Could not answer
 

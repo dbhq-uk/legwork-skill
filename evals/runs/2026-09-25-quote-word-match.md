@@ -57,3 +57,12 @@ from it is usually that model's paraphrase. The gate counts an unchecked quote
 as recorded evidence, which is how these pass. Some of the gap may be a page
 that changed between runs, which is why `fetch.py`'s own unchecked quotes sit at
 80% rather than 100%; it does not explain 38%.
+
+**How far it reaches, and why no gate change followed.** Of 62 findings across
+the 24 Sep reports, 7 rest on nothing but WebFetch or snippet quotes nobody
+checked - and all 7 are from runs before the subagent brief came from a script
+(`2026-09-24-brief-script.md`). Every run since has none. The WebFetch quotes
+were a symptom of subagents not using `fetch.py`, which the script fixed, so
+the gate is left as it is. If a later eval shows findings resting on unchecked
+WebFetch quotes again, that is the signal to make the gate treat them as
+unrecorded.

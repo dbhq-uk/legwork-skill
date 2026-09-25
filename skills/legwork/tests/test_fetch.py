@@ -509,3 +509,191 @@ def test_a_refused_address_exits_5_and_tells_the_caller_not_to_escalate(monkeypa
     payload = json.loads(capsys.readouterr().err)
     assert payload['verdict'] == 'refused'
     assert 'do not fetch' in payload['next']
+
+
+# ---------------------------------------------------------------------------
+# When --find misses: the outline, a search of the saved page, and optional
+# Jev ranking. Measured on 2026-09-24: subagents opened whole saved pages 81
+# times, about 9,700 characters each, and 52 of the 79 traced came straight
+# after a --find that found nothing.
+# ---------------------------------------------------------------------------
+
+OUTLINED = """<html><head><title>Sandbox guide</title></head><body>
+<nav><h2>Site menu</h2><a href="/a">Home</a></nav>
+<h1>Developer sandbox</h1>
+<p>Our sandbox lets you test against dummy data.</p>
+<h2>Before you start</h2>
+<p>You need a registered application and a test certificate.</p>
+<h2>Before you start</h2>
+<h3>Certificates</h3>
+<p>Upload a certificate signing request to receive a transport certificate.</p>
+<footer><h4>Legal</h4></footer>
+</body></html>"""
+
+
+def _page_body():
+    return (OUTLINED.replace('</body>', '<p>' + 'padding sentence. ' * 60 + '</p></body>')).encode('utf-8')
+
+
+def test_the_outline_is_the_page_headings_in_order_without_furniture_or_repeats():
+    assert fetch.extract_outline(OUTLINED) == ['Developer sandbox', 'Before you start', 'Certificates']
+
+
+def test_a_long_heading_is_trimmed_and_the_outline_is_capped():
+    markup = ''.join('<h2>Heading number {} {}</h2>'.format(i, 'x' * 200) for i in range(60))
+    outline = fetch.extract_outline(markup)
+    assert len(outline) == fetch.OUTLINE_MAX
+    assert all(len(h) <= fetch.OUTLINE_CHARS for h in outline)
+
+
+def test_a_find_that_misses_prints_the_outline(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(fetch, 'urlopen', lambda *a, **k: _Response(_page_body(), {'Content-Type': 'text/html'}))
+    monkeypatch.setattr('sys.argv', ['fetch.py', 'https://bank.example/sandbox', '--out', str(tmp_path / 'p.txt'),
+                                     '--find', 'eIDAS'])
+    fetch.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['find'] == []
+    assert payload['outline'] == ['Developer sandbox', 'Before you start', 'Certificates']
+    assert '--saved' in payload['next']
+
+
+def test_a_find_that_hits_prints_no_outline_but_the_sidecar_keeps_it(monkeypatch, capsys, tmp_path):
+    out = tmp_path / 'p.txt'
+    monkeypatch.setattr(fetch, 'urlopen', lambda *a, **k: _Response(_page_body(), {'Content-Type': 'text/html'}))
+    monkeypatch.setattr('sys.argv', ['fetch.py', 'https://bank.example/sandbox', '--out', str(out),
+                                     '--find', 'certificate'])
+    fetch.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['find'] and 'outline' not in payload
+    assert json.load(open(tmp_path / 'p.json'))['outline'][0] == 'Developer sandbox'
+
+
+def _saved_page(tmp_path):
+    text = tmp_path / 'page.txt'
+    text.write_text('Developer sandbox\n\nOur sandbox lets you test.\n\nUpload a certificate signing request.\n',
+                    encoding='utf-8')
+    (tmp_path / 'page.json').write_text(json.dumps({
+        'url': 'https://bank.example/sandbox', 'title': 'Sandbox guide', 'verdict': 'ok',
+        'outline': ['Developer sandbox', 'Certificates']}), encoding='utf-8')
+    return str(text)
+
+
+def _no_network(*a, **k):
+    raise AssertionError('the network was used')
+
+
+def test_a_saved_page_is_searched_again_without_the_network(monkeypatch, capsys, tmp_path):
+    saved = _saved_page(tmp_path)
+    monkeypatch.setattr(fetch, 'urlopen', _no_network)
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', saved, '--find', 'signing request'])
+    fetch.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['url'] == 'https://bank.example/sandbox'
+    assert '>>>signing request<<<' in payload['find'][0]
+
+
+def test_a_saved_search_that_misses_prints_the_stored_outline(monkeypatch, capsys, tmp_path):
+    saved = _saved_page(tmp_path)
+    monkeypatch.setattr(fetch, 'urlopen', _no_network)
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', saved, '--find', 'QWAC'])
+    fetch.main()
+    assert json.loads(capsys.readouterr().out)['outline'] == ['Developer sandbox', 'Certificates']
+
+
+def test_a_missing_saved_page_exits_1(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', str(tmp_path / 'nope.txt'), '--find', 'x'])
+    with pytest.raises(SystemExit) as exit_info:
+        fetch.main()
+    assert exit_info.value.code == 1
+
+
+def test_a_url_or_a_saved_page_is_required(monkeypatch, capsys):
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--find', 'x'])
+    with pytest.raises(SystemExit) as exit_info:
+        fetch.main()
+    assert exit_info.value.code != 0
+
+
+def test_passages_follow_paragraphs_and_stay_near_the_size():
+    text = '\n\n'.join('Paragraph {} '.format(i) + 'word ' * 60 for i in range(20))
+    parts = fetch.split_passages(text)
+    assert len(parts) > 1
+    assert all(part.strip() for part in parts)
+    assert all(len(part) <= fetch.PASSAGE_CHARS * 2 for part in parts)
+    assert ' '.join(parts).count('Paragraph') == 20
+
+
+def test_relevant_without_a_key_is_skipped_quietly(monkeypatch, capsys, tmp_path):
+    saved = _saved_page(tmp_path)
+    monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
+    monkeypatch.setattr(fetch, '_jev_request', _no_network)
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', saved, '--relevant', 'What does the sandbox need?'])
+    fetch.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['relevant'] == []
+    assert 'TYPESAFE_API_KEY' in payload['relevant_note']
+    assert payload['outline']
+
+
+def test_relevant_with_a_key_prints_the_passages_jev_ranks_highest(monkeypatch, capsys, tmp_path):
+    saved = _saved_page(tmp_path)
+    # Paragraphs long enough to be passages of their own, as on a real page.
+    with open(saved, 'w', encoding='utf-8') as handle:
+        handle.write('\n\n'.join([
+            'Developer sandbox. ' + 'Introductory text about the portal. ' * 14,
+            'Our sandbox lets you test. ' + 'More about dummy data and test accounts. ' * 12,
+            'Upload a certificate signing request. ' + 'Details of the transport certificate. ' * 12]))
+    monkeypatch.setenv('TYPESAFE_API_KEY', 'test-key')
+    seen = {}
+
+    def fake_jev(state, questions, key):
+        seen['state'], seen['key'] = state, key
+        # Passage p2 - the certificate one - is the relevant one.
+        return {'answers': {q: {'score': 3 if q == 'p2' else 0,
+                                'probabilities': ({'3': 0.9, '0': 0.1} if q == 'p2' else {'0': 0.95, '3': 0.05})}
+                            for q in questions}, 'usage': {'input_tokens': 120}}
+
+    monkeypatch.setattr(fetch, '_jev_request', fake_jev)
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', saved, '--relevant', 'What does the sandbox need?'])
+    fetch.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['relevant'][0]['passage'].startswith('Upload a certificate signing request')
+    assert seen['key'] == 'test-key'
+    assert seen['state']['question'] == 'What does the sandbox need?'
+    assert 'outline' not in payload
+
+
+def test_a_jev_failure_never_fails_the_fetch(monkeypatch, capsys, tmp_path):
+    saved = _saved_page(tmp_path)
+    monkeypatch.setenv('TYPESAFE_API_KEY', 'test-key')
+
+    def broken(*a, **k):
+        raise OSError('connection refused')
+
+    monkeypatch.setattr(fetch, '_jev_request', broken)
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', saved, '--relevant', 'anything'])
+    fetch.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['relevant'] == [] and 'failed' in payload['relevant_note']
+    assert payload['outline']
+
+
+def test_jev_is_not_asked_when_find_already_hit(monkeypatch, capsys, tmp_path):
+    """Ranking every page would cost more text than the whole-page reads it replaces."""
+    saved = _saved_page(tmp_path)
+    monkeypatch.setenv('TYPESAFE_API_KEY', 'test-key')
+    monkeypatch.setattr(fetch, '_jev_request', _no_network)
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', saved, '--find', 'signing request',
+                                     '--relevant', 'What does the sandbox need?'])
+    fetch.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['find'] and 'relevant' not in payload and 'outline' not in payload
+
+
+def test_a_miss_on_a_page_with_no_headings_says_to_try_other_terms(monkeypatch, capsys, tmp_path):
+    text = tmp_path / 'plain.txt'
+    text.write_text('Just a paragraph with nothing matching.\n', encoding='utf-8')
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', str(text), '--find', 'eIDAS'])
+    fetch.main()
+    payload = json.loads(capsys.readouterr().out)
+    assert payload['outline'] == [] and 'try other terms' in payload['next']

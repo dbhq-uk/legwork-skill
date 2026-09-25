@@ -100,21 +100,28 @@ MAX_BYTES = 5 * 1024 * 1024
 MAX_DECOMPRESSED = 20 * 1024 * 1024
 
 
+HEADINGS = frozenset(('h1', 'h2', 'h3', 'h4', 'h5', 'h6'))
+
+
 class _Extractor(HTMLParser):
     """HTML to readable text, keeping block boundaries and dropping furniture."""
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.parts = []
+        self.headings = []
         self.anchor_chars = 0
         self._drop_depth = 0
         self._anchor_depth = 0
+        self._heading = None
 
     def handle_starttag(self, tag, attrs):
         if tag in DROP_ELEMENTS:
             self._drop_depth += 1
         elif tag == 'a':
             self._anchor_depth += 1
+        if tag in HEADINGS and not self._drop_depth:
+            self._heading = []
         if tag in BLOCK_ELEMENTS:
             self.parts.append('\n')
 
@@ -127,12 +134,19 @@ class _Extractor(HTMLParser):
             self._drop_depth -= 1
         elif tag == 'a' and self._anchor_depth:
             self._anchor_depth -= 1
+        if tag in HEADINGS and self._heading is not None:
+            heading = ' '.join(''.join(self._heading).split())
+            if heading:
+                self.headings.append(heading)
+            self._heading = None
         if tag in BLOCK_ELEMENTS:
             self.parts.append('\n')
 
     def handle_data(self, data):
         if self._drop_depth:
             return
+        if self._heading is not None:
+            self._heading.append(data)
         self.parts.append(data)
         if self._anchor_depth:
             self.anchor_chars += len(data.strip())
@@ -153,6 +167,113 @@ def html_to_text(markup):
     except Exception:  # noqa: BLE001 - malformed markup is normal on the open web
         pass
     return _tidy(''.join(parser.parts))
+
+
+# The outline is printed only when --find found nothing, which is when an agent
+# used to open the whole saved page to see what was on it. Measured on
+# 2026-09-24: 52 of 79 whole-page reads came straight after a --find miss.
+OUTLINE_MAX = 25
+OUTLINE_CHARS = 90
+
+
+def extract_outline(markup):
+    """The page's headings, in order, without furniture or repeats."""
+    parser = _Extractor()
+    try:
+        parser.feed(markup or '')
+        parser.close()
+    except Exception:  # noqa: BLE001 - malformed markup is normal on the open web
+        pass
+    outline, seen = [], set()
+    for heading in parser.headings:
+        if heading.lower() in seen:
+            continue
+        seen.add(heading.lower())
+        outline.append(heading[:OUTLINE_CHARS])
+        if len(outline) == OUTLINE_MAX:
+            break
+    return outline
+
+
+# ---------------------------------------------------------------------------
+# Optional: Jev ranks the page's passages against the question being answered
+# ---------------------------------------------------------------------------
+#
+# Used only when TYPESAFE_API_KEY is set, and only with --relevant. It sends the
+# page text and the question to TypeSafe's System One API. Measured on
+# 2026-09-24 over 40 real pages: the passage the agent went on to quote was in
+# Jev's top three 75% of the time, against 26% for a random pick, at about
+# $0.0002 a page. Without a key, or when the call fails, nothing breaks: the
+# outline and --find carry on as before.
+
+JEV_API = 'https://api.typesafe.ai/v1/systemone'
+JEV_MODEL = 'jev-latest'
+JEV_LEVELS = ['Does not help answer the question',
+              'Mentions the topic but does not help answer the question',
+              'Helps answer part of the question',
+              'Answers the question directly']
+PASSAGE_CHARS = 700
+PASSAGE_MAX = 60
+JEV_BATCH = 30
+RELEVANT_TOP = 3
+
+
+def split_passages(text, size=PASSAGE_CHARS):
+    """Paragraph-bounded passages of about `size` characters."""
+    passages, current = [], ''
+    for block in (b.strip() for b in re.split(r'\n\s*\n', text or '')):
+        if not block:
+            continue
+        if current and len(current) + len(block) > size:
+            passages.append(current)
+            current = ''
+        current = (current + '\n' + block).strip()
+        while len(current) > size * 2:
+            passages.append(current[:size])
+            current = current[size:]
+    if current:
+        passages.append(current)
+    return passages
+
+
+def _jev_request(state, questions, key):
+    body = json.dumps({'state': state, 'model': JEV_MODEL, 'questions': questions}).encode('utf-8')
+    request = Request(JEV_API, data=body, headers={'Authorization': 'Bearer ' + key,
+                                                   'Content-Type': 'application/json'})
+    with urlopen(request, timeout=60) as response:  # noqa: S310 - a fixed https endpoint
+        return json.loads(response.read().decode('utf-8'))
+
+
+def _expected_score(answer):
+    probabilities = (answer or {}).get('probabilities') or {}
+    if probabilities:
+        return sum(int(level) * float(p) for level, p in probabilities.items()) / (len(JEV_LEVELS) - 1)
+    return float((answer or {}).get('score', 0)) / (len(JEV_LEVELS) - 1)
+
+
+def rank_passages(text, question):
+    """([{'score', 'passage'}], note). Never raises: Jev is an aid, not a rung."""
+    key = os.environ.get('TYPESAFE_API_KEY', '').strip()
+    if not key:
+        return [], 'skipped: no TYPESAFE_API_KEY, so no Jev ranking - use the outline and --find'
+    passages = split_passages(text)[:PASSAGE_MAX]
+    if not passages:
+        return [], 'skipped: no text to rank'
+    scored = []
+    try:
+        for start in range(0, len(passages), JEV_BATCH):
+            batch = passages[start:start + JEV_BATCH]
+            state = {'question': question, 'passages': {'p{}'.format(i): p for i, p in enumerate(batch)}}
+            questions = {'p{}'.format(i): {
+                'type': 'score', 'criteria': JEV_LEVELS,
+                'instructions': 'How well does passage `passages.p{}` help answer `question`?'.format(i)}
+                for i in range(len(batch))}
+            answers = (_jev_request(state, questions, key) or {}).get('answers') or {}
+            scored += [(_expected_score(answers.get('p{}'.format(i))), p) for i, p in enumerate(batch)]
+    except Exception as exc:  # noqa: BLE001 - a ranking aid must never fail the fetch
+        return [], 'Jev ranking failed ({}) - use the outline and --find'.format(str(exc)[:120])
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [{'score': round(score, 2), 'passage': passage} for score, passage in scored[:RELEVANT_TOP]], ''
 
 
 def link_density(markup):
@@ -520,9 +641,49 @@ def _pdf_to_text(body, url):
     return _tidy(proc.stdout)
 
 
+def _finish(payload, text, outline, args):
+    """Add --find, --relevant and, when nothing was found, the outline."""
+    payload['find'] = find_windows(text, args.find, args.window, args.max_hits) if args.find else []
+    # Jev only when --find missed. Ranking every page would add three passages
+    # to every fetch, which on the 2026-09-24 runs is more text than the
+    # whole-page reads it exists to replace.
+    if args.relevant and not payload['find']:
+        payload['relevant'], note = rank_passages(text, args.relevant)
+        if note:
+            payload['relevant_note'] = note
+    if not payload['find'] and not payload.get('relevant'):
+        payload['outline'] = outline
+        if args.find and payload.get('text_file'):
+            payload['next'] = ('nothing matched - {}run: fetch.py --saved {} --find "TERM"'.format(
+                'pick a term from the outline and ' if outline else 'try other terms: ', payload['text_file']))
+    return payload
+
+
+def _saved(args):
+    """Search a page already on disk again. No network, except Jev if asked."""
+    try:
+        with open(args.saved, encoding='utf-8', errors='replace') as handle:
+            text = handle.read()
+    except OSError as exc:
+        _fail({'saved': args.saved, 'verdict': 'error', 'reason': str(exc)}, 1)
+    sidecar = {}
+    try:
+        with open(os.path.splitext(args.saved)[0] + '.json', encoding='utf-8') as handle:
+            sidecar = json.load(handle)
+    except (OSError, ValueError):
+        pass
+    payload = {'url': sidecar.get('url', ''), 'title': sidecar.get('title', ''), 'text_file': args.saved,
+               'chars': len(text)}
+    print(json.dumps(_finish(payload, text, sidecar.get('outline') or [], args), ensure_ascii=False, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(prog='fetch.py', description=__doc__.split('\n')[1])
-    parser.add_argument('url')
+    parser.add_argument('url', nargs='?', default=None)
+    parser.add_argument('--saved', default=None, metavar='TEXT_FILE',
+                        help='Search a page already fetched, from its text file, without the network')
+    parser.add_argument('--relevant', default=None, metavar='QUESTION',
+                        help='With TYPESAFE_API_KEY set, print the passages Jev ranks most relevant to this')
     parser.add_argument('--find', action='append', default=[], metavar='TERM',
                         help='Repeatable. Print the passages around each term rather than the page.')
     parser.add_argument('--window', type=int, default=300, help='Characters either side of a --find hit')
@@ -532,6 +693,11 @@ def main():
     parser.add_argument('--json', action='store_true', help='Accepted for compat; output is always JSON')
     args = parser.parse_args()
 
+    if args.saved:
+        _saved(args)
+        return
+    if not args.url:
+        parser.error('give a URL, or --saved TEXT_FILE to search a page already fetched')
     if not args.url.startswith(('http://', 'https://')):
         _fail({'url': args.url, 'verdict': 'error', 'reason': 'not an http(s) URL'}, 1)
 
@@ -570,6 +736,7 @@ def main():
         _fail(payload, 3)
 
     markup = ''
+    outline = []
     if content_type == 'application/pdf' or args.url.lower().endswith('.pdf'):
         text = _pdf_to_text(body, args.url)
         meta = extract_meta('', headers)
@@ -580,6 +747,7 @@ def main():
             'application/xhtml+xml', 'application/xml', 'application/rss+xml', ''):
         markup = _decode(body, headers)
         text = html_to_text(markup)
+        outline = extract_outline(markup)
         meta = extract_meta(markup, headers)
     else:
         _fail({'url': args.url, 'verdict': 'unsupported',
@@ -617,8 +785,10 @@ def main():
         write_outputs(out_path, text, payload)
         _fail(payload, 3)
 
-    write_outputs(out_path, text, payload)
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    # The sidecar always keeps the outline, so a later --saved search can print
+    # it; stdout carries it only when nothing was found.
+    write_outputs(out_path, text, dict(payload, outline=outline))
+    print(json.dumps(_finish(payload, text, outline, args), ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

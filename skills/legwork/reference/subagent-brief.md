@@ -73,8 +73,12 @@ across the options rather than going deep on the first one."}
    negative case. Year-pin only queries about prices, releases, regulation or
    news. Read the results before opening anything.
 2. Open the sources that would settle the question, with
-   `python3 {SKILL_DIR}/scripts/fetch.py "<url>" --find "<term>"`. It keeps the
-   page text and prints the passages around your terms. If it exits 3 the page
+   `python3 {SKILL_DIR}/scripts/fetch.py "<url>" --find "<term>" --relevant "<your angle>"`.
+   It keeps the page text and prints the passages around your terms. If none
+   match, it prints the page's headings, and with a Jev key set the passages
+   most relevant to your angle. To look further into a page, search it again
+   with `python3 {SKILL_DIR}/scripts/fetch.py --saved "<text_file>" --find "<term>"`;
+   the text file is for searching, not for reading whole. If it exits 3 the page
    is blocked or client-rendered: try WebFetch. If that is refused too, search
    the document's own title (add `filetype:pdf` for a PDF) for a copy on another
    host and open that. Return the copy under its own URL, never the original's,
@@ -155,9 +159,10 @@ The subagent's structured output is not evidence yet. Before logging any of it:
 - **Check dates are present.** Undated sources are the gate's problem later; they
   are cheaper to fix now, while the page is still open.
 
-Then log each row with `sources.py log` and work from the log. Where a row
-carries `fetch_json`, log it with `--from-fetch` so the quote is checked against
-the page text. Log blocked rows with `--status blocked`. **Never paste a
+Then save the reply as it came back and log it with `sources.py log-returns`
+(`SKILL.md` step 3 has the command). It logs every row with its page text where
+`fetch_json` points at one, records refusals as blocked and search results as
+leads, and says how many quotes it checked. Work from the log. **Never paste a
 subagent's transcript into the synthesis.**
 
 Small gaps are cheaper to fill yourself than to re-spawn for. Re-spawn when a

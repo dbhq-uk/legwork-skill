@@ -677,6 +677,10 @@ def cmd_kinds(args):
         print()
 
 
+class LogError(Exception):
+    """A row that cannot be logged, with the reason."""
+
+
 def _apply_sidecar(args):
     """Fill the row from the JSON fetch.py (or bd_search.py) wrote beside the page.
 
@@ -689,8 +693,7 @@ def _apply_sidecar(args):
         with open(args.from_fetch, encoding='utf-8') as handle:
             payload = json.load(handle)
     except (OSError, ValueError) as exc:
-        print('error: cannot read --from-fetch: {}'.format(exc), file=sys.stderr)
-        sys.exit(2)
+        raise LogError('cannot read --from-fetch: {}'.format(exc))
 
     args.url = args.url or payload.get('canonical') or payload.get('url') or ''
     args.title = args.title or payload.get('title') or ''
@@ -709,21 +712,27 @@ def _apply_sidecar(args):
 
 
 def cmd_log(args):
+    try:
+        result = log_row(args)
+    except LogError as exc:
+        print('error: {}'.format(exc), file=sys.stderr)
+        sys.exit(2)
+    print(json.dumps(result))
+
+
+def log_row(args):
+    """Append one row to the fetch log and return what was recorded."""
     if args.from_fetch:
         args = _apply_sidecar(args)
     if not args.url:
-        print('error: --url is required unless --from-fetch supplies one', file=sys.stderr)
-        sys.exit(2)
+        raise LogError('--url is required unless --from-fetch supplies one')
     if not args.via:
-        print('error: --via is required unless --from-fetch supplies one', file=sys.stderr)
-        sys.exit(2)
+        raise LogError('--via is required unless --from-fetch supplies one')
     kind = args.kind or infer_source_kind(args.url, args.title or '')
     if kind not in SOURCE_KINDS:
-        print('error: unknown source kind {!r}; one of: {}'.format(kind, ', '.join(SOURCE_KINDS)), file=sys.stderr)
-        sys.exit(2)
+        raise LogError('unknown source kind {!r}; one of: {}'.format(kind, ', '.join(SOURCE_KINDS)))
     if args.via not in VIA_VALUES:
-        print('error: --via must be one of: {}'.format(', '.join(VIA_VALUES)), file=sys.stderr)
-        sys.exit(2)
+        raise LogError('--via must be one of: {}'.format(', '.join(VIA_VALUES)))
 
     page_text = None
     if args.text_file:
@@ -731,8 +740,7 @@ def cmd_log(args):
             with open(args.text_file, encoding='utf-8', errors='replace') as handle:
                 page_text = handle.read()
         except OSError as exc:
-            print('error: cannot read --text-file: {}'.format(exc), file=sys.stderr)
-            sys.exit(2)
+            raise LogError('cannot read --text-file: {}'.format(exc))
 
     quote = (args.quote or '')[:MAX_QUOTE_CHARS]
     numbers, numbers_from = numbers_for_row(args.numbers, page_text, quote)
@@ -765,9 +773,93 @@ def cmd_log(args):
         # sentence the page never contained could still carry a finding.
         'verified': '' if verified is None else ('true' if verified else 'false'),
     })
-    print(json.dumps({'status': 'logged', 'url': args.url, 'kind': kind,
-                      'numbers': len(numbers), 'numbers_from': numbers_from,
-                      'quoted': bool(quote), 'quote_verified': verified}))
+    return {'status': 'logged', 'url': args.url, 'kind': kind,
+            'numbers': len(numbers), 'numbers_from': numbers_from,
+            'quoted': bool(quote), 'quote_verified': verified,
+            'page_text': page_text is not None}
+
+
+def parse_returns(text):
+    """(sources, gaps) from a subagent's reply: every JSON object in it, in order.
+
+    A reply is meant to be JSON objects and nothing else, but models wrap them in
+    prose, fences or an array. Each object is found where it sits rather than
+    trusting the reply's shape.
+    """
+    decoder = json.JSONDecoder()
+    found, gaps, at = [], [], 0
+    text = text or ''
+    while True:
+        starts = [i for i in (text.find('{', at), text.find('[', at)) if i >= 0]
+        if not starts:
+            break
+        start = min(starts)
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except ValueError:
+            at = start + 1
+            continue
+        at = end
+        for item in (value if isinstance(value, list) else [value]):
+            if not isinstance(item, dict):
+                continue
+            if isinstance(item.get('gaps'), list):
+                gaps += [str(g) for g in item['gaps']]
+            elif item.get('url'):
+                found.append(item)
+    return found, gaps
+
+
+def cmd_log_returns(args):
+    """Log every source a subagent returned, with its page text wherever it exists.
+
+    Written after two eval runs on 2026-09-24/25 logged their subagents' returns
+    with a loop the orchestrator wrote itself, which left out --from-fetch: every
+    row went in without page text, no quote was checked, and the gate passed.
+    """
+    try:
+        with (sys.stdin if args.returns == '-' else open(args.returns, encoding='utf-8')) as handle:
+            text = handle.read()
+    except OSError as exc:
+        print('error: cannot read --returns: {}'.format(exc), file=sys.stderr)
+        sys.exit(2)
+    found, gaps = parse_returns(text)
+    summary = {'logged': 0, 'with_page_text': 0, 'quotes': {'true': 0, 'false': 0, 'unchecked': 0},
+               'kinds_inferred': 0, 'failed': [], 'gaps': gaps, 'angles': []}
+    for item in found:
+        fetch_json = (item.get('fetch_json') or '').strip()
+        via = (item.get('via') or '').strip().lower()
+        if not via and item.get('opened') is False and not fetch_json:
+            via = 'websearch'
+        kind = (item.get('kind') or '').strip() or None
+        if kind and kind not in SOURCE_KINDS:
+            kind = None
+            summary['kinds_inferred'] += 1
+        row = argparse.Namespace(
+            tsv=args.tsv, url=item.get('url', ''), kind=kind,
+            angle=(item.get('angle') or args.angle or '').strip(),
+            via=via if via in VIA_VALUES else '', status=(item.get('status') or 'ok').strip().lower(),
+            quote=item.get('quote') or '', title=item.get('title') or '', date=item.get('date') or '',
+            text_file=None, numbers='', query=item.get('query') or '',
+            from_fetch=fetch_json if fetch_json and os.path.exists(fetch_json) else None)
+        if not row.angle:
+            summary['failed'].append({'url': row.url, 'reason': 'no angle - pass --angle for this subagent'})
+            continue
+        try:
+            result = log_row(row)
+        except LogError as exc:
+            summary['failed'].append({'url': row.url, 'reason': str(exc)})
+            continue
+        summary['logged'] += 1
+        summary['with_page_text'] += bool(result['page_text'])
+        if result['quoted']:
+            verdict = result['quote_verified']
+            summary['quotes']['unchecked' if verdict is None else ('true' if verdict else 'false')] += 1
+        if row.angle not in summary['angles']:
+            summary['angles'].append(row.angle)
+    print(json.dumps(summary, ensure_ascii=False))
+    if summary['failed']:
+        sys.exit(1)
 
 
 def cmd_score(args):
@@ -839,6 +931,13 @@ def main(argv=None):
     p_kinds = sub.add_parser('kinds', help='Print the claim-kind ladders')
     p_kinds.add_argument('--format', default='table', choices=['table', 'json'])
 
+    p_returns = sub.add_parser('log-returns', help='Log every source a subagent returned, with its page text')
+    p_returns.add_argument('--tsv', required=True)
+    p_returns.add_argument('--returns', required=True, metavar='FILE',
+                           help="The subagent's reply, saved as it came back; '-' reads stdin")
+    p_returns.add_argument('--angle', default='',
+                           help="This subagent's angle, for any source that came back without one")
+
     p_log = sub.add_parser('log', help='Append one retrieval to the fetch log')
     p_log.add_argument('--tsv', required=True)
     p_log.add_argument('--url', default='', help='Required unless --from-fetch supplies one')
@@ -880,7 +979,7 @@ def main(argv=None):
     p_resume.add_argument('--format', default='table', choices=['table', 'json'])
 
     args = parser.parse_args(argv)
-    {'kinds': cmd_kinds, 'log': cmd_log, 'receipt': cmd_receipt, 'score': cmd_score,
+    {'kinds': cmd_kinds, 'log': cmd_log, 'log-returns': cmd_log_returns, 'receipt': cmd_receipt, 'score': cmd_score,
      'stale': cmd_stale, 'resume': cmd_resume}[args.command](args)
 
 

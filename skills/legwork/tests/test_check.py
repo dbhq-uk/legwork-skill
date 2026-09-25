@@ -454,7 +454,7 @@ def test_a_receipt_with_no_opened_count_is_not_second_guessed(tmp_path):
 # check. Recording a check and then ignoring it is worse than not checking.
 # ---------------------------------------------------------------------------
 
-def _one_source_report(tmp_path, verified, quote='A sentence nobody can find on the page.'):
+def _one_source_report(tmp_path, verified, quote='A sentence nobody can find on the page.', via='direct'):
     report = str(tmp_path / 'run.md')
     with open(report, 'w', encoding='utf-8') as handle:
         handle.write(
@@ -470,9 +470,9 @@ def _one_source_report(tmp_path, verified, quote='A sentence nobody can find on 
     tsv = str(tmp_path / 'run.tsv')
     with open(tsv, 'w', encoding='utf-8') as handle:
         handle.write('\t'.join(check.read_rows.__globals__['TSV_COLUMNS']) + '\n')
-        handle.write('https://vendor.example/pricing\tvendor_pricing\tan angle\tdirect\t'
+        handle.write('https://vendor.example/pricing\tvendor_pricing\tan angle\t{}\t'
                      '2026-09-06T09:00:00+00:00\tok\t2026-07-01\t\tPricing\t{}\tq\t{}\n'.format(
-                         quote, verified))
+                         via, quote, verified))
     return report, tsv
 
 
@@ -490,8 +490,10 @@ def test_the_same_finding_is_fine_when_the_quote_checks_out(tmp_path):
 
 def test_an_unverifiable_quote_is_not_punished(tmp_path):
     """Empty means nobody could check - no page text was supplied. That is the
-    ordinary case for WebFetch and must not be treated as a failed check."""
-    report, tsv = _one_source_report(tmp_path, verified='')
+    ordinary case for WebFetch and must not be treated as a failed check. (A
+    fetch.py row with no verdict is different: fetch.py always keeps the text,
+    so its absence means the row was logged without it - see below.)"""
+    report, tsv = _one_source_report(tmp_path, verified='', via='webfetch')
     problems, _ = check.run(report, tsv, 'brief', 'deep')
     assert problems.errors == [], problems.errors
 
@@ -520,3 +522,53 @@ def test_a_serp_row_does_not_launder_a_snippet_into_an_opened_page(tmp_path):
         handle.write(content)
     problems, _ = check.run(report, tsv, 'brief', 'deep')
     assert any('never opened' in message for message in problems.errors), problems.errors
+
+
+# ---------------------------------------------------------------------------
+# A fetch.py row whose quote was never checked means the page text was left out
+# when it was logged. Measured on 2026-09-24/25: two runs logged every row that
+# way, no quote in either was checked, and the gate passed both.
+# ---------------------------------------------------------------------------
+
+def _valid_with_log(tmp_path, via, verified):
+    report = str(tmp_path / 'run.md')
+    shutil.copy(fixture('valid_brief.md'), report)
+    rows = open(fixture('valid_brief.tsv'), encoding='utf-8').read().splitlines()
+    header = rows[0].split('\t')
+    if 'verified' not in header:
+        rows[0] += '\tquery\tverified' if 'query' not in header else '\tverified'
+    out = [rows[0]]
+    width = len(rows[0].split('\t'))
+    for line in rows[1:]:
+        cells = line.split('\t') + [''] * (width - len(line.split('\t')))
+        cells[header.index('via')] = via
+        cells[width - 1] = verified
+        out.append('\t'.join(cells))
+    tsv = str(tmp_path / 'run.tsv')
+    open(tsv, 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+    return report, tsv
+
+
+def test_fetch_rows_whose_quotes_were_never_checked_warn_at_standard(tmp_path):
+    report, tsv = _valid_with_log(tmp_path, 'direct', '')
+    problems, _ = check.run(report, tsv, 'brief', 'standard')
+    assert any('page text' in w and 'never checked' in w for w in problems.warnings), problems.warnings
+
+
+def test_fetch_rows_whose_quotes_were_never_checked_fail_at_deep(tmp_path):
+    report, tsv = _valid_with_log(tmp_path, 'direct', '')
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert any('page text' in e and 'never checked' in e for e in problems.errors), problems.errors
+
+
+def test_fetch_rows_with_checked_quotes_are_silent(tmp_path):
+    report, tsv = _valid_with_log(tmp_path, 'direct', 'true')
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert not any('never checked' in m for m in problems.errors + problems.warnings)
+
+
+def test_webfetch_rows_are_not_asked_for_page_text(tmp_path):
+    """WebFetch never yields page text, so an unchecked quote there is expected."""
+    report, tsv = _valid_with_log(tmp_path, 'webfetch', '')
+    problems, _ = check.run(report, tsv, 'brief', 'deep')
+    assert not any('never checked' in m for m in problems.errors + problems.warnings)

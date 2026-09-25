@@ -76,6 +76,12 @@ judgements about strength, so they inform at standard and block at deep.
   that sentence's cited sources. Bare integers below 10 are skipped as prose
   counts; decimals and percentages are always traced, because those are the
   figures that get transposed.
+- **A page opened with `fetch.py` has its quote checked.** `fetch.py` always
+  keeps the page text, so a `direct` row with a quote and no verdict was logged
+  without it - by hand, rather than with `--from-fetch` or `sources.py
+  log-returns`. Graded: a warning at standard, an error at deep. Measured on
+  2026-09-24/25: two runs logged every row that way, no quote in either was
+  checked, and both passed. `WebFetch` rows are not asked; they never have text.
 - **Every finding rests on something recorded.** A finding must either quote a
   figure that traces to a fetched page, or cite at least one source carrying a
   quote in the fetch log. A finding with neither is backed only by proof that

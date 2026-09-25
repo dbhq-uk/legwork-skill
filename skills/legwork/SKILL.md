@@ -145,11 +145,22 @@ to cite; the gate treats a citation resting only on search-result rows as
 unopened. Quick opens a page only to pin a figure.
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/fetch.py "<url>" --find "per user" --find "price"
+python3 ${CLAUDE_SKILL_DIR}/scripts/fetch.py "<url>" --find "per user" --find "price" \
+  --relevant "what does the incumbent charge"
 ```
 
 `fetch.py` keeps the page text on disk and prints only the passages around your
 terms. Text on disk is what lets a figure be traced and a quote be checked.
+When no term matches it prints the page's headings instead: search the saved
+page again with `fetch.py --saved <text_file> --find "<term>"`, which does not
+refetch. The saved file is for the scripts to search, not for reading whole -
+opening it puts the entire page into your context for the rest of the run.
+
+**Optional: Jev.** With `TYPESAFE_API_KEY` set, a `--find` that misses also
+prints the three passages TypeSafe's Jev model ranks most relevant to
+`--relevant`. It costs about $0.0002 a page and sends that page's text and the
+`--relevant` question to TypeSafe. Without the key, `--relevant` is skipped and
+nothing else changes.
 
 **When a page will not open**, go down this list. Log each failure with
 `--status blocked` before you try the next step: a refusal is evidence about the
@@ -231,9 +242,19 @@ one did, and 103 subagent fetches reached the log with nothing to check. Then:
   one known figure run fine on a cheap model; pass it explicitly. Rebuilding a
   list, and deep-level primary-source work, stay on your own model: smaller
   models fill a grid from one aggregator and report success.
-- **Work from the log, not the transcript.** Take the structured return, check
-  each angle string came back unchanged, and log the rows, blocked ones
-  included. Never paste a subagent's transcript into the synthesis.
+- **Log what comes back with the script, not by hand.** Save each subagent's
+  reply to a file as it came back, then:
+
+  ```bash
+  python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py log-returns --tsv "$OUT/$BASE.tsv" \
+    --returns /tmp/legwork-returns-1.txt --angle "what does the incumbent charge"
+  ```
+
+  It logs every source with its page text wherever one was saved, blocked ones
+  included, and prints how many quotes it checked and the angles it saw - check
+  those came back unchanged. A logging loop of your own drops the page text, and
+  with it every quote check. Never paste a subagent's transcript into the
+  synthesis.
 - **Subagents use the free rungs only.** A page one returns as blocked is yours
   to take up the paid rungs, if the finding needs it.
 - Framing, challenge and writing are judgement, and stay with you.
@@ -398,11 +419,11 @@ All standard library only, on any `python3` 3.9 or newer.
 
 | Script | Purpose |
 |---|---|
-| `fetch.py "<url>" --find TERM` | Open a page for free and keep its text; exit 3 is a block or a shell |
+| `fetch.py "<url>" --find TERM [--relevant Q]` | Open a page for free and keep its text; exit 3 is a block or a shell. `--saved FILE` searches a page already fetched |
 | `platforms.py list \| search --on X` | Ten free platforms that return records rather than pages |
 | `brief.py --angle "..." --effort narrow\|comparison` | The brief for one retrieval subagent, filled and ready to pass unchanged |
 | `bd_search.py "<query\|url>" -m MODE` | The paid Bright Data rungs; `--help` lists the modes |
-| `sources.py log \| kinds \| score \| receipt \| resume \| stale` | The fetch log, source kinds and their fitness per claim, the receipt counts, what a past run fetched, what has gone stale |
+| `sources.py log \| log-returns \| kinds \| score \| receipt \| resume \| stale` | The fetch log, source kinds and their fitness per claim, the receipt counts, what a past run fetched, what has gone stale |
 | `independence.py groups \| check \| portfolio` | Independent voices, corroboration per finding, concentration across the run |
 | `matrix.py check` | Completeness of a comparison matrix |
 | `index.py list \| add` | The research index |

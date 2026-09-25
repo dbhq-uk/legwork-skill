@@ -57,7 +57,8 @@ Search queries and the URLs being fetched. The research question itself reaches
 the search provider as a query string. Do not run legwork on a question whose
 wording is itself confidential - the question is the thing most likely to leak.
 
-**Only if you set `TYPESAFE_API_KEY`:** when `fetch.py --relevant` is used and
+**Only if you provide a TypeSafe key** (`TYPESAFE_API_KEY`, or
+`~/.dbhq/legwork/typesafe-api-key`): when `fetch.py --relevant` is used and
 `--find` matched nothing, the text of that page (already public, since it was
 just fetched from the open web) and the `--relevant` question are sent to
 TypeSafe's System One API at `api.typesafe.ai` to rank the page's passages.
@@ -79,8 +80,9 @@ Without the key nothing is sent there.
 ### Credentials
 
 Only a Bright Data API key and a TypeSafe API key, and each only if you choose
-to use that option. Both are read from the environment; the skill writes
-neither to disk.
+to use that option. Both are read from the environment; the TypeSafe key may
+instead sit alone in `~/.dbhq/legwork/typesafe-api-key`, which you create (keep
+it mode 600). The skill writes neither to disk.
 
 ## Evidence handling
 

@@ -626,6 +626,7 @@ def test_passages_follow_paragraphs_and_stay_near_the_size():
 def test_relevant_without_a_key_is_skipped_quietly(monkeypatch, capsys, tmp_path):
     saved = _saved_page(tmp_path)
     monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
+    monkeypatch.setenv('HOME', str(tmp_path / 'no-key-home'))  # not this machine's key file
     monkeypatch.setattr(fetch, '_jev_request', _no_network)
     monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', saved, '--relevant', 'What does the sandbox need?'])
     fetch.main()
@@ -697,3 +698,45 @@ def test_a_miss_on_a_page_with_no_headings_says_to_try_other_terms(monkeypatch, 
     fetch.main()
     payload = json.loads(capsys.readouterr().out)
     assert payload['outline'] == [] and 'try other terms' in payload['next']
+
+
+# The key can live in ~/.dbhq/legwork/, where every DBHQ skill keeps its
+# credentials, so Jev mode is on without exporting anything per session.
+
+def test_the_key_file_is_used_when_the_environment_has_none(monkeypatch, capsys, tmp_path):
+    saved = _saved_page(tmp_path)
+    home = tmp_path / 'home'
+    (home / '.dbhq' / 'legwork').mkdir(parents=True)
+    (home / '.dbhq' / 'legwork' / 'typesafe-api-key').write_text('file-key\n', encoding='utf-8')
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
+    seen = {}
+
+    def fake_jev(state, questions, key):
+        seen['key'] = key
+        return {'answers': {q: {'score': 1, 'probabilities': {'1': 1.0}} for q in questions}}
+
+    monkeypatch.setattr(fetch, '_jev_request', fake_jev)
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', saved, '--relevant', 'q'])
+    fetch.main()
+    assert seen['key'] == 'file-key'
+    assert json.loads(capsys.readouterr().out)['relevant']
+
+
+def test_the_environment_wins_over_the_key_file(monkeypatch, capsys, tmp_path):
+    home = tmp_path / 'home'
+    (home / '.dbhq' / 'legwork').mkdir(parents=True)
+    (home / '.dbhq' / 'legwork' / 'typesafe-api-key').write_text('file-key', encoding='utf-8')
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.setenv('TYPESAFE_API_KEY', 'env-key')
+    assert fetch.typesafe_key() == 'env-key'
+
+
+def test_no_key_anywhere_names_both_places(monkeypatch, capsys, tmp_path):
+    saved = _saved_page(tmp_path)
+    monkeypatch.setenv('HOME', str(tmp_path / 'empty-home'))
+    monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
+    monkeypatch.setattr('sys.argv', ['fetch.py', '--saved', saved, '--relevant', 'q'])
+    fetch.main()
+    note = json.loads(capsys.readouterr().out)['relevant_note']
+    assert 'TYPESAFE_API_KEY' in note and 'typesafe-api-key' in note

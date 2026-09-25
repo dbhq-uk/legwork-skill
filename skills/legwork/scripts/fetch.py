@@ -199,7 +199,8 @@ def extract_outline(markup):
 # Optional: Jev ranks the page's passages against the question being answered
 # ---------------------------------------------------------------------------
 #
-# Used only when TYPESAFE_API_KEY is set, and only with --relevant. It sends the
+# Used only when a TypeSafe key is available - TYPESAFE_API_KEY, or the file
+# ~/.dbhq/legwork/typesafe-api-key - and only with --relevant. It sends the
 # page text and the question to TypeSafe's System One API. Measured on
 # 2026-09-24 over 40 real pages: the passage the agent went on to quote was in
 # Jev's top three 75% of the time, against 26% for a random pick, at about
@@ -251,11 +252,28 @@ def _expected_score(answer):
     return float((answer or {}).get('score', 0)) / (len(JEV_LEVELS) - 1)
 
 
+KEY_FILE = os.path.join('~', '.dbhq', 'legwork', 'typesafe-api-key')
+
+
+def typesafe_key():
+    """TYPESAFE_API_KEY from the environment, else from ~/.dbhq/legwork/, where
+    every DBHQ skill keeps its credentials. Empty when neither has one."""
+    key = os.environ.get('TYPESAFE_API_KEY', '').strip()
+    if key:
+        return key
+    try:
+        with open(os.path.expanduser(KEY_FILE), encoding='utf-8') as handle:
+            return handle.read().strip()
+    except OSError:
+        return ''
+
+
 def rank_passages(text, question):
     """([{'score', 'passage'}], note). Never raises: Jev is an aid, not a rung."""
-    key = os.environ.get('TYPESAFE_API_KEY', '').strip()
+    key = typesafe_key()
     if not key:
-        return [], 'skipped: no TYPESAFE_API_KEY, so no Jev ranking - use the outline and --find'
+        return [], ('skipped: no TYPESAFE_API_KEY and no {}, so no Jev ranking - '
+                    'use the outline and --find'.format(KEY_FILE))
     passages = split_passages(text)[:PASSAGE_MAX]
     if not passages:
         return [], 'skipped: no text to rank'

@@ -75,7 +75,8 @@ whole skill directory is symlinked untouched, while Codex does not, so its
 **The Bright Data CLI is optional.** It is the retrieval fallback for pages
 that block a plain fetch; setup succeeds without it and says so.
 
-**A TypeSafe API key is optional.** With `TYPESAFE_API_KEY` set, when a page
+**A TypeSafe API key is optional.** With `TYPESAFE_API_KEY` set, or the key
+alone in `~/.dbhq/legwork/typesafe-api-key` (mode 600), when a page
 has nothing matching the terms an agent searched for, `fetch.py --relevant`
 asks TypeSafe's Jev model which passages answer the question, at about $0.0002
 a page, instead of the agent reading the whole page. Without it, the page's

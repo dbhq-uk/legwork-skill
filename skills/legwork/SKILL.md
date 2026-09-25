@@ -156,7 +156,8 @@ page again with `fetch.py --saved <text_file> --find "<term>"`, which does not
 refetch. The saved file is for the scripts to search, not for reading whole -
 opening it puts the entire page into your context for the rest of the run.
 
-**Optional: Jev.** With `TYPESAFE_API_KEY` set, a `--find` that misses also
+**Optional: Jev.** With a TypeSafe key - `TYPESAFE_API_KEY`, or the key alone
+in `~/.dbhq/legwork/typesafe-api-key` - a `--find` that misses also
 prints the three passages TypeSafe's Jev model ranks most relevant to
 `--relevant`. It costs about $0.0002 a page and sends that page's text and the
 `--relevant` question to TypeSafe. Without the key, `--relevant` is skipped and

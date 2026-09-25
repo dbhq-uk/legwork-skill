@@ -84,7 +84,10 @@ judgements about strength, so they inform at standard and block at deep.
   report unchecked.
 - **A quote must be on the page it is attributed to.** Where the page text was
   captured, `sources.py log` checks the quote against it and records the verdict
-  in the log. A quote recorded as `false` - checked, and not on the page - is
+  in the log. The check is word for word: every word of the quote must be on the
+  page in that order, while punctuation, symbols, case and spacing are ignored,
+  because those are what differ between a faithful quote and extracted page text.
+  A quote recorded as `false` - checked, and not on the page - is
   struck out as evidence, so a finding resting on it fails the "rests on
   something recorded" check as well as being named directly. An empty verdict
   means nobody could check, which is the ordinary case for `WebFetch` and is not

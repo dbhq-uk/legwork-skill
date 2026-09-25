@@ -48,6 +48,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -408,15 +409,24 @@ def numbers_for_row(explicit, page_text, quote):
     return [], 'none'
 
 
-# Curly punctuation and non-breaking spaces are the reason a quote copied from a
-# rendered page fails a naive comparison against the same page's source text.
-_MATCH_PUNCT = {0x2018: "'", 0x2019: "'", 0x201c: '"', 0x201d: '"',
-                0x2013: '-', 0x2014: '-', 0x2212: '-', 0x00a0: ' '}
-
-
 def normalise_for_match(text):
-    """Fold the differences that stop a true quote matching the page it came from."""
-    return re.sub(r'\s+', ' ', (text or '').translate(_MATCH_PUNCT)).strip().lower()
+    """Fold the differences that stop a true quote matching the page it came from.
+
+    The comparison is word by word: every punctuation mark and symbol counts as
+    a space, and case and runs of whitespace are folded. Measured on 2026-09-24:
+    of twelve quotes marked false across a day of eval runs, eight had every
+    word on the page, in order, and differed only in punctuation - a colon
+    joining a heading to its paragraph, commas joining list items, a full stop
+    closing a sentence cut short, em dashes rewritten as commas, a dropped
+    trademark sign, and a space the text extraction left before a full stop.
+    A false alarm teaches the reader of the warning to ignore it.
+
+    What still fails is what the check is for: a changed word or figure,
+    reordered words, and words the page does not have in that sequence -
+    including two sentences joined with an ellipsis, which are not contiguous.
+    """
+    folded = ''.join(' ' if unicodedata.category(ch)[0] in 'PS' else ch for ch in (text or '').lower())
+    return re.sub(r'\s+', ' ', folded).strip()
 
 
 def quote_appears_in(quote, text):

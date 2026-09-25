@@ -281,6 +281,73 @@ def test_an_empty_quote_does_not_count_as_verified():
     assert not sources.quote_appears_in('', 'anything at all')
 
 
+# Measured on 2026-09-24: of twelve quotes the check marked false across a day
+# of eval runs, eight differed from the page only in punctuation or symbols.
+# Every word was on the page, in order. These are those eight shapes, taken from
+# the real pages, and the four that must still fail.
+
+def test_a_heading_joined_to_its_paragraph_with_a_colon_verifies():
+    page = 'Create an account\n\nSign up to the sandbox and start browsing our API catalogue.'
+    assert sources.quote_appears_in(
+        'Create an account: Sign up to the sandbox and start browsing our API catalogue.', page)
+
+
+def test_list_items_joined_with_commas_verify():
+    page = ('We also provide developers with all the tools they need:\n\n'
+            'Technical documentation to help connect our APIs to your app\n\n'
+            'Sandbox for building and testing your solutions')
+    assert sources.quote_appears_in(
+        'We also provide developers with all the tools they need: Technical documentation to help '
+        'connect our APIs to your app, Sandbox for building and testing your solutions', page)
+
+
+def test_a_sentence_cut_short_and_closed_with_a_full_stop_verifies():
+    page = 'Please refer to the guide to complete enrolment - How To Guide: Enrolling Onto Open Banking.'
+    assert sources.quote_appears_in('Please refer to the guide to complete enrolment.', page)
+
+
+def test_a_space_the_text_extraction_left_before_a_full_stop_verifies():
+    """fetch.py turns an inline element boundary into a space: 'environment .'"""
+    page = 'directly calling from your app/environment . We have created a number of'
+    assert sources.quote_appears_in('directly calling from your app/environment.', page)
+
+
+def test_em_dashes_and_curly_quotes_rewritten_as_commas_verify():
+    page = 'the idea of Triage\u2014a \u2018supercharged inbox\u2019\u2014was identified as key.'
+    assert sources.quote_appears_in('the idea of Triage, a supercharged inbox, was identified as key.', page)
+
+
+def test_a_dropped_trademark_sign_verifies():
+    page = "clearbank.github.io: ClearBank\u00ae's API Documentation. Visit https://clearbank.github.io/"
+    assert sources.quote_appears_in("ClearBank's API Documentation. Visit https://clearbank.github.io/", page)
+
+
+def test_a_changed_word_still_fails():
+    page = 'Sandbox access requires registration with the Open Banking Directory.'
+    assert not sources.quote_appears_in('Sandbox access requires no registration with the Open Banking Directory.', page)
+
+
+def test_a_changed_figure_still_fails():
+    page = 'db.t4g.micro costs $0.0180 per hour in eu-west-2.'
+    assert not sources.quote_appears_in('db.t4g.micro costs $0.0188 per hour in eu-west-2.', page)
+
+
+def test_reordered_words_still_fail():
+    page = 'The sandbox is free and the production API is paid.'
+    assert not sources.quote_appears_in('The production API is free and the sandbox is paid.', page)
+
+
+def test_an_elision_still_fails():
+    """Two sentences joined with '...' are not contiguous on the page. Whether an
+    elision should count is a separate decision, and this pins the current one."""
+    page = 'Make sure you first register with the FCA. Some other text here. We only support eIDAS.'
+    assert not sources.quote_appears_in('Make sure you first register with the FCA... We only support eIDAS.', page)
+
+
+def test_a_quote_of_only_punctuation_does_not_verify():
+    assert not sources.quote_appears_in('... -- !', 'Any page text at all, with punctuation: yes.')
+
+
 # ---------------------------------------------------------------------------
 # The retrieval receipt
 # ---------------------------------------------------------------------------

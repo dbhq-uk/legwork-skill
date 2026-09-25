@@ -433,6 +433,25 @@ def check_receipt(content, rows, problems):
                 counts['blocked'], '' if counts['blocked'] == 1 else 's', counts['blocked']))
 
 
+def check_unchecked_fetch_quotes(rows, problems):
+    """fetch.py always keeps the page text, so a fetch.py row whose quote was
+    never checked is a row logged without it - by hand, not with --from-fetch or
+    `sources.py log-returns`. Measured on 2026-09-24/25: two runs logged every
+    row that way, no quote in either was checked against its page, and both
+    passed. WebFetch never yields text, so its rows are not asked.
+    """
+    unchecked = [row for row in rows
+                 if (row.get('via') or '').strip().lower() == 'direct'
+                 and (row.get('status') or 'ok').lower() == 'ok'
+                 and (row.get('quote') or '').strip()
+                 and not (row.get('verified') or '').strip()]
+    if unchecked:
+        problems.graded(
+            '{} row{} opened with fetch.py carry no page text, so their quotes were never checked - '
+            'log subagent returns with `sources.py log-returns`, or single pages with --from-fetch'.format(
+                len(unchecked), '' if len(unchecked) == 1 else 's'))
+
+
 def check_confidence(content, entries, rows, problems, run_independence):
     findings = finding_sections(content)
     if not findings:
@@ -637,6 +656,7 @@ def run(report_path, tsv_path, fmt, level):
         else:
             check_evidence(content, entries, rows, problems)
             check_dates(content, entries, rows, problems)
+            check_unchecked_fetch_quotes(rows, problems)
 
     if rows:
         check_receipt(content, rows, problems)

@@ -479,3 +479,97 @@ def test_a_quote_the_page_does_not_carry_is_reported(tmp_path, capsys):
     captured = capsys.readouterr()
     assert json.loads(captured.out)['quote_verified'] is False
     assert 'not found in the page text' in captured.err
+
+
+# ---------------------------------------------------------------------------
+# log-returns: subagent returns logged by the script, not by a hand-written loop.
+# Measured on 2026-09-24/25: two of five runs had the orchestrator write its own
+# logging loop and leave out --from-fetch, so no quote in either run was
+# checked against its page - and the gate passed both.
+# ---------------------------------------------------------------------------
+
+def _returns(tmp_path, text):
+    path = tmp_path / 'returns.txt'
+    path.write_text(text, encoding='utf-8')
+    return str(path)
+
+
+def test_returns_are_parsed_from_a_reply_with_stray_text_around_them():
+    reply = ('Here is what I found:\n'
+             '{"url": "https://a.example/1", "angle": "q", "via": "direct"}\n'
+             '{"url": "https://b.example/2", "angle": "q", "via": "websearch", "opened": false}\n'
+             'and finally\n{"gaps": ["no price published"]}\n')
+    found, gaps = sources.parse_returns(reply)
+    assert [s['url'] for s in found] == ['https://a.example/1', 'https://b.example/2']
+    assert gaps == ['no price published']
+
+
+def test_returns_given_as_a_json_array_are_parsed():
+    found, gaps = sources.parse_returns(json.dumps([{'url': 'https://a.example/1', 'angle': 'q'},
+                                                    {'gaps': ['x']}]))
+    assert len(found) == 1 and gaps == ['x']
+
+
+def test_log_returns_attaches_page_text_so_quotes_are_checked(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    reply = json.dumps({'url': 'https://acme.example/pricing', 'angle': 'what it costs', 'kind': 'vendor_pricing',
+                        'via': 'direct', 'status': 'ok', 'opened': True, 'query': 'acme pricing',
+                        'quote': 'Team plan: 30 US dollars per user per month, billed annually.',
+                        'fetch_json': _sidecar(tmp_path)})
+    sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply)])
+    summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert summary['logged'] == 1 and summary['with_page_text'] == 1
+    assert summary['quotes'] == {'true': 1, 'false': 0, 'unchecked': 0}
+    row = sources.read_rows(tsv)[0]
+    assert row['verified'] == 'true' and '30' in row['numbers'] and row['title'] == 'Acme pricing'
+
+
+def test_log_returns_records_a_refusal_as_blocked(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    reply = json.dumps({'url': 'https://bank.example/portal', 'angle': 'q', 'via': 'direct',
+                        'status': 'blocked', 'opened': False})
+    sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply)])
+    assert sources.read_rows(tsv)[0]['status'] == 'blocked'
+
+
+def test_log_returns_logs_a_search_result_as_a_lead(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    reply = json.dumps({'url': 'https://c.example/x', 'angle': 'q', 'opened': False, 'quote': 'A snippet.'})
+    sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply)])
+    assert sources.read_rows(tsv)[0]['via'] == 'websearch'
+
+
+def test_log_returns_counts_a_missing_page_file_as_unchecked(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    reply = json.dumps({'url': 'https://a.example/1', 'angle': 'q', 'via': 'direct', 'quote': 'Some sentence.',
+                        'fetch_json': str(tmp_path / 'gone.json')})
+    sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply)])
+    summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert summary['logged'] == 1 and summary['with_page_text'] == 0
+    assert summary['quotes']['unchecked'] == 1
+
+
+def test_log_returns_infers_a_kind_it_does_not_know(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    reply = json.dumps({'url': 'https://a.example/pricing', 'angle': 'q', 'via': 'direct', 'kind': 'made-up-kind'})
+    sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply)])
+    assert sources.read_rows(tsv)[0]['kind'] in sources.SOURCE_KINDS
+
+
+def test_log_returns_uses_the_default_angle_when_a_source_has_none(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    reply = json.dumps({'url': 'https://a.example/1', 'via': 'direct'})
+    sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply),
+                            '--angle', 'the angle'])
+    assert sources.read_rows(tsv)[0]['angle'] == 'the angle'
+
+
+def test_log_returns_reports_rows_it_could_not_log_and_exits_1(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    reply = '\n'.join([json.dumps({'url': 'https://a.example/1', 'angle': 'q', 'via': 'direct'}),
+                       json.dumps({'url': 'https://b.example/2', 'via': 'direct'})])  # no angle anywhere
+    with pytest.raises(SystemExit) as exit_info:
+        sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply)])
+    assert exit_info.value.code == 1
+    summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert summary['logged'] == 1 and len(summary['failed']) == 1

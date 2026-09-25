@@ -75,6 +75,12 @@ whole skill directory is symlinked untouched, while Codex does not, so its
 **The Bright Data CLI is optional.** It is the retrieval fallback for pages
 that block a plain fetch; setup succeeds without it and says so.
 
+**A TypeSafe API key is optional.** With `TYPESAFE_API_KEY` set, when a page
+has nothing matching the terms an agent searched for, `fetch.py --relevant`
+asks TypeSafe's Jev model which passages answer the question, at about $0.0002
+a page, instead of the agent reading the whole page. Without it, the page's
+headings are printed and nothing is sent anywhere.
+
 ## Usage
 
 ```
@@ -166,10 +172,10 @@ All standard library only, Python 3.9+.
 
 | Script | Purpose |
 |--------|---------|
-| `fetch.py "<url>" --find TERM` | Open a page directly and keep its text; reads the publication date; exits 3 on a block or a client-rendered shell |
+| `fetch.py "<url>" --find TERM [--relevant Q]` | Open a page directly and keep its text; reads the publication date; exits 3 on a block or a client-rendered shell. On a miss it prints the page's headings, and with a TypeSafe key the passages Jev ranks most relevant. `--saved FILE` searches a page already fetched |
 | `platforms.py list \| search --on X` | Ten free platform-native sources, returning records rather than pages about them |
 | `brief.py --angle "..." --effort narrow\|comparison` | The retrieval subagent's brief, filled from the template with the date, the angle and real script paths, so it is passed rather than retyped |
-| `sources.py kinds \| log \| receipt \| score \| stale \| resume` | The source-kind vocabulary, the fetch log, the retrieval receipt, fitness scoring per claim kind, staleness, resume |
+| `sources.py kinds \| log \| log-returns \| receipt \| score \| stale \| resume` | The source-kind vocabulary, the fetch log, logging a subagent's whole reply with its page text, the retrieval receipt, fitness scoring per claim kind, staleness, resume |
 | `independence.py groups \| check \| portfolio` | Collapse sources into independent voices; angle-aware corroboration; run-wide concentration |
 | `check.py --report P --level L` | The shippability gate: structural, evidence, independence, matrix |
 | `finish.py --report P --level L` | Gate, staleness sweep and index filing in one call |

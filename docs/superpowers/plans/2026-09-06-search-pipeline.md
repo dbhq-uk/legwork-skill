@@ -139,7 +139,7 @@ def quote_appears_in(quote, text):
 - [ ] **Step 3: Update `SKILL.md`:** the two ladders as tables, `fetch.py` in the scripts table, the receipt format, the snippet rule in one line under Gates.
 - [ ] **Step 4: Update `quality-gates.md`** Evidence layer with the snippet rule and the receipt warning.
 - [ ] **Step 5: Update `README.md`** (backend table, gate paragraph, scripts table), `SECURITY.md` (three network paths, the `robots.txt` choice, temporary page text), `AGENTS.md` (conventions), `docs/design-notes.md` (a "Search was never measured" section carrying the 215-row table).
-- [ ] **Step 6: Check every internal link resolves and the house style holds.** `grep -n -- '—\|–' skills/legwork/**/*.md docs/*.md *.md`
+- [ ] **Step 6: Check every internal link resolves and the house style holds.** `grep -nP -- '[\x{2014}\x{2013}]' skills/legwork/**/*.md docs/*.md *.md`
 - [ ] **Step 7: Commit.** `docs: the query playbook and the retrieval ladders`
 
 ---

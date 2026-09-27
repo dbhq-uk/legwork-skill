@@ -234,3 +234,77 @@ def test_the_time_limit_leaves_unopened_links_as_leads(tmp_path, fake):
     rows = sources.read_rows(tsv)
     assert {r['via'] for r in rows} == {'serp'} and len(rows) == 2
     assert result['angles']['offer']['not_reached'] == 2
+
+
+# ---------------------------------------------------------------------------
+# The digest - what Claude reads instead of the pages
+# ---------------------------------------------------------------------------
+
+def _run_with(tmp_path, fake, pages, angle=None, round_=1):
+    for url, text in pages.items():
+        fake.pages[url] = text
+    fake.serp[('bank api sandbox uk', 'google')] = list(pages)
+    tsv = str(tmp_path / 'run.tsv')
+    out = str(tmp_path / 'digest.md')
+    plan = gather.load_plan(_plan(tmp_path, [angle or _angle()], round_=round_))
+    report = gather.run(plan, tsv, str(tmp_path))
+    gather.write_digest(plan, report, tsv, out)
+    return open(out, encoding='utf-8').read(), tsv
+
+
+def test_the_digest_pools_passages_from_every_page_and_ranks_them(tmp_path, fake):
+    digest, _ = _run_with(tmp_path, fake, {
+        'https://a.example/1': 'Unrelated text about opening hours and branches.\n\nMore unrelated text.',
+        'https://b.example/2': 'The bank api sandbox needs a registered app and a test certificate.',
+    })
+    assert digest.index('b.example') < digest.index('a.example')
+
+
+def test_a_party_is_capped_with_the_overflow_listed(tmp_path, fake):
+    text = '\n\n'.join('The bank api sandbox fact number {} is here.'.format(i) + ' filler' * 90 for i in range(6))
+    digest, _ = _run_with(tmp_path, fake, {'https://vendor.example/doc': text})
+    assert digest.count('vendor.example ·') == 3
+    assert '+3 more from vendor.example' in digest
+
+
+def test_the_subject_s_own_pages_are_not_capped(tmp_path, fake):
+    text = '\n\n'.join('The Barclays bank api sandbox fact {} is here.'.format(i) + ' filler' * 90 for i in range(6))
+    angle = _angle(subject='Barclays', **{'from': ['r1-offer-1']})
+    digest, _ = _run_with(tmp_path, fake, {'https://developer.barclays.com/doc': text}, angle=angle, round_=2)
+    assert digest.count('barclays.com ·') == 6 and 'more from' not in digest
+
+
+def test_round_one_lists_names_by_how_many_parties_name_them(tmp_path, fake):
+    digest, _ = _run_with(tmp_path, fake, {
+        'https://a.example/1': 'Starling Bank offers a sandbox. Monzo Bank too.',
+        'https://b.example/2': 'Starling Bank has a developer portal.',
+        'https://c.example/3': 'We compared Starling Bank and Monzo Bank.',
+        'https://d.example/4': 'Only this page mentions Obscure Bank.',
+    })
+    names = digest.split('Named by sources')[1].split('\n\n')[1]
+    assert 'Starling Bank 3' in names and 'Monzo Bank 2' in names and 'Obscure Bank' not in names
+
+
+def test_an_angle_is_saturated_when_the_last_searches_add_no_new_party(tmp_path, fake):
+    angle = _angle(phrasings=['q1', 'q2', 'q3', 'q4'], disconfirming=[])
+    fake.serp[('q1', 'google')] = ['https://a.example/1', 'https://b.example/2']
+    for q in ('q2', 'q3', 'q4'):
+        fake.serp[(q, 'google')] = ['https://a.example/1']
+    fake.pages['https://a.example/1'] = 'x'
+    fake.pages['https://b.example/2'] = 'y'
+    plan = gather.load_plan(_plan(tmp_path, [angle]))
+    report = gather.run(plan, str(tmp_path / 'run.tsv'), str(tmp_path))
+    assert report['angles']['offer']['saturated'] is True
+
+
+def test_digest_ids_resolve_to_their_page_and_passage(tmp_path, fake, capsys):
+    digest, tsv = _run_with(tmp_path, fake, {
+        'https://b.example/2': 'The bank api sandbox needs a registered app and a test certificate.'})
+    ids = json.load(open(os.path.splitext(tsv)[0] + '.ids.json', encoding='utf-8'))
+    first = next(iter(ids))
+    assert first in digest and ids[first]['url'] == 'https://b.example/2'
+    gather.main(['--show', first, '--tsv', tsv])
+    assert 'test certificate' in capsys.readouterr().out
+    sources.main_with_args(['quote', '--tsv', tsv, '--id', first,
+                            '--quote', 'The bank api sandbox needs a registered app and a test certificate.'])
+    assert sources.read_rows(tsv)[0]['verified'] == 'true'

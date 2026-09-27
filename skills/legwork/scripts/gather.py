@@ -38,6 +38,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -47,6 +48,8 @@ from concurrent.futures import ThreadPoolExecutor
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPTS)
 
+import fetch  # noqa: E402
+import rerank  # noqa: E402
 import sources  # noqa: E402
 from independence import canonicalize, party_of  # noqa: E402
 
@@ -300,14 +303,25 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
     # 2. Narrow: one entry per page per angle, keeping the first query that found it.
     hits = {angle['id']: {} for angle in plan['angles']}
     stats = {angle['id']: {'searches': 0, 'failed_searches': 0} for angle in plan['angles']}
+    new_parties = {angle['id']: [] for angle in plan['angles']}
+    seen_parties = {angle['id']: set() for angle in plan['angles']}
     for angle_id, _job, found in results:
         stats[angle_id]['searches'] += 1
         if found is None:
             stats[angle_id]['failed_searches'] += 1
             continue
+        parties = {party_of(hit['url']) for hit in found if hit.get('url')}
+        new_parties[angle_id].append(len(parties - seen_parties[angle_id]))
+        seen_parties[angle_id] |= parties
         for hit in found:
             if hit.get('url'):
                 hits[angle_id].setdefault(canonicalize(hit['url']), hit)
+    for angle_id, counts in new_parties.items():
+        # Saturated: the last three searches found no party the earlier ones had
+        # not. Unsaturated means more phrasings would still turn up new voices.
+        stats[angle_id]['saturated'] = (len(counts) >= 4 and sum(counts[-3:]) == 0
+                                        and bool(seen_parties[angle_id]))
+        stats[angle_id]['parties_found'] = len(seen_parties[angle_id])
     for angle in plan['angles']:
         for url in angle['urls']:
             hits[angle['id']].setdefault(canonicalize(url), {'url': url, 'title': '', 'via': 'direct',
@@ -359,15 +373,165 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
     return report
 
 
+# ---------------------------------------------------------------------------
+# The digest
+# ---------------------------------------------------------------------------
+
+PASSAGE_SHOWN = 600
+NAMES_SHOWN = 40
+_NAME = re.compile(r"\b[A-Z][\w&'.-]*(?:\s+(?:of\s+)?[A-Z][\w&'.-]*){0,3}")
+_NOT_NAMES = frozenset("""
+a an and as at be but by for from how if in is it its of on or our so that the their them then there
+these they this those to we what when where which who why will with you your all any each more most
+no not only other some such than too very can may must should would could also however here new
+january february march april may june july august september october november december
+monday tuesday wednesday thursday friday saturday sunday home menu login sign contact about terms
+privacy cookies policy read learn find get see click skip search next previous share
+""".split())
+
+
+def _names(text):
+    found = set()
+    for match in _NAME.finditer(text or ''):
+        name = ' '.join(match.group(0).split()).strip(".-'")
+        words = [w.lower().strip(".'") for w in name.split() if w.lower() != 'of']
+        if not words or all(w in _NOT_NAMES for w in words) or len(name) < 3:
+            continue
+        found.add(name)
+    return found
+
+
+def _subject_party(angle, items):
+    """The party that is the angle's subject: the one whose domain carries the
+    subject's name. Its pages are primary evidence and are never capped."""
+    subject = re.sub(r'[^a-z0-9]', '', (angle.get('subject') or '').lower())
+    if not subject:
+        return None
+    counts = {}
+    for item in items:
+        if subject[:12] in re.sub(r'[^a-z0-9]', '', item['party']):
+            counts[item['party']] = counts.get(item['party'], 0) + 1
+    return max(counts, key=counts.get) if counts else None
+
+
+def _load_ids(path):
+    try:
+        with open(path, encoding='utf-8') as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return {}
+
+
+def write_digest(plan, report, tsv, out):
+    """The digest Claude reads: per angle, the top of the reranked passage pool,
+    capped per party with the overflow listed, plus in round 1 the names the
+    sources mention and how many independent parties mention each."""
+    round_ = plan.get('round', 1)
+    ids_path = os.path.splitext(tsv)[0] + '.ids.json'
+    ids = _load_ids(ids_path)
+    angles_out, scorers = [], set()
+    all_parties, totals = set(), {'searches': 0, 'failed': 0, 'hits': 0, 'opened': 0, 'blocked': 0,
+                                  'not_reached': 0}
+    for angle in plan['angles']:
+        entry = report['angles'][angle['id']]
+        totals['searches'] += entry['searches']
+        totals['failed'] += entry['failed_searches']
+        totals['hits'] += entry['hits']
+        totals['opened'] += len(entry['opened'])
+        totals['blocked'] += entry['blocked']
+        totals['not_reached'] += entry['not_reached']
+        items, names = [], {}
+        for page in entry['opened']:
+            try:
+                with open(page['sidecar'], encoding='utf-8') as handle:
+                    sidecar = json.load(handle)
+                with open(sidecar['text_file'], encoding='utf-8', errors='replace') as handle:
+                    text = handle.read()
+            except (OSError, ValueError, KeyError):
+                continue
+            all_parties.add(page['party'])
+            headings = [tuple(h) for h in sidecar.get('headings') or []]
+            for passage in fetch.passages_with_trail(text, headings):
+                items.append({'url': page['url'], 'party': page['party'], 'text': passage['text'],
+                              'trail': passage['trail'], 'title': sidecar.get('title') or '',
+                              'date': sidecar.get('date') or '', 'text_file': sidecar['text_file']})
+            if round_ == 1:
+                for name in _names(text):
+                    names.setdefault(name, set()).add(page['party'])
+        terms = [angle['question']] + angle['phrasings'] + angle['disconfirming']
+        scores, scorer = rerank.pool_scores([item['text'] for item in items], terms, angle['question'])
+        scorers.add(scorer)
+        for number, (item, score) in enumerate(zip(items, scores), 1):
+            item['id'] = 'r{}-{}-{}'.format(round_, angle['id'], number)
+            item['score'] = score
+            ids[item['id']] = {k: item[k] for k in ('url', 'party', 'text', 'trail', 'title', 'date', 'text_file')}
+            ids[item['id']]['angle'] = angle['question']
+        chosen, overflow = rerank.select_digest(items, _subject_party(angle, items))
+        angles_out.append((angle, entry, chosen, overflow, names))
+
+    lines = ['# Gather digest - round {} - {}'.format(round_, plan.get('date', '')), '',
+             '*{} searches ({} failed) · {} pages found · {} opened from {} parties · {} blocked · '
+             '{} not reached · passages ranked by {}*'.format(
+                 totals['searches'], totals['failed'], totals['hits'], totals['opened'], len(all_parties),
+                 totals['blocked'], totals['not_reached'], ' and '.join(sorted(scorers)) or 'nothing'),
+             '',
+             'Read any passage in full, or any listed in overflow: `gather.py --show ID --tsv {}`. '
+             'Record a quote you rely on: `sources.py quote --tsv {} --id ID --quote "..."`.'.format(tsv, tsv)]
+    for angle, entry, chosen, overflow, names in angles_out:
+        lines += ['', '## {} - {}'.format(angle['id'], angle['question']), '',
+                  '{} pages found · {} opened · {} blocked · {} not reached · search {}'.format(
+                      entry['hits'], len(entry['opened']), entry['blocked'], entry['not_reached'],
+                      'saturated' if entry.get('saturated') else 'not saturated - more phrasings may find more')]
+        if angle.get('subject'):
+            lines.append('Subject: {} (from {})'.format(
+                angle['subject'], ', '.join(angle.get('from') or []) or 'memory, searched as a check'))
+        named = sorted(((n, len(p)) for n, p in names.items() if len(p) >= 2), key=lambda x: (-x[1], x[0]))
+        if named:
+            lines += ['', 'Named by sources (independent parties naming each):', '',
+                      ' · '.join('{} {}'.format(n, c) for n, c in named[:NAMES_SHOWN])]
+        lines.append('')
+        for item in chosen:
+            kind = sources.infer_source_kind(item['url'], item['title'])
+            meta = ' · '.join(x for x in (item['party'], kind, item['date'] or 'undated', item['trail']) if x)
+            text = ' '.join(item['text'].split())
+            if len(text) > PASSAGE_SHOWN:
+                text = text[:PASSAGE_SHOWN].rsplit(' ', 1)[0] + ' ...'
+            lines += ['- **{}** · {}'.format(item['id'], meta), '  {}'.format(text)]
+        for party, left in sorted(overflow.items(), key=lambda kv: -len(kv[1])):
+            lines.append('- +{} more from {}: {}'.format(len(left), party, ', '.join(left[:12])
+                                                        + (' ...' if len(left) > 12 else '')))
+    with open(out, 'w', encoding='utf-8') as handle:
+        handle.write('\n'.join(lines) + '\n')
+    with open(ids_path, 'w', encoding='utf-8') as handle:
+        json.dump(ids, handle, ensure_ascii=False)
+    return out
+
+
+def show(ids_to_show, tsv):
+    ids = _load_ids(os.path.splitext(tsv)[0] + '.ids.json')
+    for passage_id in ids_to_show:
+        entry = ids.get(passage_id)
+        if not entry:
+            print('{}: no such passage'.format(passage_id))
+            continue
+        print('## {} · {} · {}\n{}\n'.format(passage_id, entry['url'], entry.get('trail') or '', entry['text']))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='gather.py', description=__doc__.split('\n')[1].strip())
-    parser.add_argument('--plan', required=True)
+    parser.add_argument('--plan', help='The plan to gather')
     parser.add_argument('--tsv', required=True, help='The run fetch log')
-    parser.add_argument('--out', required=True, help='Where to write the digest')
+    parser.add_argument('--out', help='Where to write the digest')
+    parser.add_argument('--show', nargs='+', metavar='ID', help='Print passages from an earlier digest in full')
     parser.add_argument('--time-limit', type=int, default=DEFAULT_TIME_LIMIT,
                         help='Seconds before opening stops; searches always finish')
     parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS)
     args = parser.parse_args(argv)
+    if args.show:
+        show(args.show, args.tsv)
+        return
+    if not (args.plan and args.out):
+        parser.error('--plan and --out are required to gather')
     try:
         plan = load_plan(args.plan)
     except PlanError as exc:
@@ -379,6 +543,7 @@ def main(argv=None):
     except SearchAborted as exc:
         print('gather.py: {}'.format(exc), file=sys.stderr)
         sys.exit(2)
+    write_digest(plan, report, args.tsv, args.out)
     summary = {angle_id: {k: v for k, v in entry.items() if k != 'opened'} | {'opened': len(entry['opened'])}
                for angle_id, entry in report['angles'].items()}
     print(json.dumps(summary, ensure_ascii=False, indent=2))

@@ -539,7 +539,7 @@ def opened_urls(rows):
     }
 
 
-def check_matrix_section(content, problems, entries=None, rows=None):
+def check_matrix_section(content, problems, entries=None, rows=None, report_path=None):
     """A comparison matrix, if the report carries one.
 
     Table cells are not sentences, so none of the sentence-level checks above can
@@ -575,6 +575,57 @@ def check_matrix_section(content, problems, entries=None, rows=None):
                 '{}: every citation in this row is a search result or a page nobody opened ({}) - '
                 'open one of them, or mark the cells [unknown]'.format(
                     row['entity'], ', '.join('[{}]'.format(n) for n in cited)))
+    if report_path:
+        check_rows_on_own_site(parsed, entries, report_path, problems)
+
+
+def _plan_subjects(report_path):
+    run_dir = os.path.dirname(os.path.abspath(report_path))
+    subjects = []
+    for path in sorted(glob.glob(os.path.join(run_dir, 'plan-*.json'))):
+        try:
+            with open(path, encoding='utf-8') as handle:
+                plan = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        subjects += [angle for angle in plan.get('angles') or [] if angle.get('subject')]
+    return subjects
+
+
+def check_rows_on_own_site(parsed, entries, report_path, problems):
+    """A matrix row about a researched subject cites that subject's own site.
+
+    Graded against answer keys on 2026-09-27, the scripted runs covered more of
+    the right entities than main and got more of them wrong: a pre-built
+    supplier sold as flat-pack, a bank's sandbox as open when its own page
+    limits it to authorised firms, a free tier out of date. Each came from an
+    aggregator or a review. Those find entities; only an entity's own page
+    settles what it offers and what it costs.
+    """
+    from independence import party_of
+
+    def as_party(site):
+        return party_of(site if '://' in site else 'https://' + site.lstrip('/'))
+
+    subjects = [(s, {as_party(site) for site in s.get('sites') or []}) for s in _plan_subjects(report_path)]
+    subjects = [(s, own) for s, own in subjects if own]
+    for row in parsed['rows']:
+        text = ' '.join(row['cells'].values())
+        if '[unknown]' in text.lower():
+            continue
+        name = row['entity'].lower()
+        match = next(((s, own) for s, own in subjects
+                      if s['subject'].lower() in name or re.search(r'\b{}\b'.format(re.escape(_distinctive(s['subject']))), name)),
+                     None)
+        if not match:
+            continue
+        cited = {int(n) for n in re.findall(r'\[(\d+)\]', text)}
+        parties = {party_of(entries[n]['url']) for n in cited if n in entries and entries[n]['url']}
+        if cited and not parties & match[1]:
+            problems.structural(
+                '{}: no citation in this row is from its own site ({}) - an aggregator or a review found it, '
+                'but only its own page settles what it offers and costs. Cite its own page, or mark the '
+                'cells [unknown]'.format(row['entity'], ', '.join(sorted(match[1]))))
 
 
 def check_registered(report_path, problems):
@@ -714,7 +765,7 @@ def run(report_path, tsv_path, fmt, level):
     # and the body-text equivalent - "no inline [N] citations" - has always been
     # checked at quick. Only the uncited-row problem is an error at quick; blank
     # cells and column counts stay graded.
-    check_matrix_section(content, problems, entries, rows)
+    check_matrix_section(content, problems, entries, rows, report_path)
 
     check_subjects_reported(report_path, content, problems)
     check_registered(report_path, problems)

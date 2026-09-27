@@ -497,3 +497,14 @@ def test_a_subject_s_own_site_opens_before_the_rest_of_its_results(tmp_path, fak
     gather.run(gather.load_plan(_plan(tmp_path, [angle], round_=2)), str(tmp_path / 'run.tsv'), str(tmp_path),
                workers=1)
     assert order[0] == 'https://www.revolut.example/dev'
+
+
+def test_a_subject_digest_leads_with_its_own_site(tmp_path, fake):
+    """Graded 2026-09-27: most wrong claims about an entity came from reviews of it."""
+    review = '\n\n'.join('The Revolut bank api sandbox uk review point {} here.'.format(i) + ' filler' * 60
+                         for i in range(12))
+    own = 'Revolut sandbox registration needs a developer account.'
+    angle = _angle(subject='Revolut', sites=['revolut.example'], **{'from': ['r1-offer-1']})
+    digest, _ = _run_with(tmp_path, fake, {'https://reviews.example/r': review,
+                                           'https://www.revolut.example/dev': own}, angle=angle, round_=2)
+    assert 'https://www.revolut.example/dev ·' in digest

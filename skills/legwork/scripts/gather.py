@@ -627,7 +627,18 @@ def write_digest(plan, report, tsv, out):
         # A round-2 subject angle is narrow and there are many of them - one
         # for every party round 1 found - so each shows fewer passages.
         top = SUBJECT_TOP if angle.get('subject') else rerank.DEFAULT_TOP
-        chosen, overflow = rerank.select_digest(items, _subject_party(angle, items), top=top)
+        own = {party_of(site if '://' in site else 'https://' + site) for site in angle.get('sites') or []}
+        if angle.get('subject') and own:
+            # Half the slots go to the subject's own site: aggregators and
+            # reviews find an entity, but graded on 2026-09-27 they were the
+            # source of most wrong claims about one.
+            own_items = sorted((i for i in items if i['party'] in own), key=lambda i: -i['score'])[:SUBJECT_TOP // 2]
+            taken = {i['id'] for i in own_items}
+            rest, overflow = rerank.select_digest([i for i in items if i['id'] not in taken], None,
+                                                  top=top - len(own_items))
+            chosen = own_items + rest
+        else:
+            chosen, overflow = rerank.select_digest(items, _subject_party(angle, items), top=top)
         best = max((item['score'] for item in items), default=0) or 1.0
         for item in items:
             share = item['score'] / best

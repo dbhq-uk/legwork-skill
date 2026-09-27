@@ -216,6 +216,13 @@ becomes an angle marked `"expected": true`, searched like any other. If it
 finds nothing, the report says "expected X, no source found". Memory can add a
 search, never an answer.
 
+**An entity's own page settles it.** Aggregators, directories and reviews find
+entities; only an entity's own site settles what it offers and what it costs.
+Each subject's digest leads with passages from its `sites`, and a matrix row
+about a subject must cite its own site or mark its cells `[unknown]` - the gate
+fails it otherwise. An entity you could not confirm on its own site goes under
+Limitations, not in the answer.
+
 **The report drops no one either.** Every round-2 subject appears in the
 report: in the findings or the matrix, or under Limitations with the reason it
 is left out. The gate fails a report that researched a subject and never

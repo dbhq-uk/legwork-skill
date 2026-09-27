@@ -608,3 +608,26 @@ def test_the_distinctive_word_skips_generic_ones():
     assert check._distinctive('Bank of Ireland UK') == 'ireland'
     assert check._distinctive('AWS RDS for PostgreSQL') == 'aws'
     assert check._distinctive('Van Furniture (vanfurniture.co.uk)') == 'van'
+
+
+def _own_site_case(tmp_path, cited_url):
+    import json
+    (tmp_path / 'plan-2.json').write_text(json.dumps({'round': 2, 'angles': [
+        {'id': 'v', 'question': 'q', 'subject': 'Vanz Adventures', 'sites': ['vanzadventures.example'],
+         'expected': True}]}), encoding='utf-8')
+    parsed = {'rows': [{'entity': 'Vanz Adventures', 'cells': {'Flat-pack': 'Yes [1]', 'Price': '£5,000 [1]'}}]}
+    entries = {1: {'url': cited_url}}
+    problems = check.Problems('standard')
+    check.check_rows_on_own_site(parsed, entries, str(tmp_path / 'report.md'), problems)
+    return problems
+
+
+def test_a_subject_s_row_resting_only_on_a_review_fails(tmp_path):
+    """Graded 2026-09-27: wider runs got more entities wrong, each from an aggregator or review."""
+    problems = _own_site_case(tmp_path, 'https://reviews.example/best-kits')
+    assert any('own site' in e for e in problems.errors)
+
+
+def test_a_subject_s_row_citing_its_own_page_passes(tmp_path):
+    problems = _own_site_case(tmp_path, 'https://www.vanzadventures.example/kits')
+    assert problems.errors == []

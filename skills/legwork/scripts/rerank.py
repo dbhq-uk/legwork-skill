@@ -13,10 +13,9 @@ for corroboration, so a party is capped - except the angle's own subject,
 whose pages are its primary evidence - and nothing is hidden: every passage
 left out is listed by party, one call away.
 
-Measured on 2026-09-24/25: within a single page, Jev put the passage the agent
-went on to quote in its top three 75% of the time, against 26% for a random
-pick. Across a pool of pages it had not been measured when this was written;
-see evals/runs/2026-09-27-rerank-offline.md.
+Measured on 2026-09-27 across pools of pages (evals/runs/2026-09-27-rerank-
+offline.md): the average of Jev and the term match is the best scorer, and the
+term match alone is nearly as good for nothing.
 
 Stdlib only. Runs on any python3 >= 3.9.
 """
@@ -88,6 +87,22 @@ def jev_scores(passages, question):
     except Exception:  # noqa: BLE001 - an aid, never a reason to stop
         return None
     return scores
+
+
+def pool_scores(passages, terms, question):
+    """(scores, scorer) for a pool: the average of Jev and the term match when
+    Jev is available, the term match alone otherwise.
+
+    Measured on 2026-09-27 over 31 angles from the 24 Sep runs (median 81
+    passages a pool): the passage a run went on to quote was in the top five
+    86% of the time with the average, 76% with Jev alone and 74% with terms
+    alone, and in the top 20 every time with the average or terms.
+    """
+    terms_only = term_scores(passages, terms)
+    jev = jev_scores(passages, question)
+    if jev is None:
+        return terms_only, 'terms'
+    return [(a + b) / 2 for a, b in zip(terms_only, jev)], 'jev+terms'
 
 
 def select_digest(items, subject_party=None, cap=DEFAULT_CAP, top=DEFAULT_TOP):

@@ -458,3 +458,42 @@ def test_a_subject_angle_shows_fewer_passages(tmp_path, fake):
     angle = _angle(subject='Barclays', **{'from': ['r1-offer-1']})
     digest, _ = _run_with(tmp_path, fake, {'https://developer.barclays.com/doc': text}, angle=angle, round_=2)
     assert digest.count('https://developer.barclays.com/doc ·') == gather.SUBJECT_TOP
+
+
+def test_only_round_two_answers_for_round_one_parties(tmp_path, fake):
+    """Measured 2026-09-27: a two-angle follow-up was refused for dropping 73 parties."""
+    _digest, tsv = _round_one(tmp_path, fake)
+    plan = gather.load_plan(_plan_two(tmp_path, round=3))
+    assert gather.unaccounted(plan, tsv) == []
+
+
+def test_a_site_needs_no_scheme_to_be_accounted_for(tmp_path, fake):
+    _digest, tsv = _round_one(tmp_path, fake)
+    plan = gather.load_plan(_plan_two(tmp_path, angle={'sites': ['https://www.revolut.example/']},
+                                      not_subjects=['tracker.example/']))
+    assert gather.unaccounted(plan, tsv) == []
+
+
+def test_pages_open_round_robin_so_the_last_angle_is_not_starved(tmp_path, fake, monkeypatch):
+    """Measured 2026-09-27: opened in plan order, the last subjects got no page."""
+    order = []
+    monkeypatch.setattr(gather, 'open_url', lambda url, *a, **k: order.append(url) or
+                        {'url': url, 'sidecar': None, 'refused': False, 'copy_of': None})
+    angles = []
+    for name in ('alpha', 'beta', 'gamma'):
+        fake.serp[(name + ' sandbox', 'google')] = ['https://{}.example/{}'.format(name, i) for i in range(3)]
+        angles.append({'id': name, 'question': name + '?', 'phrasings': [name + ' sandbox']})
+    gather.run(gather.load_plan(_plan(tmp_path, angles)), str(tmp_path / 'run.tsv'), str(tmp_path), workers=1)
+    assert [u.split('//')[1].split('.')[0] for u in order[:3]] == ['alpha', 'beta', 'gamma']
+
+
+def test_a_subject_s_own_site_opens_before_the_rest_of_its_results(tmp_path, fake, monkeypatch):
+    order = []
+    monkeypatch.setattr(gather, 'open_url', lambda url, *a, **k: order.append(url) or
+                        {'url': url, 'sidecar': None, 'refused': False, 'copy_of': None})
+    fake.serp[('revolut sandbox', 'google')] = ['https://blog.example/a', 'https://www.revolut.example/dev']
+    angle = {'id': 'revolut', 'question': 'q?', 'subject': 'Revolut', 'expected': True,
+             'phrasings': ['revolut sandbox'], 'sites': ['revolut.example']}
+    gather.run(gather.load_plan(_plan(tmp_path, [angle], round_=2)), str(tmp_path / 'run.tsv'), str(tmp_path),
+               workers=1)
+    assert order[0] == 'https://www.revolut.example/dev'

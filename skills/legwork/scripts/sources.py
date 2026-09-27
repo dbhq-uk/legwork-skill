@@ -695,7 +695,7 @@ def _apply_sidecar(args):
     except (OSError, ValueError) as exc:
         raise LogError('cannot read --from-fetch: {}'.format(exc))
 
-    args.url = args.url or payload.get('canonical') or payload.get('url') or ''
+    args.url = args.url or logged_url(payload)
     args.title = args.title or payload.get('title') or ''
     args.date = args.date or payload.get('date') or ''
     args.query = args.query or payload.get('query') or ''
@@ -779,6 +779,21 @@ def log_row(args):
             'page_text': page_text is not None}
 
 
+def logged_url(payload):
+    """The URL a fetch sidecar is logged under: the page's canonical link, or
+    the URL fetched. A canonical pointing at the bare home page from a page
+    with a path is a site misconfiguration, not a claim that the two are the
+    same page - measured on 2026-09-27, a blog post logged as its site's home
+    page, and every quote taken from it then failed to find its row."""
+    from urllib.parse import urlsplit
+
+    url = payload.get('url') or ''
+    canonical = payload.get('canonical') or ''
+    if canonical and urlsplit(canonical).path in ('', '/') and urlsplit(url).path not in ('', '/'):
+        canonical = ''
+    return canonical or url
+
+
 def set_quote(tsv_path, url, quote, page_text):
     """Record `quote` on the first opened row for `url`, checked against
     `page_text` when there is some. Rewrites the log in place; never appends,
@@ -789,9 +804,14 @@ def set_quote(tsv_path, url, quote, page_text):
 
     rows = read_rows(tsv_path)
     key = canonicalize(url)
-    target = next((row for row in rows if canonicalize(row.get('url', '')) == key
-                   and (row.get('status') or 'ok').lower() == 'ok'
-                   and (row.get('via') or '') not in SNIPPET_VIA), None)
+    def opened(match):
+        return next((row for row in rows if match(canonicalize(row.get('url', '')))
+                     and (row.get('status') or 'ok').lower() == 'ok'
+                     and (row.get('via') or '') not in SNIPPET_VIA), None)
+
+    # Exact first; then ignoring case, because a search result and the page it
+    # opened can spell the same path differently (getting-started-GB and -gb).
+    target = opened(lambda logged: logged == key) or opened(lambda logged: logged.lower() == key.lower())
     if target is None:
         raise LogError('no opened row for {} in {} - log the page first'.format(url, tsv_path))
     quote = (quote or '')[:MAX_QUOTE_CHARS]

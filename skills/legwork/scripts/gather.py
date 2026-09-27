@@ -215,14 +215,22 @@ def unaccounted(plan, tsv):
     plan, or named in `not_subjects`."""
     stem = os.path.splitext(tsv)[0]
     found = _load_ids(stem + '.parties.json')
-    if not found or plan.get('round', 1) < 2:
+    if not found or plan.get('round', 1) != 2:
+        # Only the plan that follows round 1 answers for its parties. Later
+        # rounds are follow-ups: measured on 2026-09-27, asking them again
+        # refused a two-angle follow-up for "dropping" 73 parties round 2 had
+        # already dealt with.
         return []
     ids = _load_ids(stem + '.ids.json')
-    covered = {party_of(p) if '/' in p else p.lower().lstrip('.').removeprefix('www.')
-               for p in plan.get('not_subjects') or []}
+    def as_party(site):
+        # "github.com/openbankinguk" and "revolut.com" as well as full URLs.
+        site = site.strip()
+        return party_of(site if '://' in site else 'https://' + site.lstrip('/'))
+
+    covered = {as_party(p) for p in plan.get('not_subjects') or []}
     for angle in plan['angles']:
         for site in angle.get('sites') or []:
-            covered.add(party_of(site) if '/' in site else site.lower().removeprefix('www.'))
+            covered.add(as_party(site))
         for source in angle.get('from') or []:
             if source in ids:
                 covered.add(ids[source]['party'])
@@ -435,10 +443,21 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
                                                             'query': 'from the plan'})
 
     # 3. Open each page once, however many angles found it.
+    # Round robin across angles, each angle's own sites and plan links first.
+    # Measured on 2026-09-27: opened in plan order, the last subjects of a
+    # seventeen-subject round 2 (Santander, TSB) got no page before the time
+    # limit, and the agent fetched them by hand.
+    queues = []
+    for angle in plan['angles']:
+        own = {party_of(site if '://' in site else 'https://' + site) for site in angle.get('sites') or []}
+        angle_hits = list(hits[angle['id']].items())
+        first = [kv for kv in angle_hits if kv[1].get('query') == 'from the plan' or party_of(kv[1]['url']) in own]
+        queues.append(first + [kv for kv in angle_hits if kv not in first])
     unique = {}
-    for angle_hits in hits.values():
-        for key, hit in angle_hits.items():
-            unique.setdefault(key, hit)
+    for position in range(max((len(queue) for queue in queues), default=0)):
+        for queue in queues:
+            if position < len(queue):
+                unique.setdefault(*queue[position])
     opened = {}
 
     def open_one(key, hit):
@@ -592,7 +611,7 @@ def write_digest(plan, report, tsv, out):
             all_parties.add(page['party'])
             headings = [tuple(h) for h in sidecar.get('headings') or []]
             for passage in fetch.passages_with_trail(text, headings):
-                items.append({'url': page['url'], 'party': page['party'], 'text': passage['text'],
+                items.append({'url': sources.logged_url(sidecar) or page['url'], 'party': page['party'], 'text': passage['text'],
                               'trail': passage['trail'], 'title': sidecar.get('title') or '',
                               'date': sidecar.get('date') or '', 'text_file': sidecar['text_file']})
         terms = [angle['question']] + angle['phrasings'] + angle['disconfirming']
@@ -633,7 +652,8 @@ def write_digest(plan, report, tsv, out):
     parties_path = os.path.splitext(tsv)[0] + '.parties.json'
     known = _load_ids(parties_path)
     for party, share in party_best.items():
-        known[party] = max(share, known.get(party, 0))
+        if round_ == 1:
+            known[party] = max(share, known.get(party, 0))
     with open(parties_path, 'w', encoding='utf-8') as handle:
         json.dump(known, handle, ensure_ascii=False)
     if round_ == 1 and party_best:

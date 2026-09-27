@@ -650,3 +650,22 @@ def test_a_quote_is_needed_for_each_id(tmp_path):
     with pytest.raises(SystemExit) as exit_:
         sources.main(['quote', '--tsv', str(tmp_path / 'run.tsv'), '--id', 'a', '--id', 'b', '--quote', 'one'])
     assert exit_.value.code == 2
+
+
+def test_a_home_page_canonical_on_a_deep_page_is_ignored():
+    """Measured 2026-09-27: a blog post logged as its site's home page."""
+    assert sources.logged_url({'url': 'https://a.example/blog/post', 'canonical': 'https://a.example/'}) == \
+        'https://a.example/blog/post'
+    assert sources.logged_url({'url': 'https://a.example/p?x=1', 'canonical': 'https://a.example/p'}) == \
+        'https://a.example/p'
+
+
+def test_a_quote_finds_its_row_whatever_the_case_of_the_path(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    page = tmp_path / 'p.txt'
+    page.write_text('Register a new user.', encoding='utf-8')
+    sources.log_row(argparse.Namespace(
+        tsv=tsv, url='https://bank.example/getting-started-gb', kind=None, angle='a', via='direct', status='ok',
+        quote='', title='', date='', text_file=str(page), numbers='', query='', from_fetch=None))
+    assert sources.set_quote(tsv, 'https://bank.example/getting-started-GB', 'Register a new user.',
+                             page.read_text(encoding='utf-8')) == 'true'

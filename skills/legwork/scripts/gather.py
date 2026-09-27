@@ -26,9 +26,12 @@ steps waiting for subagents, and search results were 45% of what subagents
 read, all of it re-read on every later step. Here search results never reach
 a conversation, and there is nothing to wait for.
 
-Exit codes: 0 done; 1 the plan is invalid; 2 Bright Data refused (auth or
-quota) when a search needed it - the run stops rather than finding nothing and
-calling it an answer.
+Exit codes: 0 done; 1 the plan is invalid; 2 every search failed and Bright
+Data refused (auth, quota or rate limit) - there is nothing to digest, and the
+run stops rather than finding nothing and calling it an answer. A refusal that
+leaves anything found is not an abort: the run finishes, and the digest says
+how many calls Bright Data refused and why. Measured on 2026-09-27, aborting on
+the first refused page threw away 286 opened pages.
 
 Stdlib only. Runs on any python3 >= 3.9.
 """
@@ -57,10 +60,11 @@ from independence import canonicalize, party_of  # noqa: E402
 ENGINES = ('google', 'bing')
 PEOPLE_PLATFORMS = ('hn', 'stackexchange', 'githubissues', 'reddit')
 RESULTS_PER_SEARCH = 10
-DEFAULT_TIME_LIMIT = 600
+DEFAULT_TIME_LIMIT = 360
 DEFAULT_WORKERS = 12
 SEARCH_TIMEOUT = 90
 OPEN_TIMEOUT = 120
+REFUSAL_BACKOFF = 5
 
 
 class PlanError(ValueError):
@@ -68,7 +72,17 @@ class PlanError(ValueError):
 
 
 class SearchAborted(RuntimeError):
-    """Bright Data refused: nothing can be searched."""
+    """Every search failed and Bright Data refused: nothing to digest."""
+
+
+# Every Bright Data refusal in this run, as its first line of stderr. Worker
+# threads append; list.append is atomic, and run() resets it.
+_REFUSALS = []
+
+
+def _refused(err):
+    lines = [line for line in (err or '').strip().splitlines() if line.strip()]
+    _REFUSALS.append((lines[-1] if lines else 'refused')[:200])
 
 
 def run_script(argv, timeout):
@@ -139,13 +153,16 @@ def _serp(query, engine, plan):
         argv += ['--country', plan['country']]
     if plan.get('language'):
         argv += ['--language', plan['language']]
-    for _attempt in range(2):
+    for attempt in range(2):
         code, out, err = run_script(argv, SEARCH_TIMEOUT)
         if code == 0:
             return [dict(r, via='serp', query=query) for r in _json(out).get('results') or []]
         if code == 2:
-            raise SearchAborted('Bright Data refused the search (auth or quota): run `brightdata login`, '
-                                'or top up the account, then run gather.py again. {}'.format(err.strip()[:200]))
+            # Auth, quota, or a rate limit when several runs share the account.
+            # Only the last is worth waiting out, and it is the common one.
+            _refused(err)
+            if attempt == 0:
+                time.sleep(REFUSAL_BACKOFF)
     return None
 
 
@@ -218,9 +235,9 @@ def _flatten(value, out):
 def _open_reddit(url, out_dir):
     """A Reddit thread with its comments, through Bright Data's Reddit dataset,
     saved as text with a sidecar like any other page."""
-    code, out, _err = run_script(_script('bd_search.py', url, '-m', 'reddit', '--json'), OPEN_TIMEOUT)
+    code, out, err = run_script(_script('bd_search.py', url, '-m', 'reddit', '--json'), OPEN_TIMEOUT)
     if code == 2:
-        raise SearchAborted('Bright Data refused the Reddit dataset (auth or quota): run `brightdata login`.')
+        _refused(err)
     if code != 0:
         return None
     parts = []
@@ -237,34 +254,50 @@ def _open_reddit(url, out_dir):
     return sidecar
 
 
-def open_url(url, title, out_dir, plan):
+def _step_timeout(deadline):
+    """Seconds one step of the ladder may take: OPEN_TIMEOUT, or what is left
+    of the run's time limit, whichever is less; 0 when it has run out."""
+    if deadline is None:
+        return OPEN_TIMEOUT
+    left = deadline - time.monotonic()
+    return 0 if left <= 0 else int(min(OPEN_TIMEOUT, max(10, left)))
+
+
+def open_url(url, title, out_dir, plan, deadline=None):
     """{'sidecar': path or None, 'refused': bool, 'copy_of': url or None, 'url': url}.
 
     fetch.py, then Bright Data scrape and render; for a Reddit thread its
-    dataset first; then a copy of the same document on another host.
+    dataset first; then a copy of the same document on another host. Each step
+    starts only while the run's time limit allows, so one slow host cannot hold
+    the run past it.
     """
     refused = False
     path = _page_path(out_dir, url)
-    code, _out, _err = run_script(_script('fetch.py', url, '--out', path), OPEN_TIMEOUT)
+    code, _out, _err = run_script(_script('fetch.py', url, '--out', path), _step_timeout(deadline) or 10)
     if code == 0:
         return {'url': url, 'sidecar': os.path.splitext(path)[0] + '.json', 'refused': False, 'copy_of': None}
     if code == 5:
         return {'url': url, 'sidecar': None, 'refused': False, 'policy': True, 'copy_of': None}
     refused = True
+    if not _step_timeout(deadline):
+        return {'url': url, 'sidecar': None, 'refused': refused, 'copy_of': None}
     if 'reddit.com/' in url:
         sidecar = _open_reddit(url, out_dir)
         if sidecar:
             return {'url': url, 'sidecar': sidecar, 'refused': refused, 'copy_of': None}
     for mode in ('scrape', 'render'):
+        timeout = _step_timeout(deadline)
+        if not timeout:
+            return {'url': url, 'sidecar': None, 'refused': refused, 'copy_of': None}
         alt = _page_path(out_dir, url, '#' + mode)
-        code, _out, _err = run_script(_script('bd_search.py', url, '-m', mode, '--out', alt, '--json'), OPEN_TIMEOUT)
+        code, _out, err = run_script(_script('bd_search.py', url, '-m', mode, '--out', alt, '--json'), timeout)
         if code == 0:
             return {'url': url, 'sidecar': os.path.splitext(alt)[0] + '.json', 'refused': refused, 'copy_of': None}
         if code == 2:
-            raise SearchAborted('Bright Data refused a page (auth or quota): run `brightdata login`.')
+            _refused(err)
     # Every transport asks the same host for the same URL; a publisher refusing
     # by policy refuses them all. A copy on another host often opens for free.
-    if title and len(title) > 12:
+    if title and len(title) > 12 and _step_timeout(deadline):
         wanted = '"{}"'.format(title[:120])
         copies = _platform('bing', wanted, plan) or _serp(wanted, 'google', plan) or []
         for copy in copies[:3]:
@@ -308,12 +341,18 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
     deadline = time.monotonic() + time_limit
     log = _Log(tsv)
     report = {'angles': {}}
+    del _REFUSALS[:]
 
     # 1. Search, every angle at once.
     jobs = [(angle['id'], job) for angle in plan['angles'] for job in _search_jobs(angle, plan)]
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [(angle_id, job, pool.submit(_run_search, job, plan)) for angle_id, job in jobs]
         results = [(angle_id, job, future.result()) for angle_id, job, future in futures]
+    if _REFUSALS and all(found is None for _a, _j, found in results) \
+            and not any(angle['urls'] for angle in plan['angles']):
+        raise SearchAborted('every search failed and Bright Data refused ({}): run `brightdata login`, or '
+                            'check the balance with `brightdata budget`, then run gather.py again.'
+                            .format(_REFUSALS[0]))
 
     # 2. Narrow: one entry per page per angle, keeping the first query that found it.
     hits = {angle['id']: {} for angle in plan['angles']}
@@ -352,7 +391,7 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
     def open_one(key, hit):
         if time.monotonic() > deadline:
             return key, None
-        return key, open_url(hit['url'], hit.get('title', ''), out_dir, plan)
+        return key, open_url(hit['url'], hit.get('title', ''), out_dir, plan, deadline)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         for key, result in pool.map(lambda kv: open_one(*kv), list(unique.items())):
@@ -385,6 +424,7 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
                                         'party': party_of(result['url']), 'copy_of': result['copy_of'],
                                         'query': hit.get('query', '')})
         report['angles'][angle_id] = entry
+    report['refused'] = list(_REFUSALS)
     return report
 
 
@@ -516,9 +556,15 @@ def write_digest(plan, report, tsv, out):
              '{} not reached · passages ranked by {}*'.format(
                  totals['searches'], totals['failed'], totals['hits'], totals['opened'], len(all_parties),
                  totals['blocked'], totals['not_reached'], ' and '.join(sorted(scorers)) or 'nothing'),
-             '',
-             'Read any passage in full, or any listed in overflow: `gather.py --show ID --tsv {}`. '
-             'Record a quote you rely on: `sources.py quote --tsv {} --id ID --quote "..."`.'.format(tsv, tsv)]
+             '']
+    if report.get('refused'):
+        reasons = sorted(set(report['refused']))
+        lines += ['**Bright Data refused {} call{}** ({}). Those pages and searches are missing from '
+                  'this digest. A rate limit passes; if it says auth or balance, run `brightdata login` '
+                  'or `brightdata budget`.'.format(len(report['refused']), '' if len(report['refused']) == 1
+                                                   else 's', '; '.join(reasons[:2])), '']
+    lines += ['Read any passage in full, or any listed in overflow: `gather.py --show ID --tsv {}`. '
+              'Record a quote you rely on: `sources.py quote --tsv {} --id ID --quote "..."`.'.format(tsv, tsv)]
     for angle, entry, chosen, overflow, names in angles_out:
         lines += ['', '## {} - {}'.format(angle['id'], angle['question']), '',
                   '{} pages found · {} opened · {} blocked · {} not reached · search {}'.format(
@@ -566,7 +612,7 @@ def main(argv=None):
     parser.add_argument('--out', help='Where to write the digest')
     parser.add_argument('--show', nargs='+', metavar='ID', help='Print passages from an earlier digest in full')
     parser.add_argument('--time-limit', type=int, default=DEFAULT_TIME_LIMIT,
-                        help='Seconds before opening stops; searches always finish')
+                        help='Seconds the run may take; pages not opened by then are logged as leads')
     parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS)
     args = parser.parse_args(argv)
     if args.show:
@@ -586,6 +632,9 @@ def main(argv=None):
         print('gather.py: {}'.format(exc), file=sys.stderr)
         sys.exit(2)
     write_digest(plan, report, args.tsv, args.out)
+    if report.get('refused'):
+        print('gather.py: Bright Data refused {} calls; the digest says which were missed'
+              .format(len(report['refused'])), file=sys.stderr)
     summary = {angle_id: {k: v for k, v in entry.items() if k != 'opened'} | {'opened': len(entry['opened'])}
                for angle_id, entry in report['angles'].items()}
     print(json.dumps(summary, ensure_ascii=False, indent=2))

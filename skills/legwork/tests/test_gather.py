@@ -29,6 +29,7 @@ class FakeScripts:
         self.pages = {}         # url -> text; missing means blocked on fetch.py
         self.scrape = {}        # url -> text when bd scrape gets through
         self.serp_exit = 0
+        self.scrape_exit = {}   # url -> exit code for bd scrape and render
 
     def __call__(self, argv, timeout):
         self.calls.append(argv)
@@ -45,6 +46,8 @@ class FakeScripts:
                            for i, u in enumerate(urls)]
                 return 0, json.dumps({'query': target, 'log_via': 'serp', 'results': results}), ''
             if mode in ('scrape', 'render'):
+                if target in self.scrape_exit:
+                    return self.scrape_exit[target], '', 'Error: Rate limit exceeded'
                 text = self.scrape.get(target)
                 if text is None:
                     return 3, '', json.dumps({'verdict': 'blocked'})
@@ -88,6 +91,7 @@ class FakeScripts:
 def fake(tmp_path, monkeypatch):
     scripts = FakeScripts(tmp_path)
     monkeypatch.setattr(gather, 'run_script', scripts)
+    monkeypatch.setattr(gather, 'REFUSAL_BACKOFF', 0)
     return scripts
 
 
@@ -159,11 +163,43 @@ def test_reddit_refused_falls_back_to_a_reddit_search_on_bright_data(tmp_path, f
     assert fake.ran('bd_search.py', 'site:reddit.com bank api sandbox uk')
 
 
-def test_bright_data_refusing_stops_the_run(tmp_path, fake):
+def test_bright_data_refusing_every_search_stops_the_run(tmp_path, fake):
     fake.serp_exit = 2
     with pytest.raises(gather.SearchAborted) as err:
         gather.run(gather.load_plan(_plan(tmp_path, [_angle()])), str(tmp_path / 'run.tsv'), str(tmp_path))
     assert 'brightdata login' in str(err.value)
+
+
+def test_a_page_bright_data_refuses_does_not_stop_the_run(tmp_path, fake):
+    """Measured 2026-09-27: four runs sharing one account hit Bright Data's rate
+    limit, and aborting on the first refused page threw away 286 opened pages."""
+    refused, fine = 'https://bank.example/locked', 'https://bank.example/open'
+    fake.serp[('bank api sandbox uk', 'google')] = [refused, fine]
+    fake.scrape_exit[refused] = 2
+    fake.pages[fine] = 'The sandbox needs a test certificate.'
+    tsv, out = str(tmp_path / 'run.tsv'), str(tmp_path / 'digest.md')
+    plan = gather.load_plan(_plan(tmp_path, [_angle()]))
+    report = gather.run(plan, tsv, str(tmp_path))
+    assert sorted((r['url'], r['status']) for r in sources.read_rows(tsv)) == [(refused, 'blocked'), (fine, 'ok')]
+    assert report['refused'] == ['Error: Rate limit exceeded'] * 2  # scrape, then render
+    gather.write_digest(plan, report, tsv, out)
+    assert 'Bright Data refused 2 calls' in open(out, encoding='utf-8').read()
+
+
+def test_a_search_bright_data_refuses_is_a_failed_search_not_an_abort(tmp_path, fake):
+    fake.platform[('bing', 'bank sandbox not available')] = ['https://found.example/a']
+    fake.pages['https://found.example/a'] = 'text'
+    fake.serp_exit = 2
+    report = gather.run(gather.load_plan(_plan(tmp_path, [_angle()])), str(tmp_path / 'run.tsv'), str(tmp_path))
+    assert report['angles']['offer']['failed_searches'] == 1 and len(report['angles']['offer']['opened']) == 1
+
+
+def test_no_step_of_the_ladder_outlives_the_time_limit(monkeypatch):
+    monkeypatch.setattr(gather.time, 'monotonic', lambda: 1000.0)
+    assert gather._step_timeout(None) == gather.OPEN_TIMEOUT
+    assert gather._step_timeout(1030.0) == 30
+    assert gather._step_timeout(1003.0) == 10
+    assert gather._step_timeout(999.0) == 0
 
 
 def test_a_failing_search_is_retried_once_then_recorded(tmp_path, fake, monkeypatch):

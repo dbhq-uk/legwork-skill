@@ -147,18 +147,23 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gather.py --plan "$OUT/plan-1.json" \
   --tsv "$OUT/$BASE.tsv" --out "$OUT/digest-1.md"
 ```
 
-One call works every angle at once and returns when it is done - there are no
-subagents and nothing to wait for. It searches every phrasing on Bing, asked
+One call works every angle at once and returns within six minutes. **Run it in
+the foreground with the longest command timeout your tool allows** (Claude
+Code: `timeout: 600000`), never in the background: a backgrounded call leaves
+you polling a script that will finish anyway, and every poll re-reads the whole
+conversation. There are no subagents and nothing else to wait for. It searches every phrasing on Bing, asked
 directly from this machine and free, and on Bright Data (Google and Bing) only
 when Bing refuses or finds nothing; adds the platforms where `people` is set;
 opens every result,
 climbing to Bright Data scrape and render and then a copy on another host when
 a page refuses; logs every retrieval with its page text; ranks every passage
 from every page against the angle (TypeSafe's Jev and a term match when a key
-is set, the term match alone otherwise); and writes a digest. If a search needs
-Bright Data and Bright Data refuses on auth or quota, it stops the run and tells
-you to run `brightdata login`; without Bright Data installed, it searches Bing
-alone.
+is set, the term match alone otherwise); and writes a digest. When Bright Data
+refuses a call - auth, balance, or a rate limit - the run carries on without it
+and the digest's header says how many calls were refused and why; it stops only
+when every search failed, and then tells you to run `brightdata login`. Do not
+work round a refusal by searching by hand: rerun `gather.py`. Without Bright
+Data installed, it searches Bing alone.
 
 **Read the digest, not the pages.** Per angle it holds the best passages from
 the whole pool, each with an id, its party, kind, date and heading trail. No

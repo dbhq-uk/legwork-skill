@@ -277,7 +277,7 @@ angles go to TypeSafe only when Jev is on. `SECURITY.md` says both.
 
 | Case | Behaviour |
 |---|---|
-| Bright Data auth or quota | `gather.py` stops and says `brightdata login` or top up. It is the only search engine, so no findings from nothing |
+| Bright Data auth, quota or rate limit | The run carries on without the refused calls and the digest header counts them. It stops, saying `brightdata login`, only when every search failed, so no findings from nothing. *(Changed 27 Sep 2026 after the first eval: stopping on the first refused page threw away 286 opened pages when four runs shared the account.)* |
 | One search fails | Retried once, then logged as a failed search; the receipt counts failures |
 | A page refuses | The ladder; every refusal logged `blocked` |
 | Reddit RSS refuses | Bright Data's Reddit dataset; the route is logged |

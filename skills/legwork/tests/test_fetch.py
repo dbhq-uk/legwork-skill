@@ -740,3 +740,41 @@ def test_no_key_anywhere_names_both_places(monkeypatch, capsys, tmp_path):
     fetch.main()
     note = json.loads(capsys.readouterr().out)['relevant_note']
     assert 'TYPESAFE_API_KEY' in note and 'typesafe-api-key' in note
+
+
+# ---------------------------------------------------------------------------
+# Passages keep sentences and headings whole, and know where they sit on the
+# page. The old splitter cut long paragraphs mid-sentence, could leave a
+# heading at the end of the passage before its text, and dropped the heading
+# trail - so "30 dollars" lost the fact that it sat under "Team plan".
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+
+def test_a_long_paragraph_splits_only_at_sentence_ends():
+    sentence = 'The sandbox requires a registered application and a test certificate. '
+    text = sentence * 60
+    for passage in fetch.split_passages(text):
+        assert passage.startswith('The sandbox'), passage[:40]
+        assert _re.search(r'[.!?]$', passage.strip()), passage[-40:]
+
+
+def test_a_heading_is_never_left_at_the_end_of_a_passage():
+    body = 'x ' * 330
+    text = 'Intro paragraph. ' + body + '\n\nCertificates\n\n' + 'Upload a signing request. ' * 20
+    for passage in fetch.split_passages(text):
+        assert passage.strip().splitlines()[-1] != 'Certificates'
+
+
+def test_each_passage_carries_its_heading_trail():
+    text = ('Pricing\n\nOur plans are listed below.\n\nTeam plan\n\n'
+            'The Team plan costs 30 US dollars per user per month.')
+    parts = fetch.passages_with_trail(text, [(1, 'Pricing'), (2, 'Team plan')], size=60)
+    team = [p for p in parts if '30 US dollars' in p['text']][0]
+    assert team['trail'] == 'Pricing > Team plan'
+
+
+def test_headings_are_read_with_their_levels():
+    markup = '<h1>Pricing</h1><p>x</p><h2>Team plan</h2><nav><h2>Menu</h2></nav>'
+    assert fetch.extract_headings(markup) == [(1, 'Pricing'), (2, 'Team plan')]

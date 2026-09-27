@@ -122,6 +122,7 @@ class _Extractor(HTMLParser):
             self._anchor_depth += 1
         if tag in HEADINGS and not self._drop_depth:
             self._heading = []
+            self._heading_level = int(tag[1])
         if tag in BLOCK_ELEMENTS:
             self.parts.append('\n')
 
@@ -137,7 +138,7 @@ class _Extractor(HTMLParser):
         if tag in HEADINGS and self._heading is not None:
             heading = ' '.join(''.join(self._heading).split())
             if heading:
-                self.headings.append(heading)
+                self.headings.append((self._heading_level, heading))
             self._heading = None
         if tag in BLOCK_ELEMENTS:
             self.parts.append('\n')
@@ -176,16 +177,21 @@ OUTLINE_MAX = 25
 OUTLINE_CHARS = 90
 
 
-def extract_outline(markup):
-    """The page's headings, in order, without furniture or repeats."""
+def extract_headings(markup):
+    """(level, text) for every heading outside page furniture, in order."""
     parser = _Extractor()
     try:
         parser.feed(markup or '')
         parser.close()
     except Exception:  # noqa: BLE001 - malformed markup is normal on the open web
         pass
+    return parser.headings
+
+
+def extract_outline(markup):
+    """The page's headings, in order, without furniture or repeats."""
     outline, seen = [], set()
-    for heading in parser.headings:
+    for _level, heading in extract_headings(markup):
         if heading.lower() in seen:
             continue
         seen.add(heading.lower())
@@ -219,22 +225,78 @@ JEV_BATCH = 30
 RELEVANT_TOP = 3
 
 
-def split_passages(text, size=PASSAGE_CHARS):
-    """Paragraph-bounded passages of about `size` characters."""
-    passages, current = [], ''
+_SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
+
+
+def _looks_like_heading(block):
+    return len(block) <= 90 and '\n' not in block and not re.search(r'[.!?:;,]$', block)
+
+
+def _blocks(text, size):
+    """Paragraph blocks, with any over twice `size` split at sentence ends."""
     for block in (b.strip() for b in re.split(r'\n\s*\n', text or '')):
         if not block:
             continue
-        if current and len(current) + len(block) > size:
-            passages.append(current)
+        if len(block) <= size * 2:
+            yield block
+            continue
+        piece = ''
+        for sentence in _SENTENCE_END.split(block):
+            if piece and len(piece) + len(sentence) > size:
+                yield piece
+                piece = ''
+            piece = (piece + ' ' + sentence).strip()
+        if piece:
+            yield piece
+
+
+def passages_with_trail(text, headings=(), size=PASSAGE_CHARS):
+    """Passages of about `size` characters, each with its heading trail.
+
+    Sentences are never cut, a heading always travels with the text beneath
+    it, and `trail` is the path of headings above the passage, such as
+    "Pricing > Team plan", taken from `headings` - (level, text) pairs.
+    """
+    levels = {}
+    for level, heading in headings or ():
+        levels.setdefault(' '.join(heading.split()).lower(), level)
+    passages, current, current_trail, stack = [], '', '', []
+
+    def trail():
+        return ' > '.join(text_ for _level, text_ in stack)
+
+    for block in _blocks(text, size):
+        key = ' '.join(block.split()).lower()
+        is_heading = key in levels
+        if is_heading:
+            level = levels.get(key, (stack[-1][0] + 1) if stack else 1)
+            while stack and stack[-1][0] >= level:
+                stack.pop()
+            stack.append((level, block))
+        # Close the passage before a heading, so a heading always opens the
+        # passage its text is in, and before a block that would overflow it.
+        if current and (is_heading or len(current) + len(block) > size):
+            passages.append({'text': current, 'trail': current_trail})
             current = ''
+        if not current:
+            current_trail = trail()
         current = (current + '\n' + block).strip()
-        while len(current) > size * 2:
-            passages.append(current[:size])
-            current = current[size:]
     if current:
-        passages.append(current)
+        passages.append({'text': current, 'trail': current_trail})
+    # Without a heading list, a short line that ends a passage is probably the
+    # heading of the next one: move it there rather than start new passages at
+    # every short line, which would shatter a page of lists into fragments.
+    for i in range(len(passages) - 1):
+        lines = passages[i]['text'].split('\n')
+        if len(lines) > 1 and _looks_like_heading(lines[-1]):
+            passages[i]['text'] = '\n'.join(lines[:-1])
+            passages[i + 1]['text'] = lines[-1] + '\n' + passages[i + 1]['text']
     return passages
+
+
+def split_passages(text, size=PASSAGE_CHARS):
+    """Paragraph-bounded passages of about `size` characters, text only."""
+    return [p['text'] for p in passages_with_trail(text, (), size)]
 
 
 def _jev_request(state, questions, key):
@@ -755,6 +817,7 @@ def main():
 
     markup = ''
     outline = []
+    headings = []
     if content_type == 'application/pdf' or args.url.lower().endswith('.pdf'):
         text = _pdf_to_text(body, args.url)
         meta = extract_meta('', headers)
@@ -766,6 +829,7 @@ def main():
         markup = _decode(body, headers)
         text = html_to_text(markup)
         outline = extract_outline(markup)
+        headings = extract_headings(markup)
         meta = extract_meta(markup, headers)
     else:
         _fail({'url': args.url, 'verdict': 'unsupported',
@@ -805,7 +869,7 @@ def main():
 
     # The sidecar always keeps the outline, so a later --saved search can print
     # it; stdout carries it only when nothing was found.
-    write_outputs(out_path, text, dict(payload, outline=outline))
+    write_outputs(out_path, text, dict(payload, outline=outline, headings=headings))
     print(json.dumps(_finish(payload, text, outline, args), ensure_ascii=False, indent=2))
 
 

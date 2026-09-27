@@ -250,9 +250,19 @@ def test_no_token_means_no_authorization_header(monkeypatch):
     assert 'Authorization' not in platforms._github_headers()
 
 
-def test_reddit_is_not_offered_because_it_blocks_plain_requests():
-    """Probed 2026-09-06: www and old both answer 403. That is the paid rung's job."""
-    assert 'reddit' not in platforms.SEARCHERS
+def test_reddit_goes_through_the_rss_search_never_the_json_api(monkeypatch, capsys):
+    """Probed 2026-09-06: Reddit's JSON API answers 403 on www and old without a
+    key, which is why Reddit was left out here. Probed 2026-09-25: its search
+    RSS still serves. The searcher must stay on the RSS route."""
+    seen = {}
+
+    def fake(request, **_):
+        seen['url'] = request.full_url
+        return _Response(REDDIT_RSS)
+
+    monkeypatch.setattr(platforms, 'urlopen', fake)
+    platforms.main(['search', '--on', 'reddit', '--query', 'x'])
+    assert '/search.rss' in seen['url'] and '.json' not in seen['url']
 
 
 def test_the_out_file_is_written_when_asked(monkeypatch, capsys, tmp_path):
@@ -280,3 +290,49 @@ def test_feed_mode_refuses_a_private_address(monkeypatch, capsys):
         platforms.main_with_args(['search', '--on', 'feed', '--query', 'http://192.168.1.1/feed'])
     assert exit_info.value.code == 1
     assert 'private' in json.loads(capsys.readouterr().err)['error']
+
+
+# ---------------------------------------------------------------------------
+# Reddit, keyless, through its public search RSS. Probed live on 2026-09-25:
+# HTTP 200 with 25 posts. Reddit's JSON API answers 403 without a key.
+# ---------------------------------------------------------------------------
+
+REDDIT_RSS = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>Barclays open banking sandbox took two weeks</title>
+    <link href="https://www.reddit.com/r/fintech/comments/abc123/barclays_sandbox/"/>
+    <published>2026-02-11T09:00:00+00:00</published>
+    <content type="html">&lt;p&gt;Took two weeks to get approved for the Barclays sandbox.&lt;/p&gt;</content>
+  </entry>
+</feed>"""
+
+
+def test_reddit_search_returns_community_rows(monkeypatch, capsys):
+    seen = {}
+
+    def fake(request, **_):
+        seen['url'] = request.full_url
+        return _Response(REDDIT_RSS)
+
+    monkeypatch.setattr(platforms, 'urlopen', fake)
+    platforms.main(['search', '--on', 'reddit', '--query', 'open banking sandbox'])
+    payload = json.loads(capsys.readouterr().out)
+    row = payload['results'][0]
+    assert row['url'] == 'https://www.reddit.com/r/fintech/comments/abc123/barclays_sandbox/'
+    assert row['kind'] == 'community' and row['date'] == '2026-02-11'
+    assert 'two weeks' in row['snippet']
+    assert seen['url'].startswith('https://www.reddit.com/search.rss?')
+    assert 'q=open+banking+sandbox' in seen['url'] and 'sort=relevance' in seen['url']
+
+
+def test_a_reddit_refusal_exits_non_zero(monkeypatch, capsys):
+    from urllib.error import HTTPError
+
+    def refuse(request, **_):
+        raise HTTPError(request.full_url, 429, 'Too Many Requests', {}, None)
+
+    monkeypatch.setattr(platforms, 'urlopen', refuse)
+    with pytest.raises(SystemExit) as exit_info:
+        platforms.main(['search', '--on', 'reddit', '--query', 'x'])
+    assert exit_info.value.code != 0

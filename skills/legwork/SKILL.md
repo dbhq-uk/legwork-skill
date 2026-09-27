@@ -421,7 +421,7 @@ All standard library only, on any `python3` 3.9 or newer.
 | Script | Purpose |
 |---|---|
 | `fetch.py "<url>" --find TERM [--relevant Q]` | Open a page for free and keep its text; exit 3 is a block or a shell. `--saved FILE` searches a page already fetched |
-| `platforms.py list \| search --on X` | Ten free platforms that return records rather than pages |
+| `platforms.py list \| search --on X` | Eleven free platforms, Reddit included, that return records rather than pages |
 | `brief.py --angle "..." --effort narrow\|comparison` | The brief for one retrieval subagent, filled and ready to pass unchanged |
 | `bd_search.py "<query\|url>" -m MODE` | The paid Bright Data rungs; `--help` lists the modes |
 | `sources.py log \| log-returns \| kinds \| score \| receipt \| resume \| stale` | The fetch log, source kinds and their fitness per claim, the receipt counts, what a past run fetched, what has gone stale |

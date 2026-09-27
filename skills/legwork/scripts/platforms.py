@@ -61,6 +61,7 @@ PLATFORMS = {
     'news': 'Google News, dated, with real country and language control (press)',
     'feed': 'A site\'s own RSS or Atom feed: changelogs and announcements (vendor_announcement)',
     'wayback': 'The Internet Archive: what a dead or changed page used to say (pass --kind yourself)',
+    'reddit': 'Reddit posts through its public search RSS, keyless (community)',
 }
 
 
@@ -379,6 +380,20 @@ def search_wayback(args):
 
 
 # Kept beside the searchers so the guard below has something to check.
+def search_reddit(args):
+    """Reddit posts through the public search RSS.
+
+    Reddit's JSON API answers 403 without a key, but its search RSS still
+    serves: probed live on 2026-09-25, HTTP 200 with 25 posts. A 403 or 429
+    here exits non-zero, which gather.py takes as the signal to use Bright
+    Data's Reddit dataset instead.
+    """
+    endpoint = 'https://www.reddit.com/search.rss?' + urlencode(
+        {'q': args.query, 'sort': 'relevance', 't': 'year'})
+    body = _get(endpoint, accept='application/atom+xml, application/rss+xml')
+    return endpoint, _parse_feed(body, args, kind='community')
+
+
 EMITTED_KINDS = ('community', 'registry', 'blog', 'press', 'vendor_announcement', 'unknown')
 
 SEARCHERS = {
@@ -392,6 +407,7 @@ SEARCHERS = {
     'news': search_news,
     'feed': search_feed,
     'wayback': search_wayback,
+    'reddit': search_reddit,
 }
 
 

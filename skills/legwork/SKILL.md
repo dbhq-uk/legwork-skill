@@ -32,7 +32,7 @@ Depth raises rigour. It never raises length.
 | | quick | standard | deep |
 |---|---|---|---|
 | Frame | Decision plus 2-3 sub-questions | Plus named falsifiers | Plus second-order angles |
-| Gather | Search snippets; open a page only to pin a figure | Open every source a finding rests on | A primary source for every finding |
+| Gather | One round, two or three phrasings an angle | Two rounds, with disconfirming phrasings | Rounds until every angle saturates; a primary source for every finding |
 | Challenge | Independence grouping only | One disconfirming search per finding | Per-finding disconfirming pass plus an origin audit |
 | Format | brief | brief or report | report |
 | Rough time | 3-5 min | 8-12 min | 20-40 min |
@@ -107,158 +107,91 @@ opened. Then:
    unstable.
 3. Add a line to `## Timeline` saying what changed.
 
-### 2. Frame
+### 2. Frame - ask, never answer
 
-Write three things down before the first search:
+Write the decision, the sub-questions and the falsifiers, then phrase each
+sub-question several ways, in the words different people would use: a
+practitioner, a regulator, a buyer, a critic. **Name nothing.** No
+organisation, product, site or answer goes into a phrasing - naming the banks,
+vendors or suppliers at this point answers half the question from memory, and
+research that starts from Claude's list can only confirm it.
 
 1. **The decision**, not the topic. "Outlook triage" is a topic; "should we build
    Outlook triage for small practices, or is the gap too narrow" is a decision.
 2. **The sub-questions that would settle it**, two to eight by level. Each must
    be answerable by evidence, and each is an **angle**: an independent line of
    enquiry, not a rephrasing of another.
-3. **What would change the answer.** Named falsifiers give Challenge something to
-   hunt for. Skip them at quick.
+3. **What would change the answer.** Named falsifiers, each written as
+   disconfirming phrasings - "X not available", "why we stopped using X". Skip
+   them at quick.
 
-### 3. Gather
+Write it as a plan file, one entry per angle:
 
-Work angle by angle. Stop on an angle when another search returns nothing new or
-primary evidence answers it. Do not gather to a quota.
-
-**Search with at least three query variants per angle:** a plain one; a targeted one
-(`site:` the primary party, an exact phrase, or `filetype:pdf`); and a negative
-one built from the falsifier. Year-pin queries about prices, releases,
-regulation and news, and nothing else.
-
-| Rung | Call | When |
-|---|---|---|
-| 1 | `WebSearch` | Always |
-| 2 | `platforms.py search --on X --query "..."` | The answer is a record a platform holds: a thread, a package, a repository, a dated news item, a changelog. Free, and returns the record rather than a page about it. `platforms.py list` shows the ten |
-| 3 | `bd_search.py "<query>" -m general --engine bing --country XX --language yy` | Thin (fewer than two independent parties) after three variants, or the question is geo-specific |
-| 4 | `bd_search.py -m discover --intent "..."` | Two engines still thin. Still thin after this is a finding: say what was searched |
-
-**A search result is a lead, not a page you read**, and that includes a paid
-one. Log a `WebSearch` result with `--via websearch`, and a result from
-`bd_search.py -m general` or `-m discover` with `--via serp`. There is no `serp`
-mode: `bd_search.py` prints the value to log as `log_via`, and a page it opened
-with `-m scrape` or `-m render` is logged `--via brightdata`, never `direct`. At standard and deep, open every page you intend
-to cite; the gate treats a citation resting only on search-result rows as
-unopened. Quick opens a page only to pin a figure.
-
-```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/fetch.py "<url>" --find "per user" --find "price" \
-  --relevant "what does the incumbent charge"
+```json
+{"date": "YYYY-MM-DD", "round": 1, "country": "gb", "language": "en",
+ "angles": [{"id": "offer", "question": "who offers developers a test environment?",
+             "phrasings": ["bank API sandbox UK", "open banking sandbox register developer",
+                           "account servicing payment service provider testing facility UK"],
+             "disconfirming": ["UK bank open banking sandbox not available"],
+             "people": true}]}
 ```
 
-`fetch.py` keeps the page text on disk and prints only the passages around your
-terms. Text on disk is what lets a figure be traced and a quote be checked.
-When no term matches it prints the page's headings instead: search the saved
-page again with `fetch.py --saved <text_file> --find "<term>"`, which does not
-refetch. The saved file is for the scripts to search, not for reading whole -
-opening it puts the entire page into your context for the rest of the run.
+`people: true` adds Reddit, Hacker News, Stack Exchange and GitHub issues for an
+angle about what people experience. Set `country` and `language` from the
+question.
 
-**Optional: Jev.** With a TypeSafe key - `TYPESAFE_API_KEY`, or the key alone
-in `~/.dbhq/legwork/typesafe-api-key` - a `--find` that misses also
-prints the three passages TypeSafe's Jev model ranks most relevant to
-`--relevant`. It costs about $0.0002 a page and sends that page's text and the
-`--relevant` question to TypeSafe. Without the key, `--relevant` is skipped and
-nothing else changes.
-
-**When a page will not open**, go down this list. Log each failure with
-`--status blocked` before you try the next step: a refusal is evidence about the
-run, and the receipt counts it. `--from-fetch` sets the status for you; a
-failure logged by hand defaults to `ok`, which records a page nobody read.
-
-1. `fetch.py` exited 3 (blocked, or a client-rendered shell): try `WebFetch`.
-2. Still blocked (bot protection, paywall, 403) and worth paying for:
-   `bd_search.py "<url>" -m scrape --find "<term>" --max-chars 8000`. Prefer
-   `--find` to a blind cap: the first eight thousand characters of a long page
-   are usually the navigation.
-3. A client-rendered shell: `bd_search.py "<url>" -m render`.
-4. **Refused by every transport: change the address.** Every step above asks
-   the same host for the same URL, so a publisher refusing by policy refuses all
-   of them. Search the document's own title (add `filetype:pdf` for a PDF) and
-   open a copy on another host. Log and cite it as the host that served it,
-   never as the original publisher. Check it carries the original's effective
-   date, and say in Limitations that the original refused you.
-5. A page that has moved or gone: `platforms.py search --on wayback`.
-
-**Reddit is the exception:** it blocks every rung above, so
-`bd_search.py "<url>" -m reddit` is the only route there, not a last resort. For
-any other platform that blocks everything, `-m pipeline --pipeline NAME`. Both
-are billed per record.
-
-`bd_search.py` exiting 2 means auth or quota: tell the user to run
-`brightdata login`, and do not retry. `fetch.py` exiting 5 means the address is
-not a research source: do not fetch it by any route.
-
-**Log every retrieval, at every level, including the failures:**
+### 3. Gather - scripts search, you judge
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py log --tsv "$OUT/$BASE.tsv" \
-  --from-fetch /tmp/legwork/ab12cd34ef56.json \
-  --angle "what does the incumbent charge" --kind vendor_pricing \
-  --query "site:acme.example pricing" \
-  --quote "Team plan: 30 US dollars per user per month, billed annually."
+python3 ${CLAUDE_SKILL_DIR}/scripts/gather.py --plan "$OUT/plan-1.json" \
+  --tsv "$OUT/$BASE.tsv" --out "$OUT/digest-1.md"
 ```
 
-`--from-fetch` takes the sidecar `fetch.py` or `bd_search.py` wrote, failures
-included. Two fields carry the weight, and nothing downstream can check either:
+One call works every angle at once and returns when it is done - there are no
+subagents and nothing to wait for. It searches every phrasing on Bright Data
+(Google and Bing), and the platforms where `people` is set; opens every result,
+climbing to Bright Data scrape and render and then a copy on another host when
+a page refuses; logs every retrieval with its page text; ranks every passage
+from every page against the angle (TypeSafe's Jev and a term match when a key
+is set, the term match alone otherwise); and writes a digest. It stops the run
+if Bright Data refuses - it is the only search engine - and tells you to run
+`brightdata login`.
 
-- **`--angle`** is the sub-question this retrieval answered, in the same words
-  every time. Corroboration is counted on angles, so one string reused across a
-  run silently destroys the check.
-- **`--quote`** is the verbatim sentence that made the source worth citing. Take
-  it as you read, for every source you will cite. About half of all findings
-  carry no figure, so for those the quote is the only evidence. If the log says
-  `quote_verified: false`, you misquoted the page: take the sentence again.
-
-Log the transport you actually used as `--via`. Re-fetching a page through a
-different transport to make it loggable distorts the trail rather than
-recording it. Pass `--kind`: an inferred `unknown` scores below commentary. `sources.py kinds` shows which kinds suit
-which claims. `sources.py log --help` covers the rest.
-
-**Rebuild a list from its items.** When an angle needs a list - every
-competitor, every plan, every release - open the items and rebuild the list from
-them. A table lifted from one roundup is one source, not one per row. If the
-items cannot be opened, say so in the finding and lower its band.
-
-**Parallelise retrieval, one subagent per angle.** Write each brief with
-`brief.py`, then copy the text it prints into the subagent's prompt, word for
-word, as the whole prompt. The prompt is text, not a shell: `$(cat file)` or a
-file path reaches the subagent as those characters, not as the brief.
+**Read the digest, not the pages.** Per angle it holds the best passages from
+the whole pool, each with an id, its party, kind, date and heading trail. No
+party other than the angle's subject gets more than three; the rest are listed
+as `+N more from <party>`, never dropped. Round 1 also lists the names the
+sources mention and how many independent parties mention each, and every angle
+says whether its search saturated - whether the last searches still found new
+parties.
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/brief.py --angle "what does the incumbent charge" \
-  --effort narrow --date "$TODAY"
+python3 ${CLAUDE_SKILL_DIR}/scripts/gather.py --show r1-offer-12 r1-offer-40 --tsv "$OUT/$BASE.tsv"
+python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py quote --tsv "$OUT/$BASE.tsv" --id r1-offer-12 \
+  --quote "the sentence your finding rests on"
 ```
 
-`--effort comparison` is for an angle that spans several options. The script
-fills the template in [subagent-brief.md](./reference/subagent-brief.md), which
-also says why each line is there, with the date, the angle and the real path to
-`fetch.py`. **Never retype or summarise a brief.** A subagent has zero context,
-and a paraphrased brief loses the command that keeps page text: on 2026-09-24
-one did, and 103 subagent fetches reached the log with nothing to check. Then:
+`--show` prints any passage in full, overflow included. `quote` records the
+sentence a finding rests on against its source, checked word for word against
+the saved page. Record one for every source you cite.
 
-- **Choose the model by the shape of the angle.** Snippet gathering and pinning
-  one known figure run fine on a cheap model; pass it explicitly. Rebuilding a
-  list, and deep-level primary-source work, stay on your own model: smaller
-  models fill a grid from one aggregator and report success.
-- **Log what comes back with the script, not by hand.** Save each subagent's
-  reply to a file as it came back, then:
+**Round 2 comes from what round 1 found.** Choose what to research from the
+digest - usually the names it lists - and write a second plan whose angles
+carry a `subject` and a `from` listing the round-1 ids that named it. Phrase
+each the same way: "<subject> sandbox registration", "<subject> sandbox
+problems". `gather.py` refuses a subject with no `from`. A round-2 subject's
+own pages are its primary evidence and are never capped.
 
-  ```bash
-  python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py log-returns --tsv "$OUT/$BASE.tsv" \
-    --returns /tmp/legwork-returns-1.txt --angle "what does the incumbent charge"
-  ```
+**Memory is a check, never a seed.** After round 1, write down anything you
+expected that the sources never named. Each becomes an angle marked
+`"expected": true`, searched like any other. If it finds nothing, the report
+says "expected X, no source found". Memory can add a search, never an answer.
 
-  It logs every source with its page text wherever one was saved, blocked ones
-  included, and prints how many quotes it checked and the angles it saw - check
-  those came back unchanged. A logging loop of your own drops the page text, and
-  with it every quote check. Never paste a subagent's transcript into the
-  synthesis.
-- **Subagents use the free rungs only.** A page one returns as blocked is yours
-  to take up the paid rungs, if the finding needs it.
-- Framing, challenge and writing are judgement, and stay with you.
+**Follow-ups are more rounds**: an angle that did not saturate gets more
+phrasings; a list to rebuild from its items gets an angle with `urls` and no
+phrasings, which opens those pages without searching. Stop when a further round
+adds no new party, or primary evidence answers the angle. Do not gather to a
+quota.
 
 **Research is what an outsider could establish.** If the question is about the
 user's own company or product, do not reach into their private accounts - their
@@ -276,9 +209,10 @@ from privileged access.
 
 A finding that has only been supported has not been tested.
 
-- **Standard and deep:** at least one disconfirming search per finding, built
-  from its falsifier ("X limitations", "why we left X", "X price increase").
-  What it finds goes inside the finding, not in a caveats paragraph.
+- **Standard and deep:** the disconfirming phrasings in both rounds are the
+  search for the other side, and what they find is in the digest beside
+  everything else. Check each finding against the digest for anything that
+  contradicts it; it goes inside the finding, not in a caveats paragraph.
 - **Every level:** group the sources. At standard and deep, also check each
   finding and the run as a whole.
 
@@ -304,8 +238,8 @@ is answered - from [report_template.md](./templates/report_template.md).
 Markdown only.
 
 **Comparing three or more named options adds a `## Comparison matrix`.** Fix the
-field list before you fan out, one row per option; one subagent per option,
-filling that same field list, is the natural split. Every cell holds a claim or
+field list before round 2, one row per option; one round-2 angle per option,
+asking for that same field list, is the natural split. Every cell holds a claim or
 `[unknown]`, never a blank, and a row that is all `[unknown]` stays in. **A row
 rests on at least one page you opened**: if every citation in it is a search
 result, open one of those pages or mark the cells `[unknown]`. The gate fails
@@ -422,9 +356,9 @@ All standard library only, on any `python3` 3.9 or newer.
 |---|---|
 | `fetch.py "<url>" --find TERM [--relevant Q]` | Open a page for free and keep its text; exit 3 is a block or a shell. `--saved FILE` searches a page already fetched |
 | `platforms.py list \| search --on X` | Eleven free platforms, Reddit included, that return records rather than pages |
-| `brief.py --angle "..." --effort narrow\|comparison` | The brief for one retrieval subagent, filled and ready to pass unchanged |
+| `gather.py --plan P --tsv T --out D` | Search every phrasing, open every result, log it and write the digest; `--show ID` prints a passage |
 | `bd_search.py "<query\|url>" -m MODE` | The paid Bright Data rungs; `--help` lists the modes |
-| `sources.py log \| log-returns \| kinds \| score \| receipt \| resume \| stale` | The fetch log, source kinds and their fitness per claim, the receipt counts, what a past run fetched, what has gone stale |
+| `sources.py log \| quote \| kinds \| score \| receipt \| resume \| stale` | The fetch log, source kinds and their fitness per claim, the receipt counts, what a past run fetched, what has gone stale |
 | `independence.py groups \| check \| portfolio` | Independent voices, corroboration per finding, concentration across the run |
 | `matrix.py check` | Completeness of a comparison matrix |
 | `index.py list \| add` | The research index |

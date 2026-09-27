@@ -53,6 +53,8 @@ class FakeScripts:
         if script == 'platforms.py':
             on, query = args[args.index('--on') + 1], args[args.index('--query') + 1]
             answer = self.platform.get((on, query), [])
+            if on == 'bing' and not answer:
+                answer = 1  # platforms.py exits non-zero when Bing has no results
             if isinstance(answer, int):
                 return answer, '', json.dumps({'error': 'refused'})
             results = [{'url': u, 'title': 'P ' + u, 'date': '2026-01-01', 'snippet': 'x', 'kind': 'community'}
@@ -128,7 +130,17 @@ def test_an_angle_with_nothing_to_search_is_refused(tmp_path):
 # Search
 # ---------------------------------------------------------------------------
 
-def test_every_phrasing_is_searched_on_google_and_bing(tmp_path, fake):
+def test_every_phrasing_goes_to_local_bing_first(tmp_path, fake):
+    fake.platform[('bing', 'bank api sandbox uk')] = ['https://a.example/1']
+    fake.platform[('bing', 'bank sandbox not available')] = ['https://b.example/2']
+    fake.pages['https://a.example/1'] = 'text'
+    fake.pages['https://b.example/2'] = 'text'
+    gather.run(gather.load_plan(_plan(tmp_path, [_angle()])), str(tmp_path / 'run.tsv'), str(tmp_path))
+    assert fake.ran('platforms.py', 'bing', 'bank api sandbox uk', 'gb', 'en')
+    assert not fake.ran('bd_search.py', '-m', 'general')
+
+
+def test_bright_data_searches_google_and_bing_when_local_bing_fails(tmp_path, fake):
     gather.run(gather.load_plan(_plan(tmp_path, [_angle()])), str(tmp_path / 'run.tsv'), str(tmp_path))
     for query in ('bank api sandbox uk', 'bank sandbox not available'):
         for engine in ('google', 'bing'):
@@ -159,14 +171,14 @@ def test_a_failing_search_is_retried_once_then_recorded(tmp_path, fake, monkeypa
     failures = []
 
     def flaky(argv, timeout):
-        if os.path.basename(argv[1]) == 'bd_search.py' and 'google' in argv:
+        if os.path.basename(argv[1]) == 'bd_search.py' and '-m' in argv and 'general' in argv:
             failures.append(argv)
             return 1, '', 'timeout'
         return real(argv, timeout)
 
     monkeypatch.setattr(gather, 'run_script', flaky)
     result = gather.run(gather.load_plan(_plan(tmp_path, [_angle()])), str(tmp_path / 'run.tsv'), str(tmp_path))
-    assert len(failures) == 4  # two queries on google, each tried twice
+    assert len(failures) == 8  # two queries, local Bing empty, both engines each tried twice
     assert result['angles']['offer']['failed_searches'] == 2
 
 
@@ -313,3 +325,15 @@ def test_digest_ids_resolve_to_their_page_and_passage(tmp_path, fake, capsys):
 def test_a_name_never_runs_across_a_full_stop():
     assert 'Help We' not in gather._names('Get Help. We offer a Sandbox. For developers.')
     assert not any('.' in name for name in gather._names('Get Help. We offer a Sandbox. For developers.'))
+
+
+def test_the_copy_search_for_a_blocked_page_also_goes_local_first(tmp_path, fake):
+    url = 'https://publisher.example/price-guide.pdf'
+    fake.platform[('bing', 'bank api sandbox uk')] = [url]
+    fake.platform[('bing', '"P https://publisher.example/price-guide.pdf"')] = ['https://copy.example/guide']
+    fake.pages['https://copy.example/guide'] = 'The price guide, reposted.'
+    tsv = str(tmp_path / 'run.tsv')
+    gather.run(gather.load_plan(_plan(tmp_path, [_angle(disconfirming=[])])), tsv, str(tmp_path))
+    assert not fake.ran('bd_search.py', '-m', 'general')
+    rows = sources.read_rows(tsv)
+    assert [(r['url'], r['status']) for r in rows][-1] == ('https://copy.example/guide', 'ok')

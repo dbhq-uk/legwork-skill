@@ -62,6 +62,7 @@ PLATFORMS = {
     'feed': 'A site\'s own RSS or Atom feed: changelogs and announcements (vendor_announcement)',
     'wayback': 'The Internet Archive: what a dead or changed page used to say (pass --kind yourself)',
     'reddit': 'Reddit posts through its public search RSS, keyless (community)',
+    'bing': 'Web search results from Bing, asked directly and free - the first rung of search (unknown)',
 }
 
 
@@ -394,6 +395,69 @@ def search_reddit(args):
     return endpoint, _parse_feed(body, args, kind='community')
 
 
+_BING_RESULT = re.compile(r'<li class="b_algo"(.*?)</li>', re.S)
+_BING_LINK = re.compile(r'<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>', re.S)
+_BING_SNIPPET = re.compile(r'<p[^>]*>(.*?)</p>', re.S)
+
+
+def _bing_target(href):
+    """Bing wraps each result in its own redirect; the address is base64 in `u`."""
+    import base64
+    import html as html_lib
+    from urllib.parse import parse_qs, urlparse
+    href = html_lib.unescape(href)
+    if 'bing.com/ck/' not in href:
+        return href
+    encoded = parse_qs(urlparse(href).query).get('u', [''])[0]
+    if not encoded.startswith('a1'):
+        return ''
+    encoded = encoded[2:] + '=' * (-len(encoded[2:]) % 4)
+    try:
+        return base64.urlsafe_b64decode(encoded).decode('utf-8')
+    except ValueError:
+        return ''
+
+
+def search_bing(args):
+    """Bing's web results, asked directly from this machine, free.
+
+    Probed 2026-09-27: twelve searches in a row answered with ten results each,
+    where DuckDuckGo, Google, Brave, Mojeek and Startpage refused a plain request
+    or answered with no usable results. A page with no results - a refusal or a
+    challenge - exits non-zero, which gather.py takes as the signal to search on
+    Bright Data instead.
+    """
+    params = {'q': args.query, 'count': min(args.limit, 50)}
+    if args.country:
+        params['cc'] = args.country.lower()
+    if args.language:
+        params['setlang'] = args.language.lower()
+    endpoint = 'https://www.bing.com/search?' + urlencode(params)
+    body = _get(endpoint, accept='text/html')
+    results = []
+    for block in _BING_RESULT.findall(body):
+        link = _BING_LINK.search(block)
+        if not link:
+            continue
+        url = _bing_target(link.group(1))
+        if not url.startswith(('http://', 'https://')):
+            continue
+        snippet = _BING_SNIPPET.search(block)
+        results.append({
+            'url': url,
+            'title': _clip(html_to_text(link.group(2)), 200),
+            'date': '',
+            'snippet': _clip(html_to_text(snippet.group(1)) if snippet else ''),
+            'kind': 'unknown',
+            'signal': {'rank': len(results) + 1},
+        })
+        if len(results) >= args.limit:
+            break
+    if not results:
+        _fail('Bing returned no results for {!r} - refused, challenged or empty'.format(args.query[:80]))
+    return endpoint, results
+
+
 EMITTED_KINDS = ('community', 'registry', 'blog', 'press', 'vendor_announcement', 'unknown')
 
 SEARCHERS = {
@@ -408,6 +472,7 @@ SEARCHERS = {
     'feed': search_feed,
     'wayback': search_wayback,
     'reddit': search_reddit,
+    'bing': search_bing,
 }
 
 

@@ -336,3 +336,46 @@ def test_a_reddit_refusal_exits_non_zero(monkeypatch, capsys):
     with pytest.raises(SystemExit) as exit_info:
         platforms.main(['search', '--on', 'reddit', '--query', 'x'])
     assert exit_info.value.code != 0
+
+
+# ---------------------------------------------------------------------------
+# Bing, searched directly and free. Probed 2026-09-27: 12 searches in a row
+# answered with 10 results each; DuckDuckGo, Google, Brave, Mojeek and
+# Startpage refused a plain request or returned no usable results.
+# ---------------------------------------------------------------------------
+
+import base64 as _b64
+
+
+def _bing_href(real):
+    return 'https://www.bing.com/ck/a?!&amp;&amp;p=abc&amp;u=a1' + _b64.urlsafe_b64encode(real.encode()).decode().rstrip('=') + '&amp;ntb=1'
+
+
+BING_HTML = ('<html><body><ol id="b_results">'
+             '<li class="b_algo"><h2><a href="' + _bing_href('https://developer.sandbox.natwest.com/') + '">NatWest <strong>Sandbox</strong></a></h2>'
+             '<div class="b_caption"><p>Create an account and start browsing our API catalogue.</p></div></li>'
+             '<li class="b_algo"><h2><a href="https://www.openbanking.org.uk/">Open Banking</a></h2>'
+             '<div class="b_caption"><p>The Open Banking Standard.</p></div></li>'
+             '</ol></body></html>')
+
+
+def test_bing_results_are_decoded_to_the_real_address(monkeypatch, capsys):
+    seen = {}
+
+    def fake(request, **_):
+        seen['url'] = request.full_url
+        return _Response(BING_HTML)
+
+    monkeypatch.setattr(platforms, 'urlopen', fake)
+    platforms.main(['search', '--on', 'bing', '--query', 'open banking sandbox', '--country', 'gb'])
+    rows = json.loads(capsys.readouterr().out)['results']
+    assert [r['url'] for r in rows] == ['https://developer.sandbox.natwest.com/', 'https://www.openbanking.org.uk/']
+    assert rows[0]['title'] == 'NatWest Sandbox' and 'API catalogue' in rows[0]['snippet']
+    assert seen['url'].startswith('https://www.bing.com/search?') and 'cc=gb' in seen['url']
+
+
+def test_a_bing_page_with_no_results_exits_non_zero(monkeypatch, capsys):
+    monkeypatch.setattr(platforms, 'urlopen', lambda *a, **k: _Response('<html>verify you are human</html>'))
+    with pytest.raises(SystemExit) as exit_info:
+        platforms.main(['search', '--on', 'bing', '--query', 'x'])
+    assert exit_info.value.code != 0

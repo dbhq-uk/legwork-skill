@@ -8,9 +8,10 @@ The retrieval half of a legwork run, with no model in the loop. Claude writes
 the plan - each angle's question phrased several ways, naming nothing - and
 this does the rest for every angle at once:
 
-  1. search    every phrasing on Bright Data (Google and Bing), and for angles
-               about people's experience Hacker News, Stack Exchange, GitHub
-               issues and Reddit
+  1. search    every phrasing on Bing, asked directly and free, and on Bright
+               Data (Google and Bing) only when that is refused or empty; for
+               angles about people's experience also Hacker News, Stack
+               Exchange, GitHub issues and Reddit
   2. narrow    one entry per page, however many searches found it
   3. open      every page: fetch.py, then Bright Data scrape and render, then
                a copy of the same document on another host
@@ -26,8 +27,8 @@ read, all of it re-read on every later step. Here search results never reach
 a conversation, and there is nothing to wait for.
 
 Exit codes: 0 done; 1 the plan is invalid; 2 Bright Data refused (auth or
-quota) - it is the only search engine, so the run stops rather than finding
-nothing and calling it an answer.
+quota) when a search needed it - the run stops rather than finding nothing and
+calling it an answer.
 
 Stdlib only. Runs on any python3 >= 3.9.
 """
@@ -148,9 +149,14 @@ def _serp(query, engine, plan):
     return None
 
 
-def _platform(platform, query):
-    code, out, _err = run_script(_script('platforms.py', 'search', '--on', platform, '--query', query,
-                                         '--limit', RESULTS_PER_SEARCH), SEARCH_TIMEOUT)
+def _platform(platform, query, plan=None):
+    argv = _script('platforms.py', 'search', '--on', platform, '--query', query, '--limit', RESULTS_PER_SEARCH)
+    if plan and platform == 'bing':
+        if plan.get('country'):
+            argv += ['--country', plan['country']]
+        if plan.get('language'):
+            argv += ['--language', plan['language']]
+    code, out, _err = run_script(argv, SEARCH_TIMEOUT)
     if code != 0:
         return None
     return [dict(r, via='api', query=query) for r in _json(out).get('results') or []]
@@ -159,8 +165,7 @@ def _platform(platform, query):
 def _search_jobs(angle, plan):
     jobs = []
     for query in angle['phrasings'] + angle['disconfirming']:
-        for engine in ENGINES:
-            jobs.append(('serp', query, engine))
+        jobs.append(('web', query, 'bing-local'))
     if angle.get('people'):
         for query in angle['phrasings']:
             for platform in PEOPLE_PLATFORMS:
@@ -170,8 +175,17 @@ def _search_jobs(angle, plan):
 
 def _run_search(job, plan):
     kind, query, where = job
-    if kind == 'serp':
-        return _serp(query, where, plan)
+    if kind == 'web':
+        # Free first: Bing asked directly from this machine. Bright Data only
+        # when that is refused or empty (Dan, 27 Sep 2026: "curl locally
+        # first then bdata").
+        local = _platform('bing', query, plan)
+        if local:
+            return [dict(hit, via='serp') for hit in local]
+        found = [_serp(query, engine, plan) for engine in ENGINES]
+        if all(result is None for result in found):
+            return None
+        return [hit for result in found if result for hit in result]
     found = _platform(where, query)
     if found is None and where == 'reddit':
         # Reddit's RSS refused: find its threads through a search instead.
@@ -251,7 +265,8 @@ def open_url(url, title, out_dir, plan):
     # Every transport asks the same host for the same URL; a publisher refusing
     # by policy refuses them all. A copy on another host often opens for free.
     if title and len(title) > 12:
-        copies = _serp('"{}"'.format(title[:120]), 'google', plan) or []
+        wanted = '"{}"'.format(title[:120])
+        copies = _platform('bing', wanted, plan) or _serp(wanted, 'google', plan) or []
         for copy in copies[:3]:
             other = copy.get('url') or ''
             if other and party_of(other) != party_of(url):

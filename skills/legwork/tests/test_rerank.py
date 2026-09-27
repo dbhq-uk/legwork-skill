@@ -40,12 +40,14 @@ def test_the_subject_is_never_capped():
     assert len(chosen) == 8 and not overflow
 
 
-def test_every_party_with_anything_relevant_keeps_a_passage():
-    items = [_item(i, 'big.example', 0.9) for i in range(50)] + [_item(99, 'small.example', 0.05),
+def test_every_party_near_the_top_keeps_a_passage_and_the_rest_are_listed():
+    items = [_item(i, 'big.example', 0.9) for i in range(50)] + [_item(99, 'small.example', 0.3),
+                                                                 _item(97, 'stray.example', 0.1),
                                                                  _item(98, 'nothing.example', 0.0)]
-    chosen, overflow = rerank.select_digest(items, subject_party='big.example', cap=3, top=40)
+    chosen, overflow = rerank.select_digest(items, subject_party='big.example', cap=3, top=24)
     parties = {c['party'] for c in chosen}
     assert 'small.example' in parties
+    assert 'stray.example' not in parties and 's97' in overflow['stray.example']
     assert 'nothing.example' not in parties
     assert 's98' in overflow['nothing.example']
 
@@ -53,7 +55,7 @@ def test_every_party_with_anything_relevant_keeps_a_passage():
 def test_the_digest_stops_at_top_and_lists_what_it_cut():
     items = [_item(i, 'p{}.example'.format(i), 1 - i * 0.01) for i in range(60)]
     chosen, overflow = rerank.select_digest(items, subject_party=None, cap=3, top=40)
-    assert len(chosen) == 60  # every party keeps one, even past the top
+    assert len(chosen) == 60  # every party near the top keeps one, even past the top
     items = [_item(i, 'one.example', 1 - i * 0.001) for i in range(60)]
     chosen, overflow = rerank.select_digest(items, subject_party='one.example', cap=3, top=40)
     assert len(chosen) == 40 and len(overflow['one.example']) == 20
@@ -99,10 +101,21 @@ def test_jev_scores_follow_the_probabilities_in_batches(monkeypatch):
 def test_pool_scores_average_term_and_jev_when_jev_is_available(monkeypatch):
     """Measured 2026-09-27 on 31 angles: the average put the quoted passage in
     the top five 86% of the time, against 74% for terms and 76% for Jev alone."""
-    monkeypatch.setattr(rerank, 'jev_scores', lambda passages, question: [1.0, 0.0])
+    monkeypatch.setattr(rerank, 'jev_scores', lambda passages, question: [{'a': 1.0, 'b': 0.0}[p] for p in passages])
     monkeypatch.setattr(rerank, 'term_scores', lambda passages, terms: [0.0, 0.5])
     scores, scorer = rerank.pool_scores(['a', 'b'], ['t'], 'q')
     assert scores == [0.5, 0.25] and scorer == 'jev+terms'
+
+
+def test_jev_reads_only_the_term_match_s_best(monkeypatch):
+    """Measured 2026-09-27: pools past 2,000 passages an angle took minutes to score."""
+    monkeypatch.setattr(rerank, 'JEV_POOL', 2)
+    read = []
+    monkeypatch.setattr(rerank, 'jev_scores', lambda passages, question: read.extend(passages) or [1.0] * len(passages))
+    monkeypatch.setattr(rerank, 'term_scores', lambda passages, terms: [0.1, 0.9, 0.5])
+    scores, _ = rerank.pool_scores(['low', 'high', 'mid'], ['t'], 'q')
+    assert sorted(read) == ['high', 'mid']
+    assert scores == [0.05, 0.95, 0.75]
 
 
 def test_pool_scores_fall_back_to_terms_without_jev(monkeypatch):
@@ -128,7 +141,7 @@ def test_a_failed_jev_batch_costs_only_its_own_passages(monkeypatch):
 
 
 def test_pool_scores_use_terms_where_jev_has_no_score(monkeypatch):
-    monkeypatch.setattr(rerank, 'jev_scores', lambda passages, question: [1.0, None])
+    monkeypatch.setattr(rerank, 'jev_scores', lambda passages, question: [{'a': 1.0, 'b': None}[p] for p in passages])
     monkeypatch.setattr(rerank, 'term_scores', lambda passages, terms: [0.0, 0.4])
     assert rerank.pool_scores(['a', 'b'], ['t'], 'q') == ([0.5, 0.4], 'jev+terms')
 

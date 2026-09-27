@@ -60,7 +60,7 @@ class FakeScripts:
                 answer = 1  # platforms.py exits non-zero when Bing has no results
             if isinstance(answer, int):
                 return answer, '', json.dumps({'error': 'refused'})
-            results = [{'url': u, 'title': 'P ' + u, 'date': '2026-01-01', 'snippet': 'x', 'kind': 'community'}
+            results = [{'url': u, 'title': 'P ' + query, 'date': '2026-01-01', 'snippet': 'x', 'kind': 'community'}
                        for u in answer]
             return 0, json.dumps({'platform': on, 'results': results}), ''
         if script == 'fetch.py':
@@ -142,6 +142,31 @@ def test_every_phrasing_goes_to_local_bing_first(tmp_path, fake):
     gather.run(gather.load_plan(_plan(tmp_path, [_angle()])), str(tmp_path / 'run.tsv'), str(tmp_path))
     assert fake.ran('platforms.py', 'bing', 'bank api sandbox uk', 'gb', 'en')
     assert not fake.ran('bd_search.py', '-m', 'general')
+
+
+def test_local_bing_off_topic_falls_back_to_bright_data(tmp_path, fake, monkeypatch):
+    """Measured 2026-09-27: Bing from this machine answered "managed postgres
+    pricing comparison" with dictionary entries for "managed"."""
+    real = fake.__call__
+
+    def junk(argv, timeout):
+        if os.path.basename(argv[1]) == 'platforms.py' and 'bing' in argv:
+            results = [{'url': 'https://dictionary.example/managed', 'title': 'Managed - definition',
+                        'snippet': 'the meaning of managed', 'kind': 'unknown'}] * 10
+            return 0, json.dumps({'platform': 'bing', 'results': results}), ''
+        return real(argv, timeout)
+
+    monkeypatch.setattr(gather, 'run_script', junk)
+    gather.run(gather.load_plan(_plan(tmp_path, [_angle()])), str(tmp_path / 'run.tsv'), str(tmp_path))
+    assert fake.ran('bd_search.py', 'bank api sandbox uk', 'google')
+
+
+def test_on_topic_needs_most_results_to_carry_most_query_words():
+    hits = [{'title': 'Bank API sandbox for developers', 'url': 'https://a.example'}] * 6 + \
+           [{'title': 'United Kingdom', 'url': 'https://b.example'}] * 4
+    assert gather._on_topic(hits, 'UK bank API sandbox developer portal')
+    assert not gather._on_topic(hits[6:], 'UK bank API sandbox developer portal')
+    assert not gather._on_topic([], 'anything at all')
 
 
 def test_bright_data_searches_google_and_bing_when_local_bing_fails(tmp_path, fake):
@@ -366,10 +391,20 @@ def test_a_name_never_runs_across_a_full_stop():
 def test_the_copy_search_for_a_blocked_page_also_goes_local_first(tmp_path, fake):
     url = 'https://publisher.example/price-guide.pdf'
     fake.platform[('bing', 'bank api sandbox uk')] = [url]
-    fake.platform[('bing', '"P https://publisher.example/price-guide.pdf"')] = ['https://copy.example/guide']
+    fake.platform[('bing', '"P bank api sandbox uk"')] = ['https://copy.example/guide']
     fake.pages['https://copy.example/guide'] = 'The price guide, reposted.'
     tsv = str(tmp_path / 'run.tsv')
     gather.run(gather.load_plan(_plan(tmp_path, [_angle(disconfirming=[])])), tsv, str(tmp_path))
     assert not fake.ran('bd_search.py', '-m', 'general')
     rows = sources.read_rows(tsv)
     assert [(r['url'], r['status']) for r in rows][-1] == ('https://copy.example/guide', 'ok')
+
+
+def test_show_prints_every_passage_a_party_has_in_an_angle(tmp_path, fake, capsys):
+    vendor = {'https://vendor.example/{}'.format(i): 'Sandbox detail number {} for the bank api.'.format(i)
+              for i in range(3)}
+    digest, tsv = _run_with(tmp_path, fake, vendor)
+    capsys.readouterr()
+    gather.show(['r1-offer@vendor.example'], tsv)
+    printed = capsys.readouterr().out
+    assert printed.count('## r1-offer-') == 3

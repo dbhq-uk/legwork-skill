@@ -147,7 +147,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gather.py --plan "$OUT/plan-1.json" \
   --tsv "$OUT/$BASE.tsv" --out "$OUT/digest-1.md"
 ```
 
-One call works every angle at once and returns within six minutes. **Run it in
+One call works every angle at once and returns in about seven minutes. **Run it in
 the foreground with the longest command timeout your tool allows** (Claude
 Code: `timeout: 600000`), never in the background: a backgrounded call leaves
 you polling a script that will finish anyway, and every poll re-reads the whole
@@ -168,7 +168,8 @@ Data installed, it searches Bing alone.
 **Read the digest, not the pages.** Per angle it holds the best passages from
 the whole pool, each with an id, its party, kind, date and heading trail. No
 party other than the angle's subject gets more than three; the rest are listed
-as `+N more from <party>`, never dropped. Round 1 also lists the names the
+as `+N more from <party>` with the first few ids, never dropped, and
+`--show r1-offer@<party>` prints all of them. Round 1 also lists the names the
 sources mention and how many independent parties mention each, and every angle
 says whether its search saturated - whether the last searches still found new
 parties.

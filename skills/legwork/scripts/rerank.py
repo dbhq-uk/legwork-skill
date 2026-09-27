@@ -34,8 +34,10 @@ import fetch  # noqa: E402
 
 JEV_BATCH = 30
 JEV_PASSAGE_CHARS = 2000
+JEV_POOL = 200
 DEFAULT_CAP = 3
-DEFAULT_TOP = 40
+DEFAULT_TOP = 24
+PARTY_FLOOR = 0.3
 
 _WORD = re.compile(r"[a-z0-9]+")
 
@@ -108,20 +110,33 @@ def pool_scores(passages, terms, question):
     passages a pool): the passage a run went on to quote was in the top five
     86% of the time with the average, 76% with Jev alone and 74% with terms
     alone, and in the top 20 every time with the average or terms.
+
+    Jev reads only the JEV_POOL passages the term match ranks highest. The
+    first live pools ran past 2,000 passages an angle, and scoring them all
+    took minutes; the term match's top 20 already held every quoted passage.
+    A passage Jev did not read scores as if Jev had said no; one in a batch
+    Jev refused keeps its term score.
     """
     terms_only = term_scores(passages, terms)
-    jev = jev_scores(passages, question)
-    if jev is None:
+    order = sorted(range(len(passages)), key=lambda i: terms_only[i], reverse=True)[:JEV_POOL]
+    jev_read = jev_scores([passages[i] for i in order], question)
+    if jev_read is None:
         return terms_only, 'terms'
+    jev = [0.0] * len(passages)
+    for i, score in zip(order, jev_read):
+        jev[i] = score
     return [(t + j) / 2 if j is not None else t for t, j in zip(terms_only, jev)], 'jev+terms'
 
 
-def select_digest(items, subject_party=None, cap=DEFAULT_CAP, top=DEFAULT_TOP):
+def select_digest(items, subject_party=None, cap=DEFAULT_CAP, top=DEFAULT_TOP, floor=PARTY_FLOOR):
     """(chosen, overflow) from scored items - dicts with 'id', 'party', 'score'.
 
-    - Every party with any score above zero keeps its best passage, even past
-      `top`: corroboration is counted on parties, and a party dropped from the
-      digest is a party Claude never weighs.
+    - Every party whose best passage scores at least `floor` of the pool's best
+      keeps that passage, even past `top`: corroboration is counted on
+      parties, and a party dropped from the digest is a party Claude never
+      weighs. Below the floor it is listed in overflow instead - measured on
+      2026-09-27, "any score above zero" put 82 parties' best passages in one
+      angle, most of them a stray word match.
     - Then the best of the rest, up to `top`, with no party other than
       `subject_party` holding more than `cap`.
     - `overflow` lists, by party, the id of every passage not chosen.
@@ -129,8 +144,9 @@ def select_digest(items, subject_party=None, cap=DEFAULT_CAP, top=DEFAULT_TOP):
     """
     ranked = sorted(items, key=lambda item: item['score'], reverse=True)
     chosen_ids, per_party = set(), Counter()
+    bar = max(1e-9, (ranked[0]['score'] if ranked else 0) * floor)
     for item in ranked:
-        if item['score'] > 0 and per_party[item['party']] == 0:
+        if item['score'] >= bar and per_party[item['party']] == 0:
             chosen_ids.add(item['id'])
             per_party[item['party']] += 1
     for item in ranked:

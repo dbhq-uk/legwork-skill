@@ -47,6 +47,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +61,7 @@ from independence import canonicalize, party_of  # noqa: E402
 ENGINES = ('google', 'bing')
 PEOPLE_PLATFORMS = ('hn', 'stackexchange', 'githubissues', 'reddit')
 RESULTS_PER_SEARCH = 10
-DEFAULT_TIME_LIMIT = 360
+DEFAULT_TIME_LIMIT = 300
 DEFAULT_WORKERS = 12
 SEARCH_TIMEOUT = 90
 OPEN_TIMEOUT = 120
@@ -179,6 +180,32 @@ def _platform(platform, query, plan=None):
     return [dict(r, via='api', query=query) for r in _json(out).get('results') or []]
 
 
+_QUERY_STOP = frozenset('''a an and are as at be by can do does for from how in is it of on or the to
+what when where which who why with uk vs'''.split())
+
+
+def _on_topic(results, query):
+    """True when most results carry most of the query's words.
+
+    Measured on 2026-09-27: Bing asked from this machine answered every query
+    with ten confident results for its first word alone - "managed postgres
+    pricing comparison" returned dictionary entries for "managed", and "UK bank
+    API sandbox developer portal" returned the BBC and Wikipedia on the United
+    Kingdom. Ten results is not a refusal, so without this check the fallback
+    never fired and the digest filled with noise.
+    """
+    words = [w for w in re.findall(r'[a-z0-9]+', query.lower()) if len(w) > 2 and w not in _QUERY_STOP]
+    if len(words) < 2:
+        return bool(results)
+    need = max(2, (len(words) + 1) // 2)
+
+    def matches(hit):
+        text = ' '.join((hit.get('title') or '', hit.get('snippet') or '', hit.get('url') or '')).lower()
+        return sum(1 for w in words if w in text) >= need
+
+    return bool(results) and sum(1 for hit in results if matches(hit)) * 2 >= len(results)
+
+
 def _search_jobs(angle, plan):
     jobs = []
     for query in angle['phrasings'] + angle['disconfirming']:
@@ -197,7 +224,7 @@ def _run_search(job, plan):
         # when that is refused or empty (Dan, 27 Sep 2026: "curl locally
         # first then bdata").
         local = _platform('bing', query, plan)
-        if local:
+        if local and _on_topic(local, query):
             return [dict(hit, via='serp') for hit in local]
         found = [_serp(query, engine, plan) for engine in ENGINES]
         if all(result is None for result in found):
@@ -299,12 +326,13 @@ def open_url(url, title, out_dir, plan, deadline=None):
     # by policy refuses them all. A copy on another host often opens for free.
     if title and len(title) > 12 and _step_timeout(deadline):
         wanted = '"{}"'.format(title[:120])
-        copies = _platform('bing', wanted, plan) or _serp(wanted, 'google', plan) or []
+        local = _platform('bing', wanted, plan)
+        copies = (local if local and _on_topic(local, title) else None) or _serp(wanted, 'google', plan) or []
         for copy in copies[:3]:
             other = copy.get('url') or ''
-            if other and party_of(other) != party_of(url):
+            if other and party_of(other) != party_of(url) and _step_timeout(deadline):
                 cpath = _page_path(out_dir, other)
-                code, _out, _err = run_script(_script('fetch.py', other, '--out', cpath), OPEN_TIMEOUT)
+                code, _out, _err = run_script(_script('fetch.py', other, '--out', cpath), _step_timeout(deadline))
                 if code == 0:
                     return {'url': other, 'sidecar': os.path.splitext(cpath)[0] + '.json',
                             'refused': refused, 'copy_of': url}
@@ -432,7 +460,8 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
 # The digest
 # ---------------------------------------------------------------------------
 
-PASSAGE_SHOWN = 600
+PASSAGE_SHOWN = 400
+OVERFLOW_IDS = 5
 NAMES_SHOWN = 40
 _NAME = re.compile(r"\b[A-Z][\w&'-]*(?:[ \t]+(?:of[ \t]+)?[A-Z][\w&'-]*){0,3}")
 _NOT_NAMES = frozenset("""
@@ -476,10 +505,11 @@ def _named(items):
             names.setdefault(name, set()).add(item['party'])
     if not names:
         return names
-    pool = ' '.join(item['text'] for item in items)
+    # Counted once over the pool: a regex per name over it took 24 to 44
+    # seconds an angle on the first live pools (2,000 to 4,000 passages).
+    words = Counter(w for item in items for w in re.findall(r"[\w&'-]+", item['text']))
     for name in list(names):
-        if ' ' not in name and len(re.findall(r'\b{}\b'.format(re.escape(name.lower())), pool)) > \
-                len(re.findall(r'\b{}\b'.format(re.escape(name)), pool)):
+        if ' ' not in name and words[name.lower()] > words[name]:
             del names[name]
     return names
 
@@ -586,8 +616,8 @@ def write_digest(plan, report, tsv, out):
                 text = text[:PASSAGE_SHOWN].rsplit(' ', 1)[0] + ' ...'
             lines += ['- **{}** · {}'.format(item['id'], meta), '  {}'.format(text)]
         for party, left in sorted(overflow.items(), key=lambda kv: -len(kv[1])):
-            lines.append('- +{} more from {}: {}'.format(len(left), party, ', '.join(left[:12])
-                                                        + (' ...' if len(left) > 12 else '')))
+            more = ' (all: `--show r{}-{}@{}`)'.format(round_, angle['id'], party) if len(left) > OVERFLOW_IDS else ''
+            lines.append('- +{} more from {}: {}{}'.format(len(left), party, ', '.join(left[:OVERFLOW_IDS]), more))
     with open(out, 'w', encoding='utf-8') as handle:
         handle.write('\n'.join(lines) + '\n')
     with open(ids_path, 'w', encoding='utf-8') as handle:
@@ -596,8 +626,18 @@ def write_digest(plan, report, tsv, out):
 
 
 def show(ids_to_show, tsv):
+    """Print passages in full: by id, or `r1-offer@party.example` for every
+    passage that party has in that angle, best-ranked first as they were numbered."""
     ids = _load_ids(os.path.splitext(tsv)[0] + '.ids.json')
+    wanted = []
     for passage_id in ids_to_show:
+        if '@' in passage_id:
+            prefix, party = passage_id.split('@', 1)
+            wanted += [key for key, entry in ids.items()
+                       if key.startswith(prefix + '-') and entry.get('party') == party]
+        else:
+            wanted.append(passage_id)
+    for passage_id in wanted:
         entry = ids.get(passage_id)
         if not entry:
             print('{}: no such passage'.format(passage_id))

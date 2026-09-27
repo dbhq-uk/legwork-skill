@@ -176,13 +176,17 @@ parties.
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/gather.py --show r1-offer-12 r1-offer-40 --tsv "$OUT/$BASE.tsv"
-python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py quote --tsv "$OUT/$BASE.tsv" --id r1-offer-12 \
-  --quote "the sentence your finding rests on"
+python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py quote --tsv "$OUT/$BASE.tsv" \
+  --id r1-offer-12 --quote "the sentence one finding rests on" \
+  --id r2-hsbc-7 --quote "the sentence another rests on"
 ```
 
 `--show` prints any passage in full, overflow included. `quote` records the
 sentence a finding rests on against its source, checked word for word against
-the saved page. Record one for every source you cite.
+the saved page. Record one for every source you cite, **all in one call** -
+each step re-reads the whole conversation, so eleven single quotes cost eleven
+times what one call does. Cite each source by the URL its digest line shows;
+never rebuild a URL from memory.
 
 **Round 2 comes from what round 1 found.** Choose what to research from the
 digest - usually the names it lists - and write a second plan whose angles

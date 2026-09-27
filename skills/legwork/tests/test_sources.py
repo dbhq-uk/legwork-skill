@@ -1,5 +1,6 @@
 """Fitness scoring, claim-aware recency, and the fetch log."""
 
+import argparse
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -623,3 +624,29 @@ def test_quote_resolves_a_digest_id_through_the_ids_file(tmp_path, capsys):
     sources.main_with_args(['quote', '--tsv', tsv, '--id', 'b1',
                             '--quote', 'Team plan: 30 US dollars per user per month.'])
     assert sources.read_rows(tsv)[0]['verified'] == 'true'
+
+
+def test_several_quotes_go_in_one_call(tmp_path, capsys):
+    """Measured 2026-09-27: a run spent eleven steps quoting one source at a time."""
+    tsv = str(tmp_path / 'run.tsv')
+    pages = {}
+    for n in (1, 2):
+        page = tmp_path / 'p{}.txt'.format(n)
+        page.write_text('Page {} says the sandbox needs a certificate.'.format(n), encoding='utf-8')
+        url = 'https://bank{}.example/'.format(n)
+        sources.log_row(argparse.Namespace(
+            tsv=tsv, url=url, kind=None, angle='a', via='direct', status='ok', quote='', title='',
+            date='', text_file=str(page), numbers='', query='', from_fetch=None))
+        pages['r1-a-{}'.format(n)] = {'url': url, 'text_file': str(page)}
+    with open(str(tmp_path / 'run.ids.json'), 'w', encoding='utf-8') as handle:
+        json.dump(pages, handle)
+    sources.main(['quote', '--tsv', tsv, '--id', 'r1-a-1', '--quote', 'Page 1 says the sandbox needs a certificate.',
+                  '--id', 'r1-a-2', '--quote', 'not on the page at all'])
+    rows = sources.read_rows(tsv)
+    assert [r['verified'] for r in rows] == ['true', 'false']
+
+
+def test_a_quote_is_needed_for_each_id(tmp_path):
+    with pytest.raises(SystemExit) as exit_:
+        sources.main(['quote', '--tsv', str(tmp_path / 'run.tsv'), '--id', 'a', '--id', 'b', '--quote', 'one'])
+    assert exit_.value.code == 2

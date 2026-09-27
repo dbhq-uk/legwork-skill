@@ -336,7 +336,7 @@ def test_the_digest_pools_passages_from_every_page_and_ranks_them(tmp_path, fake
 def test_a_party_is_capped_with_the_overflow_listed(tmp_path, fake):
     text = '\n\n'.join('The bank api sandbox fact number {} is here.'.format(i) + ' filler' * 90 for i in range(6))
     digest, _ = _run_with(tmp_path, fake, {'https://vendor.example/doc': text})
-    assert digest.count('vendor.example ·') == 3
+    assert digest.count('https://vendor.example/doc ·') == 3
     assert '+3 more from vendor.example' in digest
 
 
@@ -344,7 +344,7 @@ def test_the_subject_s_own_pages_are_not_capped(tmp_path, fake):
     text = '\n\n'.join('The Barclays bank api sandbox fact {} is here.'.format(i) + ' filler' * 90 for i in range(6))
     angle = _angle(subject='Barclays', **{'from': ['r1-offer-1']})
     digest, _ = _run_with(tmp_path, fake, {'https://developer.barclays.com/doc': text}, angle=angle, round_=2)
-    assert digest.count('barclays.com ·') == 6 and 'more from' not in digest
+    assert digest.count('https://developer.barclays.com/doc ·') == 6 and 'more from' not in digest
 
 
 def test_round_one_lists_names_by_how_many_parties_name_them(tmp_path, fake):

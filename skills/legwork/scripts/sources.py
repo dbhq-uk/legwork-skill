@@ -815,35 +815,57 @@ def set_quote(tsv_path, url, quote, page_text):
 
 
 def cmd_quote(args):
-    """Record the quote Claude chose for a source gather.py already logged."""
-    url, text_file = args.url, args.text_file
-    if args.id:
+    """Record the quotes Claude chose for sources gather.py already logged.
+
+    Several `--id ... --quote ...` pairs go in one call: measured on
+    2026-09-27, a run spent eleven steps quoting one source at a time, each one
+    re-reading a conversation of 200,000 tokens.
+    """
+    ids, quotes, urls = args.id or [], args.quote or [], [args.url] if args.url else []
+    targets = ids or urls
+    if not targets:
+        print('error: give --url or --id', file=sys.stderr)
+        sys.exit(2)
+    if len(targets) != len(quotes):
+        print('error: give one --quote for each --id ({} ids, {} quotes)'.format(len(targets), len(quotes)),
+              file=sys.stderr)
+        sys.exit(2)
+    entries = {}
+    if ids:
         ids_path = os.path.splitext(args.tsv)[0] + '.ids.json'
         try:
             with open(ids_path, encoding='utf-8') as handle:
-                entry = json.load(handle).get(args.id) or {}
+                entries = json.load(handle)
         except (OSError, ValueError) as exc:
             print('error: cannot read {}: {}'.format(ids_path, exc), file=sys.stderr)
             sys.exit(2)
-        if not entry:
-            print('error: no source {} in {}'.format(args.id, ids_path), file=sys.stderr)
+        missing = [i for i in ids if not entries.get(i)]
+        if missing:
+            print('error: no source {} in {}'.format(', '.join(missing), ids_path), file=sys.stderr)
             sys.exit(2)
-        url, text_file = entry.get('url', ''), text_file or entry.get('text_file')
-    if not url:
-        print('error: give --url or --id', file=sys.stderr)
+    failed = False
+    for target, quote in zip(targets, quotes):
+        if ids:
+            url, text_file = entries[target].get('url', ''), args.text_file or entries[target].get('text_file')
+        else:
+            url, text_file = target, args.text_file
+        page_text = None
+        if text_file and os.path.exists(text_file):
+            with open(text_file, encoding='utf-8', errors='replace') as handle:
+                page_text = handle.read()
+        try:
+            verdict = set_quote(args.tsv, url, quote, page_text)
+        except LogError as exc:
+            print('error: {}: {}'.format(target, exc), file=sys.stderr)
+            failed = True
+            continue
+        if verdict == 'false':
+            print('warning: {}: the quote is not on the saved page; take the sentence again'.format(target),
+                  file=sys.stderr)
+        print(json.dumps({'status': 'quoted', 'id': target if ids else None, 'url': url,
+                          'quote_verified': verdict or None}))
+    if failed:
         sys.exit(2)
-    page_text = None
-    if text_file and os.path.exists(text_file):
-        with open(text_file, encoding='utf-8', errors='replace') as handle:
-            page_text = handle.read()
-    try:
-        verdict = set_quote(args.tsv, url, args.quote, page_text)
-    except LogError as exc:
-        print('error: {}'.format(exc), file=sys.stderr)
-        sys.exit(2)
-    if verdict == 'false':
-        print('warning: the quote is not on the saved page; take the sentence again', file=sys.stderr)
-    print(json.dumps({'status': 'quoted', 'url': url, 'quote_verified': verdict or None}))
 
 
 def parse_returns(text):
@@ -1001,9 +1023,10 @@ def main(argv=None):
     p_quote = sub.add_parser('quote', help='Record a quote on a logged source, checked against its page')
     p_quote.add_argument('--tsv', required=True)
     p_quote.add_argument('--url', default='')
-    p_quote.add_argument('--id', default='', help='A digest id from gather.py, resolved through <tsv>.ids.json')
+    p_quote.add_argument('--id', action='append',
+                         help='A digest id from gather.py, resolved through <tsv>.ids.json; repeat with --quote')
     p_quote.add_argument('--text-file', default=None, help='The saved page text, if not resolved through --id')
-    p_quote.add_argument('--quote', required=True)
+    p_quote.add_argument('--quote', action='append', required=True, help='One for each --id, in the same order')
 
     p_returns = sub.add_parser('log-returns', help='Log every source a subagent returned, with its page text')
     p_returns.add_argument('--tsv', required=True)

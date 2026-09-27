@@ -610,7 +610,7 @@ def write_digest(plan, report, tsv, out):
         lines.append('')
         for item in chosen:
             kind = sources.infer_source_kind(item['url'], item['title'])
-            meta = ' · '.join(x for x in (item['party'], kind, item['date'] or 'undated', item['trail']) if x)
+            meta = ' · '.join(x for x in (item['url'], kind, item['date'] or 'undated', item['trail']) if x)
             text = ' '.join(item['text'].split())
             if len(text) > PASSAGE_SHOWN:
                 text = text[:PASSAGE_SHOWN].rsplit(' ', 1)[0] + ' ...'

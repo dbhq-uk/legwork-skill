@@ -80,6 +80,7 @@ Intelliprint.
 | 6 | Claude's WebSearch is **dropped entirely** | yes |
 | 7 | In step 1 Claude only asks - the question phrased many ways - and names nothing | yes |
 | 8 | Jev reranks every passage gathered for an angle, capped per party, and the digest is the top of that pool | yes |
+| 9 | The cap never applies to the angle's own subject, and a capped party's overflow is listed, never hidden | yes |
 
 Rejected: keeping subagents and WebSearch and trimming the waste (cheaper to
 build, saves perhaps a third, no wider); running retrieval on Haiku (the 13
@@ -172,13 +173,29 @@ For every angle, concurrently:
    then a copy on another host - and every refusal is logged `blocked`.
    Reddit threads that matter are fetched with their comments through
    `bd_search.py -m reddit`.
-4. **Rerank.** Split every opened page into passages and score the whole pool
-   for the angle together, not page by page: Jev when a key is available, a
-   term-match score in plain Python otherwise. Then cap each party - no more
-   than three passages from one party in the digest - and keep at least one
-   passage from every party that has anything relevant, because corroboration
-   is counted on independent parties and a pure ranking lets one vendor's
-   documentation take every top place.
+4. **Rerank.** Split every opened page into passages (below) and score the
+   whole pool for the angle together, not page by page: Jev when a key is
+   available, a term-match score in plain Python otherwise. Then build the
+   digest from the top of the pool with a per-party cap:
+   - **No more than three passages from any one party**, because a pure
+     ranking lets one vendor or aggregator take every top place, and ten
+     passages from one party still count as one independent voice.
+   - **The angle's own subject is exempt.** In round 2, the pages of the thing
+     being researched are its primary evidence and are never capped.
+   - **Overflow is listed, never hidden.** A capped party gets a line such as
+     `+7 more from developer.barclays.com (b14-b20)`, and Claude reads any of
+     them with one call.
+   - **Every party with anything relevant keeps at least one passage.**
+
+   **What a passage is.** A block of about 700 characters, roughly 120 words,
+   built from the page text in order: paragraphs are joined until the next
+   would pass 700 characters; a paragraph longer than 1,400 is split at
+   sentence ends, never mid-sentence; a heading always stays with the text
+   beneath it; and each passage carries its heading trail from the page
+   outline, such as `Pricing > Team plan`, into the digest. This is
+   `fetch.py`'s current splitter with three fixes: it cut long paragraphs
+   mid-sentence, could strand a heading at the end of the passage before its
+   text, and dropped where on the page a passage sat.
 5. **Log.** Every retrieval through `sources.py`'s `log_row`, with page text,
    so any quote taken from it can be checked.
 6. **Names.** In round 1, extract recurring organisation and product names from

@@ -35,6 +35,7 @@ Stdlib only, no network. Runs on any python3 >= 3.9.
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -621,6 +622,49 @@ def check_could_not_answer(content, problems):
             'to the question that has none'.format(', '.join(misplaced)))
 
 
+_GENERIC_WORDS = frozenset('''a an and the of for in on uk gb group ltd limited plc inc llc co company
+bank banks building society services service managed hosted cloud database databases platform
+'''.split())
+
+
+def _distinctive(subject):
+    """The word that names a subject in prose: its first word that is not
+    generic. "Bank of Ireland UK" -> "ireland", "AWS RDS for PostgreSQL" -> "aws"."""
+    words = re.findall(r"[a-z0-9][a-z0-9&'.-]*", re.sub(r'\([^)]*\)', ' ', subject.lower()))
+    for word in words:
+        if word not in _GENERIC_WORDS and len(word) >= 3:
+            return word
+    return words[0] if words else ''
+
+
+def check_subjects_reported(report_path, content, problems):
+    """Every subject a later round researched is in the report.
+
+    Measured on 2026-09-27: a run researched Google Cloud SQL in round 2 and
+    the report never mentioned it. A subject may be left out of the findings,
+    but not silently - naming it with the reason, under Limitations, passes.
+    """
+    run_dir = os.path.dirname(os.path.abspath(report_path))
+    subjects = []
+    for path in sorted(glob.glob(os.path.join(run_dir, 'plan-*.json'))):
+        try:
+            with open(path, encoding='utf-8') as handle:
+                plan = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        for angle in plan.get('angles') or []:
+            if angle.get('subject'):
+                subjects.append(angle['subject'])
+    lowered = content.lower()
+    missing = sorted({s for s in subjects
+                      if s.lower() not in lowered and not re.search(r'\b{}\b'.format(re.escape(_distinctive(s))),
+                                                                   lowered)})
+    if missing:
+        problems.structural(
+            'researched in a later round but absent from the report: {} - report what was found, or name '
+            'each under Limitations with the reason it is left out'.format('; '.join(missing)))
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -672,6 +716,7 @@ def run(report_path, tsv_path, fmt, level):
     # cells and column counts stay graded.
     check_matrix_section(content, problems, entries, rows)
 
+    check_subjects_reported(report_path, content, problems)
     check_registered(report_path, problems)
 
     return problems, {'outcome': outcome, 'sources': len(entries), 'fetched': len(rows)}

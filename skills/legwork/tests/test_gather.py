@@ -408,3 +408,53 @@ def test_show_prints_every_passage_a_party_has_in_an_angle(tmp_path, fake, capsy
     gather.show(['r1-offer@vendor.example'], tsv)
     printed = capsys.readouterr().out
     assert printed.count('## r1-offer-') == 3
+
+
+# ---------------------------------------------------------------------------
+# Round 2 drops no one round 1 found
+# ---------------------------------------------------------------------------
+
+def _round_one(tmp_path, fake):
+    pages = {'https://revolut.example/dev': 'Revolut bank api sandbox uk registration for developers.',
+             'https://tracker.example/list': 'A bank api sandbox uk list of every bank with a sandbox.'}
+    return _run_with(tmp_path, fake, pages)
+
+
+def test_round_one_lists_every_party_near_the_top(tmp_path, fake):
+    digest, tsv = _round_one(tmp_path, fake)
+    assert '## Parties' in digest and 'revolut.example' in digest
+    assert set(json.load(open(os.path.splitext(tsv)[0] + '.parties.json'))) == {'revolut.example', 'tracker.example'}
+
+
+def _plan_two(tmp_path, **extra):
+    plan = {'date': '2026-09-27', 'round': 2, 'angles': [dict(
+        {'id': 'revolut', 'question': 'what does Revolut require?', 'subject': 'Revolut',
+         'expected': True, 'phrasings': ['revolut sandbox']}, **extra.pop('angle', {}))]}
+    plan.update(extra)
+    path = tmp_path / 'plan-2.json'
+    path.write_text(json.dumps(plan), encoding='utf-8')
+    return str(path)
+
+
+def test_a_round_two_plan_that_drops_a_party_is_refused(tmp_path, fake, capsys):
+    """Measured 2026-09-27: round 1 found Revolut, Monzo and Starling, and round 2 researched none."""
+    _digest, tsv = _round_one(tmp_path, fake)
+    with pytest.raises(SystemExit) as exit_:
+        gather.main(['--plan', _plan_two(tmp_path), '--tsv', tsv, '--out', str(tmp_path / 'd2.md')])
+    assert exit_.value.code == 1
+    err = capsys.readouterr().err
+    assert 'revolut.example' in err and 'tracker.example' in err
+
+
+def test_a_party_is_accounted_for_by_sites_or_not_subjects(tmp_path, fake):
+    _digest, tsv = _round_one(tmp_path, fake)
+    plan = gather.load_plan(_plan_two(tmp_path, angle={'sites': ['revolut.example']},
+                                      not_subjects=['tracker.example']))
+    assert gather.unaccounted(plan, tsv) == []
+
+
+def test_a_subject_angle_shows_fewer_passages(tmp_path, fake):
+    text = '\n\n'.join('The Barclays bank api sandbox fact {} is here.'.format(i) + ' filler' * 90 for i in range(20))
+    angle = _angle(subject='Barclays', **{'from': ['r1-offer-1']})
+    digest, _ = _run_with(tmp_path, fake, {'https://developer.barclays.com/doc': text}, angle=angle, round_=2)
+    assert digest.count('https://developer.barclays.com/doc ·') == gather.SUBJECT_TOP

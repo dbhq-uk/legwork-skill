@@ -572,3 +572,39 @@ def test_webfetch_rows_are_not_asked_for_page_text(tmp_path):
     report, tsv = _valid_with_log(tmp_path, 'webfetch', '')
     problems, _ = check.run(report, tsv, 'brief', 'deep')
     assert not any('never checked' in m for m in problems.errors + problems.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Nothing researched is dropped
+# ---------------------------------------------------------------------------
+
+def _with_plan(tmp_path, subjects):
+    import json
+    target = tmp_path / 'valid_report.md'
+    shutil.copy(fixture('valid_report.md'), target)
+    shutil.copy(fixture('valid_report.tsv'), tmp_path / 'valid_report.tsv')
+    plan = {'round': 2, 'angles': [{'id': 'a{}'.format(i), 'question': 'q', 'subject': s, 'from': ['r1-x-1']}
+                                   for i, s in enumerate(subjects)]}
+    (tmp_path / 'plan-2.json').write_text(json.dumps(plan), encoding='utf-8')
+    return str(target), str(tmp_path / 'valid_report.tsv')
+
+
+def test_a_subject_researched_but_absent_from_the_report_fails(tmp_path):
+    """Measured 2026-09-27: round 2 researched Google Cloud SQL and the report never said so."""
+    report, tsv = _with_plan(tmp_path, ['Zyxwv Cloud SQL'])
+    problems, _ = check.run(report, tsv, 'report', 'standard')
+    assert any('Zyxwv Cloud SQL' in e for e in problems.errors)
+
+
+def test_a_subject_named_in_the_report_by_its_distinctive_word_passes(tmp_path):
+    report, tsv = _with_plan(tmp_path, ['Zyxwv Cloud SQL'])
+    with open(report, 'a', encoding='utf-8') as handle:
+        handle.write('\nZyxwv was researched and left out: it has no UK region.\n')
+    problems, _ = check.run(report, tsv, 'report', 'standard')
+    assert not any('absent from the report' in e for e in problems.errors)
+
+
+def test_the_distinctive_word_skips_generic_ones():
+    assert check._distinctive('Bank of Ireland UK') == 'ireland'
+    assert check._distinctive('AWS RDS for PostgreSQL') == 'aws'
+    assert check._distinctive('Van Furniture (vanfurniture.co.uk)') == 'van'

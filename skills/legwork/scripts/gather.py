@@ -206,6 +206,31 @@ def _on_topic(results, query):
     return bool(results) and sum(1 for hit in results if matches(hit)) * 2 >= len(results)
 
 
+def unaccounted(plan, tsv):
+    """Parties an earlier round found that this plan neither researches nor
+    sets aside. Measured on 2026-09-27: round 1 found Revolut, Monzo and
+    Starling among the banks, and round 2 researched none of them, because
+    choosing the subjects was left to judgement. Now every party near the top
+    of an earlier round must be a subject's source or site, a link in the
+    plan, or named in `not_subjects`."""
+    stem = os.path.splitext(tsv)[0]
+    found = _load_ids(stem + '.parties.json')
+    if not found or plan.get('round', 1) < 2:
+        return []
+    ids = _load_ids(stem + '.ids.json')
+    covered = {party_of(p) if '/' in p else p.lower().lstrip('.').removeprefix('www.')
+               for p in plan.get('not_subjects') or []}
+    for angle in plan['angles']:
+        for site in angle.get('sites') or []:
+            covered.add(party_of(site) if '/' in site else site.lower().removeprefix('www.'))
+        for source in angle.get('from') or []:
+            if source in ids:
+                covered.add(ids[source]['party'])
+        for url in angle['urls']:
+            covered.add(party_of(url))
+    return sorted(party for party in found if party not in covered)
+
+
 def _search_jobs(angle, plan):
     jobs = []
     for query in angle['phrasings'] + angle['disconfirming']:
@@ -461,6 +486,7 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
 # ---------------------------------------------------------------------------
 
 PASSAGE_SHOWN = 400
+SUBJECT_TOP = 8
 OVERFLOW_IDS = 5
 NAMES_SHOWN = 40
 _NAME = re.compile(r"\b[A-Z][\w&'-]*(?:[ \t]+(?:of[ \t]+)?[A-Z][\w&'-]*){0,3}")
@@ -543,6 +569,7 @@ def write_digest(plan, report, tsv, out):
     ids_path = os.path.splitext(tsv)[0] + '.ids.json'
     ids = _load_ids(ids_path)
     angles_out, scorers = [], set()
+    party_best = {}
     all_parties, totals = set(), {'searches': 0, 'failed': 0, 'hits': 0, 'opened': 0, 'blocked': 0,
                                   'not_reached': 0}
     for angle in plan['angles']:
@@ -578,7 +605,15 @@ def write_digest(plan, report, tsv, out):
             ids[item['id']]['angle'] = angle['question']
         if round_ == 1:
             names = _named(items)
-        chosen, overflow = rerank.select_digest(items, _subject_party(angle, items))
+        # A round-2 subject angle is narrow and there are many of them - one
+        # for every party round 1 found - so each shows fewer passages.
+        top = SUBJECT_TOP if angle.get('subject') else rerank.DEFAULT_TOP
+        chosen, overflow = rerank.select_digest(items, _subject_party(angle, items), top=top)
+        best = max((item['score'] for item in items), default=0) or 1.0
+        for item in items:
+            share = item['score'] / best
+            if share >= rerank.PARTY_FLOOR and share > party_best.get(item['party'], 0):
+                party_best[item['party']] = share
         angles_out.append((angle, entry, chosen, overflow, names))
 
     lines = ['# Gather digest - round {} - {}'.format(round_, plan.get('date', '')), '',
@@ -595,6 +630,19 @@ def write_digest(plan, report, tsv, out):
                                                    else 's', '; '.join(reasons[:2])), '']
     lines += ['Read any passage in full, or any listed in overflow: `gather.py --show ID --tsv {}`. '
               'Record a quote you rely on: `sources.py quote --tsv {} --id ID --quote "..."`.'.format(tsv, tsv)]
+    parties_path = os.path.splitext(tsv)[0] + '.parties.json'
+    known = _load_ids(parties_path)
+    for party, share in party_best.items():
+        known[party] = max(share, known.get(party, 0))
+    with open(parties_path, 'w', encoding='utf-8') as handle:
+        json.dump(known, handle, ensure_ascii=False)
+    if round_ == 1 and party_best:
+        ranked = sorted(party_best, key=lambda party: -party_best[party])
+        lines += ['', '## Parties - {} sites with a passage near the top of an angle, best first'.format(len(ranked)),
+                  '',
+                  'Round 2 must account for every one: a subject angle whose `from` or `sites` covers it, '
+                  'or `not_subjects` in the plan. gather.py refuses a round-2 plan that drops one.', '',
+                  ' · '.join(ranked)]
     for angle, entry, chosen, overflow, names in angles_out:
         lines += ['', '## {} - {}'.format(angle['id'], angle['question']), '',
                   '{} pages found · {} opened · {} blocked · {} not reached · search {}'.format(
@@ -666,6 +714,13 @@ def main(argv=None):
         print('gather.py: {}'.format(exc), file=sys.stderr)
         sys.exit(1)
     out_dir = os.path.dirname(os.path.abspath(args.tsv))
+    dropped = unaccounted(plan, args.tsv)
+    if dropped:
+        print('gather.py: this plan drops {} part{} an earlier round found: {}. Add each as a subject '
+              '(list its site in "sites"), or put it in "not_subjects" if it is not one - a publisher, '
+              'an aggregator, off topic.'.format(len(dropped), 'y' if len(dropped) == 1 else 'ies',
+                                                 ' · '.join(dropped)), file=sys.stderr)
+        sys.exit(1)
     try:
         report = run(plan, args.tsv, out_dir, args.time_limit, args.workers)
     except SearchAborted as exc:

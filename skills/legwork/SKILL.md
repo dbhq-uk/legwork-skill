@@ -32,7 +32,7 @@ Depth raises rigour. It never raises length.
 | | quick | standard | deep |
 |---|---|---|---|
 | Frame | Decision plus 2-3 sub-questions | Plus named falsifiers | Plus second-order angles |
-| Gather | One round, two or three phrasings an angle | Two rounds, with disconfirming phrasings | Rounds until every angle saturates; a primary source for every finding |
+| Gather | One round, two or three phrasings an angle | Two rounds: four or more phrasings an angle with disconfirming ones, then every party round 1 found | Rounds until every angle saturates; a primary source for every finding |
 | Challenge | Independence grouping only | One disconfirming search per finding | Per-finding disconfirming pass plus an origin audit |
 | Format | brief | brief or report | report |
 | Rough time | 3-5 min | 8-12 min | 20-40 min |
@@ -110,8 +110,11 @@ opened. Then:
 ### 2. Frame - ask, never answer
 
 Write the decision, the sub-questions and the falsifiers, then phrase each
-sub-question several ways, in the words different people would use: a
-practitioner, a regulator, a buyer, a critic. **Name nothing.** No
+sub-question **at least four ways** at standard, in the words different people
+would use: a practitioner, a regulator, a buyer, a critic, and a phrasing that
+finds lists and directories. Phrasings cost the script time, not you tokens,
+and each search returns only about ten results, so breadth comes from more
+phrasings. **Name nothing.** No
 organisation, product, site or answer goes into a phrasing - naming the banks,
 vendors or suppliers at this point answers half the question from memory, and
 research that starts from Claude's list can only confirm it.
@@ -188,17 +191,35 @@ each step re-reads the whole conversation, so eleven single quotes cost eleven
 times what one call does. Cite each source by the URL its digest line shows;
 never rebuild a URL from memory.
 
-**Round 2 comes from what round 1 found.** Choose what to research from the
-digest - usually the names it lists - and write a second plan whose angles
-carry a `subject` and a `from` listing the round-1 ids that named it. Phrase
-each the same way: "<subject> sandbox registration", "<subject> sandbox
-problems". `gather.py` refuses a subject with no `from`. A round-2 subject's
-own pages are its primary evidence and are never capped.
+**Round 2 researches everyone round 1 found - drop no one.** The round-1
+digest ends with a **Parties** list: every site with a passage near the top of
+an angle. Every entity in scope that round 1 found - on that list or named in a
+passage - gets a round-2 angle: a `subject`, a `from` listing the round-1 ids
+that named it, and `sites` with its own domain. Every party that is not a
+subject - a publisher, an aggregator, a regulator, something off topic - goes
+in the plan's `not_subjects`. `gather.py` refuses a round-2 plan that leaves a
+party unaccounted for, and refuses a subject with no `from`. Twenty subjects is
+normal: the script does the work, and each subject angle's digest holds eight
+passages, so a wide round 2 costs little reading.
 
-**Memory is a check, never a seed.** After round 1, write down anything you
-expected that the sources never named. Each becomes an angle marked
-`"expected": true`, searched like any other. If it finds nothing, the report
-says "expected X, no source found". Memory can add a search, never an answer.
+```json
+{"date": "YYYY-MM-DD", "round": 2, "country": "gb", "language": "en",
+ "not_subjects": ["openbankingtracker.com", "fca.org.uk", "reddit.com"],
+ "angles": [{"id": "revolut", "question": "what does Revolut require before a developer can call its sandbox?",
+             "subject": "Revolut", "from": ["r1-offer-212"], "sites": ["revolut.com"],
+             "phrasings": ["Revolut open banking sandbox registration", "Revolut API sandbox problems"]}]}
+```
+
+**Memory is a check, never a seed - and the check is not optional.** After
+round 1, write down every entity you expected that round 1 never named. Each
+becomes an angle marked `"expected": true`, searched like any other. If it
+finds nothing, the report says "expected X, no source found". Memory can add a
+search, never an answer.
+
+**The report drops no one either.** Every round-2 subject appears in the
+report: in the findings or the matrix, or under Limitations with the reason it
+is left out. The gate fails a report that researched a subject and never
+names it.
 
 **Follow-ups are more rounds**: an angle that did not saturate gets more
 phrasings; a list to rebuild from its items gets an angle with `urls` and no

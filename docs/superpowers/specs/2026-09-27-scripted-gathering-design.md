@@ -203,7 +203,7 @@ For every angle, concurrently:
 7. **Saturation.** Stop opening pages for an angle once the last few searches
    add no new party; record whether the angle saturated.
 8. **Digest.** One Markdown file per round: the top of the reranked pool for
-   each angle, about 40 passages, each with its source id, party, kind and
+   each angle, about 24 passages, each with its source id, party, kind and
    date. Round 1 adds the name counts. This file, not the pages, is what
    Claude reads; any passage's page is one `fetch.py --saved` away.
 

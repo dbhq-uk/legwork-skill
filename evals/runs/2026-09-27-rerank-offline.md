@@ -22,6 +22,12 @@ passage counts only if the quote is still on the page today.
 available and the term match otherwise. The digest stays at 40 passages, twice
 what these pools needed.
 
+*Revised the same day, after the live eval
+([2026-09-27-scripted-gathering.md](2026-09-27-scripted-gathering.md)): live
+pools ran to 2,000-4,000 passages an angle, not 81, so the digest is now 24
+passages, Jev reads only the term match's top 200, and a party is guaranteed a
+slot only when its best passage scores 30% of the angle's best.*
+
 **Why the term match is strong here.** It scores against the search phrasings,
 and those are the words that surfaced the pages. `gather.py` has the same
 advantage by design, since its terms are the plan's phrasings. Jev saw only the

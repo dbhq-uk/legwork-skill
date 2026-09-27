@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fetch  # noqa: E402
 
 JEV_BATCH = 30
+JEV_PASSAGE_CHARS = 2000
 DEFAULT_CAP = 3
 DEFAULT_TOP = 40
 
@@ -64,29 +65,39 @@ def term_scores(passages, terms):
     return [max(0.0, min(1.0, sum(idf[w] for w in s & wanted) / best)) for s in sets]
 
 
+def _jev_batch(batch, question, key):
+    state = {'question': question,
+             'passages': {'p{}'.format(i): p[:JEV_PASSAGE_CHARS] for i, p in enumerate(batch)}}
+    questions = {'p{}'.format(i): {
+        'type': 'score', 'criteria': fetch.JEV_LEVELS,
+        'instructions': 'How well does passage `passages.p{}` help answer `question`?'.format(i)}
+        for i in range(len(batch))}
+    try:
+        answers = (fetch._jev_request(state, questions, key) or {}).get('answers') or {}
+    except Exception:  # noqa: BLE001 - one refused batch must not cost the rest
+        return [None] * len(batch)
+    return [fetch._expected_score(answers.get('p{}'.format(i))) if answers.get('p{}'.format(i)) else None
+            for i in range(len(batch))]
+
+
 def jev_scores(passages, question):
     """Jev's relevance of each passage to `question`, 0 to 1, or None.
 
-    None when there is no key or any call fails: reranking must fall back,
-    never stop the run.
+    None overall when there is no key or every batch failed. A passage in a
+    batch that failed scores None on its own, so one refusal costs only its
+    own batch: measured on 2026-09-27, a single oversized passage had thrown
+    away Jev's ranking for all 2,274 passages in the pool. Text sent is capped
+    at JEV_PASSAGE_CHARS, and batches run in parallel.
     """
     key = fetch.typesafe_key()
     if not key or not passages:
         return None
-    scores = []
-    try:
-        for start in range(0, len(passages), JEV_BATCH):
-            batch = passages[start:start + JEV_BATCH]
-            state = {'question': question, 'passages': {'p{}'.format(i): p for i, p in enumerate(batch)}}
-            questions = {'p{}'.format(i): {
-                'type': 'score', 'criteria': fetch.JEV_LEVELS,
-                'instructions': 'How well does passage `passages.p{}` help answer `question`?'.format(i)}
-                for i in range(len(batch))}
-            answers = (fetch._jev_request(state, questions, key) or {}).get('answers') or {}
-            scores += [fetch._expected_score(answers.get('p{}'.format(i))) for i in range(len(batch))]
-    except Exception:  # noqa: BLE001 - an aid, never a reason to stop
-        return None
-    return scores
+    batches = [passages[start:start + JEV_BATCH] for start in range(0, len(passages), JEV_BATCH)]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda batch: _jev_batch(batch, question, key), batches))
+    scores = [score for batch in results for score in batch]
+    return None if all(score is None for score in scores) else scores
 
 
 def pool_scores(passages, terms, question):
@@ -102,7 +113,7 @@ def pool_scores(passages, terms, question):
     jev = jev_scores(passages, question)
     if jev is None:
         return terms_only, 'terms'
-    return [(a + b) / 2 for a, b in zip(terms_only, jev)], 'jev+terms'
+    return [(t + j) / 2 if j is not None else t for t, j in zip(terms_only, jev)], 'jev+terms'
 
 
 def select_digest(items, subject_party=None, cap=DEFAULT_CAP, top=DEFAULT_TOP):

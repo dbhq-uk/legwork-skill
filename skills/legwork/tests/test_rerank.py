@@ -109,3 +109,38 @@ def test_pool_scores_fall_back_to_terms_without_jev(monkeypatch):
     monkeypatch.setattr(rerank, 'jev_scores', lambda passages, question: None)
     monkeypatch.setattr(rerank, 'term_scores', lambda passages, terms: [0.3])
     assert rerank.pool_scores(['a'], ['t'], 'q') == ([0.3], 'terms')
+
+
+def test_a_failed_jev_batch_costs_only_its_own_passages(monkeypatch):
+    """Measured 2026-09-27: one batch refused for size threw away Jev's
+    ranking for all 2,274 passages in the pool."""
+    monkeypatch.setattr(rerank.fetch, 'typesafe_key', lambda: 'k')
+
+    def fake(state, questions, key):
+        if any(p.startswith('huge') for p in state['passages'].values()):
+            raise OSError('max_tokens_exceeded')
+        return {'answers': {q: {'probabilities': {'3': 1.0}} for q in questions}}
+
+    monkeypatch.setattr(rerank.fetch, '_jev_request', fake)
+    passages = ['fine'] * 30 + ['huge'] + ['fine'] * 29
+    scores = rerank.jev_scores(passages, 'q')
+    assert scores[:30] == [1.0] * 30 and scores[30:] == [None] * 30
+
+
+def test_pool_scores_use_terms_where_jev_has_no_score(monkeypatch):
+    monkeypatch.setattr(rerank, 'jev_scores', lambda passages, question: [1.0, None])
+    monkeypatch.setattr(rerank, 'term_scores', lambda passages, terms: [0.0, 0.4])
+    assert rerank.pool_scores(['a', 'b'], ['t'], 'q') == ([0.5, 0.4], 'jev+terms')
+
+
+def test_passages_sent_to_jev_are_capped(monkeypatch):
+    monkeypatch.setattr(rerank.fetch, 'typesafe_key', lambda: 'k')
+    sent = []
+
+    def fake(state, questions, key):
+        sent.extend(state['passages'].values())
+        return {'answers': {q: {'probabilities': {'1': 1.0}} for q in questions}}
+
+    monkeypatch.setattr(rerank.fetch, '_jev_request', fake)
+    rerank.jev_scores(['x' * 50000], 'q')
+    assert len(sent[0]) <= rerank.JEV_PASSAGE_CHARS

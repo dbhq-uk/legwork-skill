@@ -242,6 +242,16 @@ def _blocks(text, size):
             continue
         piece = ''
         for sentence in _SENTENCE_END.split(block):
+            # A "sentence" with no end in sight - a flattened table, a
+            # minified block - is cut at word boundaries as a last resort.
+            while len(sentence) > size * 2:
+                cut = sentence.rfind(' ', 0, size)
+                cut = cut if cut > 0 else size
+                if piece:
+                    yield piece
+                    piece = ''
+                yield sentence[:cut].strip()
+                sentence = sentence[cut:].strip()
             if piece and len(piece) + len(sentence) > size:
                 yield piece
                 piece = ''

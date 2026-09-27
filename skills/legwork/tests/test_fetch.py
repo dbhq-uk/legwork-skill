@@ -778,3 +778,12 @@ def test_each_passage_carries_its_heading_trail():
 def test_headings_are_read_with_their_levels():
     markup = '<h1>Pricing</h1><p>x</p><h2>Team plan</h2><nav><h2>Menu</h2></nav>'
     assert fetch.extract_headings(markup) == [(1, 'Pricing'), (2, 'Team plan')]
+
+
+def test_a_block_with_no_sentence_ends_is_still_split():
+    """Measured 2026-09-27: a flattened table became one 51,645-character
+    passage, and Jev refused the batch it was in."""
+    block = ' '.join('cell{}'.format(i) for i in range(12000))
+    parts = fetch.split_passages(block)
+    assert len(parts) > 1
+    assert max(len(p) for p in parts) <= fetch.PASSAGE_CHARS * 2

@@ -308,3 +308,8 @@ def test_digest_ids_resolve_to_their_page_and_passage(tmp_path, fake, capsys):
     sources.main_with_args(['quote', '--tsv', tsv, '--id', first,
                             '--quote', 'The bank api sandbox needs a registered app and a test certificate.'])
     assert sources.read_rows(tsv)[0]['verified'] == 'true'
+
+
+def test_a_name_never_runs_across_a_full_stop():
+    assert 'Help We' not in gather._names('Get Help. We offer a Sandbox. For developers.')
+    assert not any('.' in name for name in gather._names('Get Help. We offer a Sandbox. For developers.'))

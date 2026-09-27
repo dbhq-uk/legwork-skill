@@ -379,7 +379,7 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
 
 PASSAGE_SHOWN = 600
 NAMES_SHOWN = 40
-_NAME = re.compile(r"\b[A-Z][\w&'.-]*(?:\s+(?:of\s+)?[A-Z][\w&'.-]*){0,3}")
+_NAME = re.compile(r"\b[A-Z][\w&'-]*(?:[ \t]+(?:of[ \t]+)?[A-Z][\w&'-]*){0,3}")
 _NOT_NAMES = frozenset("""
 a an and as at be but by for from how if in is it its of on or our so that the their them then there
 these they this those to we what when where which who why will with you your all any each more most
@@ -387,6 +387,7 @@ no not only other some such than too very can may must should would could also h
 january february march april may june july august september october november december
 monday tuesday wednesday thursday friday saturday sunday home menu login sign contact about terms
 privacy cookies policy read learn find get see click skip search next previous share
+once can i help type content yes please thank thanks note step first last page back
 """.split())
 
 
@@ -399,6 +400,33 @@ def _names(text):
             continue
         found.add(name)
     return found
+
+
+NAME_POOL = 200
+
+
+def _named(items):
+    """{name: parties} from the best-ranked passages only.
+
+    Measured on the first live run, 2026-09-27: counted over whole pages, the
+    list was led by GitHub's own page furniture - Star, Fork, Dismiss - which
+    every issue page repeats. Relevant passages carry names; furniture does
+    not rank. A word the pool uses in lowercase more often than capitalised is
+    an ordinary word at the start of a sentence, not a name.
+    """
+    ranked = sorted(items, key=lambda item: item.get('score', 0), reverse=True)[:NAME_POOL]
+    names = {}
+    for item in ranked:
+        for name in _names(item['text']):
+            names.setdefault(name, set()).add(item['party'])
+    if not names:
+        return names
+    pool = ' '.join(item['text'] for item in items)
+    for name in list(names):
+        if ' ' not in name and len(re.findall(r'\b{}\b'.format(re.escape(name.lower())), pool)) > \
+                len(re.findall(r'\b{}\b'.format(re.escape(name)), pool)):
+            del names[name]
+    return names
 
 
 def _subject_party(angle, items):
@@ -455,9 +483,6 @@ def write_digest(plan, report, tsv, out):
                 items.append({'url': page['url'], 'party': page['party'], 'text': passage['text'],
                               'trail': passage['trail'], 'title': sidecar.get('title') or '',
                               'date': sidecar.get('date') or '', 'text_file': sidecar['text_file']})
-            if round_ == 1:
-                for name in _names(text):
-                    names.setdefault(name, set()).add(page['party'])
         terms = [angle['question']] + angle['phrasings'] + angle['disconfirming']
         scores, scorer = rerank.pool_scores([item['text'] for item in items], terms, angle['question'])
         scorers.add(scorer)
@@ -466,6 +491,8 @@ def write_digest(plan, report, tsv, out):
             item['score'] = score
             ids[item['id']] = {k: item[k] for k in ('url', 'party', 'text', 'trail', 'title', 'date', 'text_file')}
             ids[item['id']]['angle'] = angle['question']
+        if round_ == 1:
+            names = _named(items)
         chosen, overflow = rerank.select_digest(items, _subject_party(angle, items))
         angles_out.append((angle, entry, chosen, overflow, names))
 

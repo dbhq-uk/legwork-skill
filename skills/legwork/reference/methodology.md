@@ -48,14 +48,19 @@ happened, what the incumbent would do in response, what the adjacent market says
 
 ## Gather
 
-### Queries
+### Phrasings
 
-The three variants, for the angle "what does Acme charge":
+Phrase each sub-question the way different people would search for it, because
+each vocabulary finds a different part of the web. For "who offers developers a
+test environment?":
 
-- plain: `acme pricing 2026`
-- targeted: `site:acme.example pricing`, or `"per user per month" acme`, or
-  `acme price list filetype:pdf`
-- negative: `acme price increase 2026`, `why we left acme`
+- a practitioner: `bank API sandbox UK`, `open banking sandbox register developer`
+- a regulator: `account servicing payment service provider testing facility UK`
+- a buyer: `which UK banks let you test their API before going live`
+- a critic: `UK bank open banking sandbox not available`
+
+**Name nothing in round 1** - no organisation, product or site. A phrasing that
+names the candidates can only find the candidates you already had in mind.
 
 **Year-pin dated material only.** A query that silently searches the wrong year
 poisons everything downstream of it: the sources are real, the figures trace,
@@ -78,7 +83,7 @@ platform's own numbers attached.
 
 ### Thin
 
-Thin means fewer than two independent parties after three variants. Still thin
+Thin means fewer than two independent parties after a round. Still thin
 after the paid search rungs is a finding in its own right: say what was searched.
 
 ### A copy on another host

@@ -1,5 +1,10 @@
 # The retrieval subagent brief
 
+> **Not part of the run since scripted gathering** (2026-09-27): `gather.py`
+> searches and opens with no model in the loop, so retrieval has no subagents.
+> Kept, with `brief.py` and `sources.py log-returns`, until the eval of the new
+> run has passed; see `docs/superpowers/specs/2026-09-27-scripted-gathering-design.md`.
+
 ## Contents
 
 - [Which model](#which-model) - the carve-out, and why it is not unconditional

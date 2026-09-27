@@ -26,7 +26,7 @@ Research that settles a decision. Ask a real question, get a memo where every fa
 
 **It can tell you it could not answer.** If nothing clears the evidence floor, the run says so and names the closest thing it found, rather than producing four thousand hedged words. An honest empty answer is a result.
 
-**Free by default, paid only when needed.** Retrieval runs on the host's built-in `WebSearch` and `WebFetch`. The Bright Data CLI is a *fallback*, used only where the built-ins genuinely cannot do the job - bot-blocked or paywalled pages, Reddit threads, geo-specific SERP. A run against ordinary sources makes **zero** paid calls.
+**Scripts gather, the agent judges.** `gather.py` searches every phrasing of every angle, opens every result, logs it with its page text and ranks every passage against the angle, with no model in the loop; the agent reads only the digest of the best passages. Search is Bing asked directly and free first, and the Bright Data CLI only when that is refused or empty, so a run works without Bright Data installed. Pages open for free first too, and go to Bright Data only when a site blocks a plain request.
 
 **It does not ask permission to begin.** It infers a level, says which one it picked, and goes. Redirect it mid-run if it guessed wrong; that costs far less than a blocking question on every research request.
 
@@ -112,9 +112,9 @@ Two ladders, free rungs first.
 
 | Situation | Provider |
 |-----------|----------|
-| Every angle, three query variants | `WebSearch` (free) |
-| The answer is a record a platform holds - a thread, a package, a repository, a dated news item, a vendor's changelog | `platforms.py` (free, keyless) |
-| Thin after three variants, or geo-specific | Bright Data SERP on a second engine, with `--country` and `--language` |
+| Every phrasing of every angle | Bing, asked directly (`platforms.py --on bing`, free) |
+| Angles about people's experience | Hacker News, Stack Exchange, GitHub issues and Reddit through `platforms.py` (free, keyless) |
+| Bing refused or found nothing | Bright Data SERP on Google and Bing, with `--country` and `--language` |
 | Two engines still thin | Bright Data `-m discover`, intent-ranked |
 
 **To open a page:**

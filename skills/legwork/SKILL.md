@@ -65,7 +65,7 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/index.py list --base "$OUTPUT_BASE"
 ```
 
 **Use that date string, never your own sense of the year.** It goes in the
-folder name, in every query about dated material, and in every subagent brief.
+folder name, in the plan file, and in every phrasing about dated material.
 
 **Read the index before you search.** It has one row per past run, and its
 one-liner says what each run concluded. Pick one path and name it in your
@@ -148,14 +148,17 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/gather.py --plan "$OUT/plan-1.json" \
 ```
 
 One call works every angle at once and returns when it is done - there are no
-subagents and nothing to wait for. It searches every phrasing on Bright Data
-(Google and Bing), and the platforms where `people` is set; opens every result,
+subagents and nothing to wait for. It searches every phrasing on Bing, asked
+directly from this machine and free, and on Bright Data (Google and Bing) only
+when Bing refuses or finds nothing; adds the platforms where `people` is set;
+opens every result,
 climbing to Bright Data scrape and render and then a copy on another host when
 a page refuses; logs every retrieval with its page text; ranks every passage
 from every page against the angle (TypeSafe's Jev and a term match when a key
-is set, the term match alone otherwise); and writes a digest. It stops the run
-if Bright Data refuses - it is the only search engine - and tells you to run
-`brightdata login`.
+is set, the term match alone otherwise); and writes a digest. If a search needs
+Bright Data and Bright Data refuses on auth or quota, it stops the run and tells
+you to run `brightdata login`; without Bright Data installed, it searches Bing
+alone.
 
 **Read the digest, not the pages.** Per angle it holds the best passages from
 the whole pool, each with an id, its party, kind, date and heading trail. No
@@ -256,7 +259,10 @@ Every document carries:
   never count them by hand. The level, angles, disconfirming searches and
   downgrades are yours to add.
 
-  > *deep · 6 angles · 14 sources (12 opened, 9 via Bright Data, 3 blocked) · 7 disconfirming searches · 2 findings downgraded, 1 dropped below floor*
+  > *deep · 6 angles · 186 sources from 74 parties (151 opened, 21 via Bright Data, 9 blocked) · 46 searches, 4 of 6 angles saturated · 12 disconfirming · 2 findings downgraded*
+
+  The searches, parties and saturation come from the digest header and each
+  angle's line.
 
   The blocked count is what the run could not reach on the first try, and the
   gate warns when a receipt leaves it out or disagrees with the log.

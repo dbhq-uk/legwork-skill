@@ -16,9 +16,12 @@ requests by design.
 
 **Yes, and that is the point.** Four paths, in this order:
 
-1. **Your agent's built-in `WebSearch` and `WebFetch`.** Preferred, and used for
-   the overwhelming majority of work. No setup, no key, no per-request cost. The
-   requests go wherever the research leads - arbitrary public sites
+1. **Search, from `gather.py`.** Every phrasing in the plan is sent as a search
+   to Bing directly from your machine (`platforms.py --on bing`), and to Bright
+   Data only when Bing refuses or finds nothing. The research question reaches
+   Bing, and sometimes Bright Data, as search text. Angles about people's
+   experience also query Hacker News, Stack Exchange, GitHub and Reddit's
+   search RSS. The agent's built-in `WebSearch` is not used by the run
 2. **`fetch.py`, a direct request from your machine.** One page per invocation,
    on explicit instruction, with a browser user agent. No cookies are sent or
    stored, no credentials are read, and no JavaScript is executed. It does

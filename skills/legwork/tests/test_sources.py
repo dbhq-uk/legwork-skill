@@ -573,3 +573,53 @@ def test_log_returns_reports_rows_it_could_not_log_and_exits_1(tmp_path, capsys)
     assert exit_info.value.code == 1
     summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert summary['logged'] == 1 and len(summary['failed']) == 1
+
+
+# ---------------------------------------------------------------------------
+# quote: record the quote Claude chose against a row gather.py already logged,
+# checked against that row's saved page. In place, never a new row, so the
+# receipt's counts do not move.
+# ---------------------------------------------------------------------------
+
+def _logged(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    sources.main_with_args(['log', '--tsv', tsv, '--from-fetch', _sidecar(tmp_path),
+                            '--angle', 'what it costs', '--kind', 'vendor_pricing'])
+    capsys.readouterr()
+    return tsv
+
+
+def test_quote_marks_a_quote_on_the_page_as_verified(tmp_path, capsys):
+    tsv = _logged(tmp_path, capsys)
+    sources.main_with_args(['quote', '--tsv', tsv, '--url', 'https://acme.example/pricing',
+                            '--text-file', str(tmp_path / 'page.txt'),
+                            '--quote', 'Team plan: 30 US dollars per user per month.'])
+    rows = sources.read_rows(tsv)
+    assert len(rows) == 1
+    assert rows[0]['quote'].startswith('Team plan') and rows[0]['verified'] == 'true'
+
+
+def test_quote_marks_a_quote_not_on_the_page_as_false(tmp_path, capsys):
+    tsv = _logged(tmp_path, capsys)
+    sources.main_with_args(['quote', '--tsv', tsv, '--url', 'https://acme.example/pricing',
+                            '--text-file', str(tmp_path / 'page.txt'),
+                            '--quote', 'Team plan: 40 US dollars.'])
+    assert sources.read_rows(tsv)[0]['verified'] == 'false'
+
+
+def test_quote_on_a_url_never_opened_exits_2(tmp_path, capsys):
+    tsv = _logged(tmp_path, capsys)
+    with pytest.raises(SystemExit) as exit_info:
+        sources.main_with_args(['quote', '--tsv', tsv, '--url', 'https://other.example/',
+                                '--quote', 'x'])
+    assert exit_info.value.code == 2
+
+
+def test_quote_resolves_a_digest_id_through_the_ids_file(tmp_path, capsys):
+    tsv = _logged(tmp_path, capsys)
+    (tmp_path / 'run.ids.json').write_text(json.dumps(
+        {'b1': {'url': 'https://acme.example/pricing', 'text_file': str(tmp_path / 'page.txt')}}),
+        encoding='utf-8')
+    sources.main_with_args(['quote', '--tsv', tsv, '--id', 'b1',
+                            '--quote', 'Team plan: 30 US dollars per user per month.'])
+    assert sources.read_rows(tsv)[0]['verified'] == 'true'

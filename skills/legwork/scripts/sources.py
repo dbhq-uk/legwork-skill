@@ -779,6 +779,73 @@ def log_row(args):
             'page_text': page_text is not None}
 
 
+def set_quote(tsv_path, url, quote, page_text):
+    """Record `quote` on the first opened row for `url`, checked against
+    `page_text` when there is some. Rewrites the log in place; never appends,
+    so the receipt's counts do not move. Returns the verdict: 'true', 'false'
+    or '' when there was no page text to check against.
+    """
+    from independence import canonicalize
+
+    rows = read_rows(tsv_path)
+    key = canonicalize(url)
+    target = next((row for row in rows if canonicalize(row.get('url', '')) == key
+                   and (row.get('status') or 'ok').lower() == 'ok'
+                   and (row.get('via') or '') not in SNIPPET_VIA), None)
+    if target is None:
+        raise LogError('no opened row for {} in {} - log the page first'.format(url, tsv_path))
+    quote = (quote or '')[:MAX_QUOTE_CHARS]
+    verdict = ''
+    if page_text is not None and quote:
+        verdict = 'true' if quote_appears_in(quote, page_text) else 'false'
+    target['quote'] = quote
+    target['verified'] = verdict
+    if page_text is not None and not target.get('numbers'):
+        target['numbers'] = extract_numbers(page_text)
+
+    def cell(value):
+        # read_rows returns the numbers column as a list; the file holds text.
+        return _clean(','.join(value) if isinstance(value, list) else value)
+
+    with open(tsv_path, 'w', encoding='utf-8') as handle:
+        handle.write('\t'.join(TSV_COLUMNS) + '\n')
+        for row in rows:
+            handle.write('\t'.join(cell(row.get(column, '')) for column in TSV_COLUMNS) + '\n')
+    return verdict
+
+
+def cmd_quote(args):
+    """Record the quote Claude chose for a source gather.py already logged."""
+    url, text_file = args.url, args.text_file
+    if args.id:
+        ids_path = os.path.splitext(args.tsv)[0] + '.ids.json'
+        try:
+            with open(ids_path, encoding='utf-8') as handle:
+                entry = json.load(handle).get(args.id) or {}
+        except (OSError, ValueError) as exc:
+            print('error: cannot read {}: {}'.format(ids_path, exc), file=sys.stderr)
+            sys.exit(2)
+        if not entry:
+            print('error: no source {} in {}'.format(args.id, ids_path), file=sys.stderr)
+            sys.exit(2)
+        url, text_file = entry.get('url', ''), text_file or entry.get('text_file')
+    if not url:
+        print('error: give --url or --id', file=sys.stderr)
+        sys.exit(2)
+    page_text = None
+    if text_file and os.path.exists(text_file):
+        with open(text_file, encoding='utf-8', errors='replace') as handle:
+            page_text = handle.read()
+    try:
+        verdict = set_quote(args.tsv, url, args.quote, page_text)
+    except LogError as exc:
+        print('error: {}'.format(exc), file=sys.stderr)
+        sys.exit(2)
+    if verdict == 'false':
+        print('warning: the quote is not on the saved page; take the sentence again', file=sys.stderr)
+    print(json.dumps({'status': 'quoted', 'url': url, 'quote_verified': verdict or None}))
+
+
 def parse_returns(text):
     """(sources, gaps) from a subagent's reply: every JSON object in it, in order.
 
@@ -931,6 +998,13 @@ def main(argv=None):
     p_kinds = sub.add_parser('kinds', help='Print the claim-kind ladders')
     p_kinds.add_argument('--format', default='table', choices=['table', 'json'])
 
+    p_quote = sub.add_parser('quote', help='Record a quote on a logged source, checked against its page')
+    p_quote.add_argument('--tsv', required=True)
+    p_quote.add_argument('--url', default='')
+    p_quote.add_argument('--id', default='', help='A digest id from gather.py, resolved through <tsv>.ids.json')
+    p_quote.add_argument('--text-file', default=None, help='The saved page text, if not resolved through --id')
+    p_quote.add_argument('--quote', required=True)
+
     p_returns = sub.add_parser('log-returns', help='Log every source a subagent returned, with its page text')
     p_returns.add_argument('--tsv', required=True)
     p_returns.add_argument('--returns', required=True, metavar='FILE',
@@ -979,7 +1053,7 @@ def main(argv=None):
     p_resume.add_argument('--format', default='table', choices=['table', 'json'])
 
     args = parser.parse_args(argv)
-    {'kinds': cmd_kinds, 'log': cmd_log, 'log-returns': cmd_log_returns, 'receipt': cmd_receipt, 'score': cmd_score,
+    {'kinds': cmd_kinds, 'log': cmd_log, 'log-returns': cmd_log_returns, 'quote': cmd_quote, 'receipt': cmd_receipt, 'score': cmd_score,
      'stale': cmd_stale, 'resume': cmd_resume}[args.command](args)
 
 

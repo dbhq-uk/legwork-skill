@@ -79,6 +79,7 @@ Intelliprint.
 | 5 | Framing runs in two rounds: round 1 finds who is in scope from sources, round 2 researches each | yes |
 | 6 | Claude's WebSearch is **dropped entirely** | yes |
 | 7 | In step 1 Claude only asks - the question phrased many ways - and names nothing | yes |
+| 8 | Jev reranks every passage gathered for an angle, capped per party, and the digest is the top of that pool | yes |
 
 Rejected: keeping subagents and WebSearch and trimming the waste (cheaper to
 build, saves perhaps a third, no wider); running retrieval on Haiku (the 13
@@ -171,18 +172,23 @@ For every angle, concurrently:
    then a copy on another host - and every refusal is logged `blocked`.
    Reddit threads that matter are fetched with their comments through
    `bd_search.py -m reddit`.
-4. **Pick.** The two or three passages per page that best match the angle:
-   Jev's ranking when a key is available, the angle's phrasings as `--find`
-   terms otherwise.
+4. **Rerank.** Split every opened page into passages and score the whole pool
+   for the angle together, not page by page: Jev when a key is available, a
+   term-match score in plain Python otherwise. Then cap each party - no more
+   than three passages from one party in the digest - and keep at least one
+   passage from every party that has anything relevant, because corroboration
+   is counted on independent parties and a pure ranking lets one vendor's
+   documentation take every top place.
 5. **Log.** Every retrieval through `sources.py`'s `log_row`, with page text,
    so any quote taken from it can be checked.
 6. **Names.** In round 1, extract recurring organisation and product names from
    opened pages and count the independent parties naming each.
 7. **Saturation.** Stop opening pages for an angle once the last few searches
    add no new party; record whether the angle saturated.
-8. **Digest.** One Markdown file, one line per source: short id, party, kind,
-   date, best passage (about 300 characters). Round 1 adds the name counts.
-   This file, not the pages, is what Claude reads.
+8. **Digest.** One Markdown file per round: the top of the reranked pool for
+   each angle, about 40 passages, each with its source id, party, kind and
+   date. Round 1 adds the name counts. This file, not the pages, is what
+   Claude reads; any passage's page is one `fetch.py --saved` away.
 
 **Limits.** No spending cap (decision 1). A time limit per call, default 10
 minutes: on reaching it the script returns what it has and lists what it did
@@ -269,6 +275,11 @@ angles go to TypeSafe only when Jev is on. `SECURITY.md` says both.
   extraction and party counts, saturation, the digest, the name-provenance
   refusal, `sources.py quote`, the Reddit fallback, and every row of the error
   table.
+- **The reranking's offline test** before `gather.py` relies on it: on the 24
+  Sep runs, pool every passage gathered for an angle and check the passages
+  the reports quoted land in the top 40, with and without Jev. Passage ranking
+  has been measured within single pages (the quoted passage in Jev's top three
+  75% of the time), never across a pool of 150 pages.
 - **The support scan's offline test** (F) before it is built.
 - **A full eval before merge:** all six cases, today's `main` against the
   branch, Claude Sonnet 5. It passes only if Claude cost is at most half,
@@ -286,6 +297,8 @@ angles go to TypeSafe only when Jev is on. `SECURITY.md` says both.
   engines overlapped little. Two engines (Google and Bing) plus far more
   phrasings should cover it, and the eval's reach criterion is the test.
 - **The time limit.** 10 minutes per round is a starting value.
+- **How well cross-source reranking works.** Measured within pages only; the
+  offline test above decides the digest size and the per-party cap.
 
 ## Out of scope
 
@@ -299,8 +312,9 @@ angles go to TypeSafe only when Jev is on. `SECURITY.md` says both.
 
 1. `platforms.py` Reddit (E), with tests.
 2. `sources.py quote` (D), with tests.
-3. `gather.py` search, narrow, open, pick, log (B 1-5), with tests.
-4. Names, saturation, digest, provenance (B 6-8, C), with tests.
-5. The support scan's offline test; build F only if it passes.
-6. `SKILL.md`, `methodology.md`, templates, `SECURITY.md`, README.
-7. The full eval; merge only on the goal above.
+3. The reranking's offline test on the 24 Sep data.
+4. `gather.py` search, narrow, open, rerank, log (B 1-5), with tests.
+5. Names, saturation, digest, provenance (B 6-8, C), with tests.
+6. The support scan's offline test; build F only if it passes.
+7. `SKILL.md`, `methodology.md`, templates, `SECURITY.md`, README.
+8. The full eval; merge only on the goal above.

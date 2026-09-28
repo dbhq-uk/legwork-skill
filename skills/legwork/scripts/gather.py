@@ -61,7 +61,8 @@ from independence import canonicalize, party_of  # noqa: E402
 ENGINES = ('google', 'bing')
 PEOPLE_PLATFORMS = ('hn', 'stackexchange', 'githubissues', 'reddit')
 RESULTS_PER_SEARCH = 10
-DEFAULT_TIME_LIMIT = 300
+DEFAULT_TIME_LIMIT = 240
+SEARCH_BUDGET = 210
 DEFAULT_WORKERS = 12
 SEARCH_TIMEOUT = 90
 OPEN_TIMEOUT = 120
@@ -147,6 +148,22 @@ def load_plan(path):
 # Search
 # ---------------------------------------------------------------------------
 
+# When searching must stop. Measured on 2026-09-28: a thirteen-subject round 2
+# spent 356 seconds on 70 searches - Bright Data calls hanging to their
+# timeout and retrying - so the opening deadline had passed before a page was
+# opened, and the digest was empty. Searching now has its own budget, and
+# opening its own after it.
+_SEARCH_DEADLINE = [None]
+
+
+def _search_timeout():
+    """Seconds one search call may take, or 0 once the search budget is spent."""
+    if _SEARCH_DEADLINE[0] is None:
+        return SEARCH_TIMEOUT
+    left = _SEARCH_DEADLINE[0] - time.monotonic()
+    return 0 if left <= 1 else int(min(SEARCH_TIMEOUT, max(5, left)))
+
+
 def _serp(query, engine, plan):
     """Bright Data results for one query on one engine, or None if it failed twice."""
     argv = _script('bd_search.py', query, '-m', 'general', '--engine', engine, '-c', RESULTS_PER_SEARCH, '--json')
@@ -155,7 +172,10 @@ def _serp(query, engine, plan):
     if plan.get('language'):
         argv += ['--language', plan['language']]
     for attempt in range(2):
-        code, out, err = run_script(argv, SEARCH_TIMEOUT)
+        timeout = _search_timeout()
+        if not timeout:
+            return None
+        code, out, err = run_script(argv, timeout)
         if code == 0:
             return [dict(r, via='serp', query=query) for r in _json(out).get('results') or []]
         if code == 2:
@@ -174,7 +194,10 @@ def _platform(platform, query, plan=None):
             argv += ['--country', plan['country']]
         if plan.get('language'):
             argv += ['--language', plan['language']]
-    code, out, _err = run_script(argv, SEARCH_TIMEOUT)
+    timeout = _search_timeout()
+    if not timeout:
+        return None
+    code, out, _err = run_script(argv, timeout)
     if code != 0:
         return None
     return [dict(r, via='api', query=query) for r in _json(out).get('results') or []]
@@ -278,7 +301,10 @@ def _run_search(job, plan):
         local = _platform('bing', query, plan)
         if local and _on_topic(local, query):
             return [dict(hit, via='serp') for hit in local]
-        found = [_serp(query, engine, plan) for engine in ENGINES]
+        # Both engines at once: asked one after the other, a slow Google
+        # doubled every search that fell through to Bright Data.
+        with ThreadPoolExecutor(max_workers=len(ENGINES)) as engines:
+            found = list(engines.map(lambda engine: _serp(query, engine, plan), ENGINES))
         if all(result is None for result in found):
             return None
         return [hit for result in found if result for hit in result]
@@ -416,9 +442,18 @@ class _Log:
         return True
 
 
+_STARTED = [time.monotonic()]
+
+
+def _phase(what):
+    """One line on stderr per phase, with the seconds since the run began."""
+    print('gather.py: {} at {:.0f}s'.format(what, time.monotonic() - _STARTED[0]), file=sys.stderr)
+
+
 def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKERS):
     """Search, open and log every angle. Returns what the digest is built from."""
-    deadline = time.monotonic() + time_limit
+    _STARTED[0] = time.monotonic()
+    _SEARCH_DEADLINE[0] = time.monotonic() + SEARCH_BUDGET
     log = _Log(tsv)
     report = {'angles': {}}
     del _REFUSALS[:]
@@ -433,6 +468,10 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
         raise SearchAborted('every search failed and Bright Data refused ({}): run `brightdata login`, or '
                             'check the balance with `brightdata budget`, then run gather.py again.'
                             .format(_REFUSALS[0]))
+
+    _SEARCH_DEADLINE[0] = None
+    deadline = time.monotonic() + time_limit
+    _phase('searched {} queries'.format(len(jobs)))
 
     # 2. Narrow: one entry per page per angle, keeping the first query that found it.
     hits = {angle['id']: {} for angle in plan['angles']}
@@ -488,6 +527,8 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
         for key, result in pool.map(lambda kv: open_one(*kv), list(unique.items())):
             opened[key] = result
 
+    _phase('opened {} pages'.format(len(unique)))
+
     # 4. Log one row per page per angle.
     by_id = {angle['id']: angle for angle in plan['angles']}
     for angle_id, angle_hits in hits.items():
@@ -516,6 +557,7 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
                                         'query': hit.get('query', '')})
         report['angles'][angle_id] = entry
     report['refused'] = list(_REFUSALS)
+    _phase('logged')
     return report
 
 
@@ -525,6 +567,7 @@ def run(plan, tsv, out_dir, time_limit=DEFAULT_TIME_LIMIT, workers=DEFAULT_WORKE
 
 PASSAGE_SHOWN = 400
 SUBJECT_TOP = 8
+NO_FLOOR = 2.0
 OVERFLOW_IDS = 5
 NAMES_SHOWN = 40
 _NAME = re.compile(r"\b[A-Z][\w&'-]*(?:[ \t]+(?:of[ \t]+)?[A-Z][\w&'-]*){0,3}")
@@ -654,8 +697,13 @@ def write_digest(plan, report, tsv, out):
             own_items = sorted((i for i in items if i['party'] in own), key=lambda i: -i['score'])[:SUBJECT_TOP // 2]
             taken = {i['id'] for i in own_items}
             rest, overflow = rerank.select_digest([i for i in items if i['id'] not in taken], None,
-                                                  top=top - len(own_items))
+                                                  top=top - len(own_items), floor=NO_FLOOR)
             chosen = own_items + rest
+        elif angle.get('subject'):
+            # A subject angle is about one entity: the round-1 rule that every
+            # party near the top keeps a passage put 8 to 32 passages in
+            # subject digests meant to hold 8 (measured 2026-09-28).
+            chosen, overflow = rerank.select_digest(items, _subject_party(angle, items), top=top, floor=NO_FLOOR)
         else:
             chosen, overflow = rerank.select_digest(items, _subject_party(angle, items), top=top)
         best = max((item['score'] for item in items), default=0) or 1.0
@@ -713,6 +761,12 @@ def write_digest(plan, report, tsv, out):
             if len(text) > PASSAGE_SHOWN:
                 text = text[:PASSAGE_SHOWN].rsplit(' ', 1)[0] + ' ...'
             lines += ['- **{}** · {}'.format(item['id'], meta), '  {}'.format(text)]
+        if angle.get('subject') and overflow:
+            biggest = sorted(overflow.items(), key=lambda kv: -len(kv[1]))[:5]
+            lines.append('- +{} more passages from {} parties, most from {} (`--show r{}-{}@<party>`)'.format(
+                sum(len(v) for v in overflow.values()), len(overflow),
+                ', '.join('{} ({})'.format(p, len(v)) for p, v in biggest), round_, angle['id']))
+            overflow = {}
         for party, left in sorted(overflow.items(), key=lambda kv: -len(kv[1])):
             more = ' (all: `--show r{}-{}@{}`)'.format(round_, angle['id'], party) if len(left) > OVERFLOW_IDS else ''
             lines.append('- +{} more from {}: {}{}'.format(len(left), party, ', '.join(left[:OVERFLOW_IDS]), more))
@@ -750,7 +804,8 @@ def main(argv=None):
     parser.add_argument('--out', help='Where to write the digest')
     parser.add_argument('--show', nargs='+', metavar='ID', help='Print passages from an earlier digest in full')
     parser.add_argument('--time-limit', type=int, default=DEFAULT_TIME_LIMIT,
-                        help='Seconds the run may take; pages not opened by then are logged as leads')
+                        help='Seconds for opening pages, after the {}s search budget; pages not opened by '
+                             'then are logged as leads'.format(SEARCH_BUDGET))
     parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS)
     args = parser.parse_args(argv)
     if args.show:
@@ -777,6 +832,7 @@ def main(argv=None):
         print('gather.py: {}'.format(exc), file=sys.stderr)
         sys.exit(2)
     write_digest(plan, report, args.tsv, args.out)
+    _phase('wrote the digest')
     if report.get('refused'):
         print('gather.py: Bright Data refused {} calls; the digest says which were missed'
               .format(len(report['refused'])), file=sys.stderr)

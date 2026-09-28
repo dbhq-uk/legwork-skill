@@ -517,3 +517,11 @@ def test_a_subject_s_own_site_is_searched_on_purpose(tmp_path, fake):
     gather.run(gather.load_plan(_plan(tmp_path, [angle], round_=2)), str(tmp_path / 'run.tsv'), str(tmp_path))
     assert fake.ran('bd_search.py', 'site:revolut.example revolut sandbox registration', 'google')
     assert fake.ran('bd_search.py', 'site:revolut.example revolut api keys', 'google')
+
+
+def test_searching_stops_when_its_budget_is_spent(tmp_path, fake, monkeypatch):
+    """Measured 2026-09-28: 70 searches took 356s and no page was ever opened."""
+    monkeypatch.setattr(gather, 'SEARCH_BUDGET', 0)
+    result = gather.run(gather.load_plan(_plan(tmp_path, [_angle()])), str(tmp_path / 'run.tsv'), str(tmp_path))
+    assert not fake.ran('bd_search.py', '-m', 'general')
+    assert result['angles']['offer']['failed_searches'] == 2

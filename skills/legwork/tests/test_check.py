@@ -631,3 +631,9 @@ def test_a_subject_s_row_resting_only_on_a_review_fails(tmp_path):
 def test_a_subject_s_row_citing_its_own_page_passes(tmp_path):
     problems = _own_site_case(tmp_path, 'https://www.vanzadventures.example/kits')
     assert problems.errors == []
+
+
+def test_a_scripted_run_with_no_facts_recorded_fails(tmp_path):
+    report, tsv = _with_plan(tmp_path, ['Acme'])
+    problems, _ = check.run(report, tsv, 'report', 'standard')
+    assert any('no facts recorded' in e for e in problems.errors)

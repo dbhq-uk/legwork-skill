@@ -179,17 +179,10 @@ parties.
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/gather.py --show r1-offer-12 r1-offer-40 --tsv "$OUT/$BASE.tsv"
-python3 ${CLAUDE_SKILL_DIR}/scripts/sources.py quote --tsv "$OUT/$BASE.tsv" \
-  --id r1-offer-12 --quote "the sentence one finding rests on" \
-  --id r2-hsbc-7 --quote "the sentence another rests on"
 ```
 
-`--show` prints any passage in full, overflow included. `quote` records the
-sentence a finding rests on against its source, checked word for word against
-the saved page. Record one for every source you cite, **all in one call** -
-each step re-reads the whole conversation, so eleven single quotes cost eleven
-times what one call does. Cite each source by the URL its digest line shows;
-never rebuild a URL from memory.
+`--show` prints any passage in full, overflow included. Cite each source by the
+URL its digest line shows; never rebuild a URL from memory.
 
 **Round 2 researches everyone round 1 found - drop no one.** The round-1
 digest ends with a **Parties** list: every site with a passage near the top of
@@ -218,10 +211,10 @@ search, never an answer.
 
 **An entity's own page settles it.** Aggregators, directories and reviews find
 entities; only an entity's own site settles what it offers and what it costs.
-Each subject's digest leads with passages from its `sites`, and a matrix row
-about a subject must cite its own site or mark its cells `[unknown]` - the gate
-fails it otherwise. An entity you could not confirm on its own site goes under
-Limitations, not in the answer.
+Round 2 searches each subject's own site on purpose, and its digest leads with
+passages from its `sites`. A matrix row about a subject must cite its own site
+or mark its cells `[unknown]` - the gate fails it otherwise. An entity you could
+not confirm on its own site goes under Limitations, not in the answer.
 
 **The report drops no one either.** Every round-2 subject appears in the
 report: in the findings or the matrix, or under Limitations with the reason it
@@ -248,7 +241,38 @@ from privileged access.
 
 ### 4. Challenge
 
-A finding that has only been supported has not been tested.
+A finding that has only been supported has not been tested, and a finding is
+several facts. **Check every fact, not only every finding.**
+
+**Record each fact the answer will state** - every matrix cell and every claim
+in a finding - with the passage it rests on, in one file and one call:
+
+```json
+[{"entity": "Render", "kind": "own", "claim": "Render Postgres starts at $6 a month",
+  "sources": [{"id": "r2-render-4", "quote": "the sentence, word for word"}]},
+ {"entity": "small practices", "kind": "world", "claim": "most triage email by hand",
+  "sources": [{"id": "r1-people-12", "quote": "..."}, {"id": "r1-people-40", "quote": "..."}]}]
+```
+
+```bash
+python3 ${CLAUDE_SKILL_DIR}/scripts/facts.py add --tsv "$OUT/$BASE.tsv" --file "$OUT/facts-new.json"
+```
+
+Each kind has its own standard of proof, and the gate holds every fact to it:
+
+- **`own`** - what an entity itself offers, charges or requires. Its own site
+  is the authority, so the fact must quote a page on it. Two blogs agreeing
+  prove nothing here: they are usually one stale copy.
+- **`world`** - anything else: a count, a market claim, what people report. It
+  needs **two independent sources** - different parties, and not the same
+  sentence on both, because a mirror or a syndicated copy is one source.
+
+`facts.py` also compares each price with every passage on the entity's own
+site about the same thing. When the site shows other prices and not this one,
+read those passages - it names them - and set `"status"` to `current`,
+`superseded` (the site has moved on: say "was X until D") or `contested`. It
+prints only what fails; fix those and add them again. A fact that cannot meet
+its standard is not stated as fact: lower it to a limitation.
 
 - **Standard and deep:** the disconfirming phrasings in both rounds are the
   search for the other side, and what they find is in the digest beside
@@ -407,6 +431,7 @@ All standard library only, on any `python3` 3.9 or newer.
 | `matrix.py check` | Completeness of a comparison matrix |
 | `index.py list \| add` | The research index |
 | `check.py` | The gate on its own, without filing |
+| `facts.py add \| check` | Every fact in the answer, the passage it rests on, and its standard: an own fact quotes the entity's site, a world fact two independent sources |
 | `finish.py` | Gate, staleness sweep and filing in one call |
 
 ## Trust boundary

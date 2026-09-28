@@ -206,6 +206,13 @@ def _on_topic(results, query):
     return bool(results) and sum(1 for hit in results if matches(hit)) * 2 >= len(results)
 
 
+def as_site(site):
+    """'https://www.revolut.com/dev' -> 'revolut.com', for a site: search."""
+    site = site.strip()
+    host = site.split('://', 1)[-1].split('/', 1)[0].lower()
+    return host[4:] if host.startswith('www.') else host
+
+
 def unaccounted(plan, tsv):
     """Parties an earlier round found that this plan neither researches nor
     sets aside. Measured on 2026-09-27: round 1 found Revolut, Monzo and
@@ -239,10 +246,20 @@ def unaccounted(plan, tsv):
     return sorted(party for party in found if party not in covered)
 
 
+SITE_PHRASINGS = 2
+
+
 def _search_jobs(angle, plan):
     jobs = []
     for query in angle['phrasings'] + angle['disconfirming']:
         jobs.append(('web', query, 'bing-local'))
+    # A subject's own site, searched on purpose. Tested on 28 Sep 2026: the
+    # runs never fetched the entity's own page for 10 to 13 of 57 right facts,
+    # so no check of those facts could find the page that settles them.
+    for site in (angle.get('sites') or [])[:1]:
+        domain = as_site(site)
+        for query in angle['phrasings'][:SITE_PHRASINGS]:
+            jobs.append(('site', 'site:{} {}'.format(domain, query), 'google'))
     if angle.get('people'):
         for query in angle['phrasings']:
             for platform in PEOPLE_PLATFORMS:
@@ -252,6 +269,8 @@ def _search_jobs(angle, plan):
 
 def _run_search(job, plan):
     kind, query, where = job
+    if kind == 'site':
+        return _serp(query, where, plan)
     if kind == 'web':
         # Free first: Bing asked directly from this machine. Bright Data only
         # when that is refused or empty (Dan, 27 Sep 2026: "curl locally

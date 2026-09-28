@@ -508,3 +508,12 @@ def test_a_subject_digest_leads_with_its_own_site(tmp_path, fake):
     digest, _ = _run_with(tmp_path, fake, {'https://reviews.example/r': review,
                                            'https://www.revolut.example/dev': own}, angle=angle, round_=2)
     assert 'https://www.revolut.example/dev ·' in digest
+
+
+def test_a_subject_s_own_site_is_searched_on_purpose(tmp_path, fake):
+    """Tested 2026-09-28: runs never fetched the entity's own page for 10 to 13 of 57 right facts."""
+    angle = {'id': 'revolut', 'question': 'q?', 'subject': 'Revolut', 'expected': True,
+             'phrasings': ['revolut sandbox registration', 'revolut api keys'], 'sites': ['https://www.revolut.example/']}
+    gather.run(gather.load_plan(_plan(tmp_path, [angle], round_=2)), str(tmp_path / 'run.tsv'), str(tmp_path))
+    assert fake.ran('bd_search.py', 'site:revolut.example revolut sandbox registration', 'google')
+    assert fake.ran('bd_search.py', 'site:revolut.example revolut api keys', 'google')

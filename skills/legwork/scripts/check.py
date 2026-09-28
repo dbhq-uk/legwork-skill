@@ -44,6 +44,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from independence import canonicalize, corroboration, portfolio  # noqa: E402
 from index import read_index  # noqa: E402
+import facts as facts_module  # noqa: E402
 from matrix import check_matrix, parse_matrix  # noqa: E402
 from sources import SNIPPET_VIA, read_rows, retrieval_receipt  # noqa: E402
 
@@ -673,19 +674,36 @@ def check_could_not_answer(content, problems):
             'to the question that has none'.format(', '.join(misplaced)))
 
 
-_GENERIC_WORDS = frozenset('''a an and the of for in on uk gb group ltd limited plc inc llc co company
-bank banks building society services service managed hosted cloud database databases platform
-'''.split())
-
-
 def _distinctive(subject):
-    """The word that names a subject in prose: its first word that is not
-    generic. "Bank of Ireland UK" -> "ireland", "AWS RDS for PostgreSQL" -> "aws"."""
-    words = re.findall(r"[a-z0-9][a-z0-9&'.-]*", re.sub(r'\([^)]*\)', ' ', subject.lower()))
-    for word in words:
-        if word not in _GENERIC_WORDS and len(word) >= 3:
-            return word
-    return words[0] if words else ''
+    return facts_module.distinctive(subject)
+
+
+def check_facts(report_path, tsv_path, content, problems):
+    """A scripted run records every fact in its answer, each held to the
+    standard of its kind (facts.py). Runs with no round-2 plan are not asked:
+    they predate the facts file."""
+    run_dir = os.path.dirname(os.path.abspath(report_path))
+    scripted = any(json.load(open(p, encoding='utf-8')).get('round', 1) >= 2
+                   for p in glob.glob(os.path.join(run_dir, 'plan-*.json')))
+    if not scripted or not tsv_path:
+        return
+    errors, notes, facts = facts_module.check_facts(tsv_path)
+    if not facts:
+        problems.structural('no facts recorded - write each fact the answer states, with the passage it '
+                            'rests on, and run facts.py add')
+        return
+    for line in errors:
+        problems.structural('fact ' + line)
+    for line in notes:
+        problems.warn('fact ' + line)
+    parsed = parse_matrix(content)
+    for row in (parsed or {}).get('rows', []):
+        cells = ' '.join(row['cells'].values()).lower()
+        if cells.count('[unknown]') >= len(row['cells']):
+            continue
+        if not any(facts_module.names(f.get('entity'), row['entity']) for f in facts):
+            problems.structural('{}: a matrix row with no recorded fact behind it - add its facts with '
+                                'facts.py add'.format(row['entity']))
 
 
 def check_subjects_reported(report_path, content, problems):
@@ -768,6 +786,7 @@ def run(report_path, tsv_path, fmt, level):
     check_matrix_section(content, problems, entries, rows, report_path)
 
     check_subjects_reported(report_path, content, problems)
+    check_facts(report_path, tsv_path, content, problems)
     check_registered(report_path, problems)
 
     return problems, {'outcome': outcome, 'sources': len(entries), 'fetched': len(rows)}

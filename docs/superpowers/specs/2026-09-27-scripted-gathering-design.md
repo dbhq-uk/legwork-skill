@@ -1,7 +1,12 @@
 # Scripted gathering: wider research for half the cost
 
 **Date:** 2026-09-27
-**Status:** draft, awaiting review
+**Status:** built, tested and not adopted. The branch `feat/scripted-gathering`
+was closed unmerged on 29 Sep 2026: graded blind against answer keys, it stated
+more correct facts than `main` and more wrong ones, at 81% of `main`'s cost.
+See `evals/runs/2026-09-27-scripted-gathering.md`,
+`2026-09-27-quality-against-answer-keys.md` and
+`2026-09-28-facts-against-answer-keys.md`. Kept as the record of the design.
 **Decisions by:** Dan, 27 Sep 2026, one question at a time; each is recorded
 where it applies.
 **Scope:** `skills/legwork/scripts/` (a new `gather.py`, additions to

@@ -5,6 +5,7 @@
 - [Why this exists](#why-this-exists)
 - [The protocol](#the-protocol)
 - [Scoring](#scoring)
+- [Answer keys](#answer-keys) - is the report right, not only did the skill behave
 - [How much to run](#how-much-to-run)
 - [What these four cases cover](#what-these-four-cases-cover)
 
@@ -66,6 +67,36 @@ An expectation that no arm ever satisfies is either badly written or describes a
 rule the skill states but cannot deliver. Both are findings. Fix the expectation
 or fix the skill; do not quietly drop the row.
 
+## Answer keys
+
+Expectations measure behaviour. They cannot say whether the answer is right,
+and a report can pass every gate and still name the wrong banks. The answer
+keys in [`keys/`](keys/) can: for three prompts, the entities that belong in
+the answer (core, meaning a report that misses one is incomplete, or extra),
+the facts that matter for each, quoted from the entity's own page, and the
+entities checked and excluded with the reason. Each was built on 27 Sep 2026
+by an agent that saw no report.
+
+| Key | Prompt | In scope | Core |
+|---|---|---|---|
+| [banks](keys/banks.md) | which UK banks publish a public API sandbox, and what does each require | 51, and 74 excluded | 16 |
+| [postgres](keys/postgres.md) | compare hosted Postgres pricing for a small UK startup | 18 | 9 |
+| [campervan](keys/campervan.md) | flat-pack furniture kits for a Transit L3H2, and what a complete kit costs | 5, and 38 excluded | 3 |
+
+**They go stale.** Prices and sandbox terms change; re-check a key's rows
+against the entity's own pages before grading against it, and date the check.
+
+**Grading.** Run each arm three times: one run per arm cannot tell a change
+from noise. Remove the receipt line, give the reports neutral labels, and
+keep the label-to-arm map outside the grading folder. One grader per prompt
+reads the key and all six reports and records, per report, the core and extra
+entities covered (named with something substantive, not only listed), each
+covered entity's facts as correct, partly, wrong or unstated against the key,
+scope errors (an excluded entity presented as in scope), and other errors the
+key contradicts. The grader must apply the same rules to all six and write
+down any judgement call. The prompts used on 27 and 28 Sep are in
+[`grading.md`](grading.md).
+
 ## How much to run
 
 Route depth by asking how the change could fail, not by running everything every
@@ -117,6 +148,11 @@ and every other case's result is uninterpretable if it does not.
 | [2026-09-24 (receipt)](runs/2026-09-24-receipt-blocked.md) | Sonnet 5, banks prompt, one run; plus today's twelve reports replayed | The receipt now carries the blocked count and the gate checks it. Replayed, 11 of 11 receipts whose logs held refused pages left the number out. Live, the receipt said `10 blocked` against a log of 10, first time. Found, not fixed: seven quotes checked and not on the page, two of them elisions |
 | [2026-09-25](runs/2026-09-25-quote-word-match.md) | Replay of the 24 Sep logs, no new run | The quote check is word for word. Of twelve quotes marked false on 24 Sep, eight differed from the page only in punctuation. Replayed over 329 quotes: 19 false alarms cleared, nothing that passed now fails, the real misquote and both elisions still fail. Found, not fixed: quotes taken through WebFetch are on the page word for word 38% of the time, against 80% for `fetch.py` |
 | [2026-09-25 (Jev, logging)](runs/2026-09-25-jev-and-logging.md) | Sonnet 5, two banks runs; three Jev tests; a replay | With a TypeSafe key, `fetch.py` asks Jev for the relevant passages when `--find` misses: whole-page reads went to zero. Jev ranks passages well (quoted one in its top three 75% of the time) and search results poorly, so only the first was built. Both runs checked no quotes because the orchestrator logged by hand; `sources.py log-returns` recovered 22 and 15 checks on replay, and the gate now flags the skip |
+| [2026-09-27 (rerank, offline)](runs/2026-09-27-rerank-offline.md) | Replay of seven 24 Sep runs, 31 angles, no new run | Every passage an angle gathered, pooled and ranked: the average of Jev and a term match put the quoted passage in the top five 86% of the time and the top 20 every time. `gather.py` ranks with it |
+| [2026-09-27 (support scan, offline)](runs/2026-09-27-support-scan-offline.md) | Replay of seven 24 Sep reports, 28 findings | Asked to find the passage each finding rests on, Jev put it in the top ten 10% of the time and a term match 14%. Not built; Claude checks findings against the digest |
+| [2026-09-27](runs/2026-09-27-scripted-gathering.md) | Sonnet 5, `main` against the scripted-gathering branch, five prompts | Claude cost 44% of `main`'s across all five, a third on the two big questions, 62% and 77% on the two small ones. More sites opened and cited in every case, more Strong findings in four of five, nothing named without a source. Twice as slow. Four faults found and fixed on the way, among them local Bing answering for the first word of a query only |
+| [2026-09-27 (answer keys)](runs/2026-09-27-quality-against-answer-keys.md) | Sonnet 5, three runs an arm on banks, Postgres, campervan, graded against answer keys built from primary sources | First test of whether reports are right. The branch covered more of what belongs and got more of it wrong: more facts wrong in two cases of three and more scope errors in both where they apply, each traced to an aggregator or review standing in for the entity's own page. Cost 65% of `main`. Led to the own-site rule |
+| [2026-09-28 (facts, answer keys)](runs/2026-09-28-facts-against-answer-keys.md) | Sonnet 5, three runs an arm on banks, Postgres, campervan, regraded blind against the same keys | The facts version: every core Postgres provider every run and three sound recommendations of three, more correct facts than `main`, and more wrong ones (15 and 7 scope errors against 7 and 1). 81% of `main`'s cost, slower. Does not meet the bar for merging |
 
 ### What the first run changed
 

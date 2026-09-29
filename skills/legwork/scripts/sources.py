@@ -695,7 +695,7 @@ def _apply_sidecar(args):
     except (OSError, ValueError) as exc:
         raise LogError('cannot read --from-fetch: {}'.format(exc))
 
-    args.url = args.url or payload.get('canonical') or payload.get('url') or ''
+    args.url = args.url or logged_url(payload)
     args.title = args.title or payload.get('title') or ''
     args.date = args.date or payload.get('date') or ''
     args.query = args.query or payload.get('query') or ''
@@ -718,6 +718,21 @@ def cmd_log(args):
         print('error: {}'.format(exc), file=sys.stderr)
         sys.exit(2)
     print(json.dumps(result))
+
+
+def logged_url(payload):
+    """The URL a fetch sidecar is logged under: the page's canonical link, or
+    the URL fetched. A canonical pointing at the bare home page from a page
+    with a path is a site misconfiguration, not a claim that the two are the
+    same page - measured on 2026-09-27, a blog post logged as its site's home
+    page, so the citation and its quote pointed at the wrong page."""
+    from urllib.parse import urlsplit
+
+    url = payload.get('url') or ''
+    canonical = payload.get('canonical') or ''
+    if canonical and urlsplit(canonical).path in ('', '/') and urlsplit(url).path not in ('', '/'):
+        canonical = ''
+    return canonical or url
 
 
 def log_row(args):

@@ -573,3 +573,11 @@ def test_log_returns_reports_rows_it_could_not_log_and_exits_1(tmp_path, capsys)
     assert exit_info.value.code == 1
     summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert summary['logged'] == 1 and len(summary['failed']) == 1
+
+
+def test_a_home_page_canonical_on_a_deep_page_is_ignored():
+    """Measured 2026-09-27: a blog post logged as its site's home page."""
+    assert sources.logged_url({'url': 'https://a.example/blog/post', 'canonical': 'https://a.example/'}) == \
+        'https://a.example/blog/post'
+    assert sources.logged_url({'url': 'https://a.example/p?x=1', 'canonical': 'https://a.example/p'}) == \
+        'https://a.example/p'

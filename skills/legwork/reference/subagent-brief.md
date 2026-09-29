@@ -60,6 +60,10 @@ sense of what year it is.
 This is the only question you are answering. Do not broaden it, and do not answer
 a neighbouring question because it came up.
 
+## Already found
+
+{what earlier rounds on this angle found}
+
 ## Effort
 
 {n} to {m} searches. {"This is one narrow fact - stop once you have it, from two
@@ -112,6 +116,12 @@ A page that refused you is returned too, as its own object with
 elsewhere. Use `"via": "direct"` for fetch.py, `"webfetch"` for WebFetch,
 `"websearch"` for anything you only saw in a search result, and `"api"` for a
 platforms.py record.
+
+If your angle asks for a list - every bank, vendor, supplier, product - one
+object naming every one you came across, in anything you opened or saw,
+whether or not you opened its own page, including any listed above:
+
+{"entities": ["Name", "Name"]}
 
 Then one final object recording what you could NOT establish:
 

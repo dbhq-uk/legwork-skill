@@ -44,7 +44,14 @@ EFFORT = ('{"This is one narrow fact - stop once you have it, from two\n'
           'independent sources." | "This is a multi-option comparison - spread the effort\n'
           'across the options rather than going deep on the first one."}')
 
-PLACEHOLDERS = (DATE, ANGLE, RETURN_ANGLE, BUDGET, SKILL, EFFORT)
+KNOWN = '{what earlier rounds on this angle found}'
+
+PLACEHOLDERS = (DATE, ANGLE, RETURN_ANGLE, BUDGET, SKILL, EFFORT, KNOWN)
+
+FIRST_ROUND = 'Nothing yet - this is the first round on this angle.'
+LATER_ROUND = ('Earlier rounds on this angle found these. Look for the ones they missed - other\n'
+               'phrasings, registers and directories, smaller and newer players - and do not\n'
+               'spend your budget finding these again:\n')
 
 EFFORT_TEXT = {
     'narrow': 'This is one narrow fact - stop once you have it, from two\nindependent sources.',
@@ -73,7 +80,13 @@ def read_template(path=TEMPLATE_FILE):
     return block.group(1)
 
 
-def fill(template, angle, effort, date, searches):
+def known_text(known):
+    if not known:
+        return FIRST_ROUND
+    return LATER_ROUND + '\n'.join('- ' + name for name in known)
+
+
+def fill(template, angle, effort, date, searches, known=()):
     missing = [marker for marker in PLACEHOLDERS if marker not in template]
     if missing:
         raise TemplateChanged(
@@ -85,6 +98,7 @@ def fill(template, angle, effort, date, searches):
     out = out.replace(DATE, date)
     out = out.replace(ANGLE, angle).replace(RETURN_ANGLE, angle)
     out = out.replace(SKILL, SKILL_DIR)
+    out = out.replace(KNOWN, known_text(known))
     left = [marker for marker in PLACEHOLDERS if marker in out]
     if left:
         raise TemplateChanged('placeholders left unfilled: {}'.format(left))
@@ -115,6 +129,8 @@ def main():
                         help='Search budget as N-M. Default 2-4 for narrow, 4-8 for comparison')
     parser.add_argument('--date', type=_date, default=None,
                         help='Defaults to today in UTC. Pass the run date so every brief agrees')
+    parser.add_argument('--tsv', default=None,
+                        help='The run fetch log: the brief lists what earlier rounds on this angle found')
     args = parser.parse_args()
 
     angle = ' '.join(args.angle.split())
@@ -123,7 +139,12 @@ def main():
     date = args.date or datetime.now(timezone.utc).strftime('%Y-%m-%d')
 
     try:
-        text = fill(read_template(), angle, args.effort, date, args.searches)
+        known = ()
+        if args.tsv:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import ledger
+            known = sorted(((ledger.load(args.tsv).get(angle) or {}).get('entities') or {}).values())
+        text = fill(read_template(), angle, args.effort, date, args.searches, known)
     except (OSError, TemplateChanged) as exc:
         print('brief.py: {}'.format(exc), file=sys.stderr)
         sys.exit(2)

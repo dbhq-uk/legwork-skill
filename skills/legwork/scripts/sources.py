@@ -825,6 +825,28 @@ def parse_returns(text):
     return found, gaps
 
 
+def parse_entities(text):
+    """Every entity a subagent's reply names in its {"entities": [...]} object,
+    as (angle or '', name) pairs, wherever in the reply the object sits."""
+    decoder = json.JSONDecoder()
+    found, at = [], 0
+    text = text or ''
+    while True:
+        start = text.find('{', at)
+        if start < 0:
+            break
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except ValueError:
+            at = start + 1
+            continue
+        at = end
+        for item in (value if isinstance(value, list) else [value]):
+            if isinstance(item, dict) and isinstance(item.get('entities'), list):
+                found += [((item.get('angle') or '').strip(), str(name)) for name in item['entities'] if str(name).strip()]
+    return found
+
+
 def cmd_log_returns(args):
     """Log every source a subagent returned, with its page text wherever it exists.
 
@@ -838,7 +860,11 @@ def cmd_log_returns(args):
     except OSError as exc:
         print('error: cannot read --returns: {}'.format(exc), file=sys.stderr)
         sys.exit(2)
+    import ledger
+    from independence import party_of
+
     found, gaps = parse_returns(text)
+    parties_by_angle = {}
     summary = {'logged': 0, 'with_page_text': 0, 'quotes': {'true': 0, 'false': 0, 'unchecked': 0},
                'kinds_inferred': 0, 'failed': [], 'gaps': gaps, 'angles': []}
     for item in found:
@@ -872,6 +898,21 @@ def cmd_log_returns(args):
             summary['quotes']['unchecked' if verdict is None else ('true' if verdict else 'false')] += 1
         if row.angle not in summary['angles']:
             summary['angles'].append(row.angle)
+        if row.status == 'ok':
+            parties_by_angle.setdefault(row.angle, set()).add(party_of(row.url))
+    # One reply is one round for its angle: record what it found that earlier
+    # rounds had not, so saturation is counted rather than judged.
+    entities = parse_entities(text)
+    angles = set(parties_by_angle) | {a for a, _ in entities if a} | ({args.angle} if args.angle else set())
+    default = args.angle or (summary['angles'][0] if len(summary['angles']) == 1 else '')
+    summary['new'] = {}
+    if any(not a for a, _ in entities) and not default:
+        summary['failed'].append({'url': '', 'reason': 'entities with no angle - pass --angle for this subagent, '
+                                                      'or the round is not counted'})
+    for angle in sorted(a for a in angles if a):
+        names = [n for a, n in entities if (a or default) == angle]
+        new_entities, new_parties = ledger.record_round(args.tsv, angle, names, parties_by_angle.get(angle, ()))
+        summary['new'][angle] = {'entities': new_entities, 'parties': len(new_parties)}
     print(json.dumps(summary, ensure_ascii=False))
     if summary['failed']:
         sys.exit(1)

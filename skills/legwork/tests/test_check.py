@@ -6,7 +6,7 @@ import shutil
 import pytest
 
 import check
-from conftest import fixture
+from conftest import fixture, saturated_ledger
 
 
 def run(name, level='deep', fmt='report', tsv=None):
@@ -473,6 +473,7 @@ def _one_source_report(tmp_path, verified, quote='A sentence nobody can find on 
         handle.write('https://vendor.example/pricing\tvendor_pricing\tan angle\t{}\t'
                      '2026-09-06T09:00:00+00:00\tok\t2026-07-01\t\tPricing\t{}\tq\t{}\n'.format(
                          via, quote, verified))
+    saturated_ledger(tsv)
     return report, tsv
 
 

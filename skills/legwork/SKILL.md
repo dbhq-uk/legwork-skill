@@ -32,7 +32,7 @@ Depth raises rigour. It never raises length.
 | | quick | standard | deep |
 |---|---|---|---|
 | Frame | Decision plus 2-3 sub-questions | Plus named falsifiers | Plus second-order angles |
-| Gather | Search snippets; open a page only to pin a figure | Open every source a finding rests on | A primary source for every finding |
+| Gather | Search snippets; open a page only to pin a figure; one round | Open every source a finding rests on; rounds until nothing new, at most 3 | A primary source for every finding; rounds until nothing new |
 | Challenge | Independence grouping only | One disconfirming search per finding | Per-finding disconfirming pass plus an origin audit |
 | Format | brief | brief or report | report |
 | Rough time | 3-5 min | 8-12 min | 20-40 min |
@@ -222,7 +222,9 @@ competitor, every plan, every release - open the items and rebuild the list from
 them. A table lifted from one roundup is one source, not one per row. If the
 items cannot be opened, say so in the finding and lower its band.
 
-**Parallelise retrieval, one subagent per angle.** Write each brief with
+**Parallelise retrieval, one subagent per angle - at standard and deep, always.**
+Do not research the angles yourself instead: graded against answer keys on 29
+Sep 2026, runs that did covered half the core entities. Write each brief with
 `brief.py`, then copy the text it prints into the subagent's prompt, word for
 word, as the whole prompt. The prompt is text, not a shell: `$(cat file)` or a
 file path reaches the subagent as those characters, not as the brief.
@@ -256,6 +258,31 @@ one did, and 103 subagent fetches reached the log with nothing to check. Then:
   those came back unchanged. A logging loop of your own drops the page text, and
   with it every quote check. Never paste a subagent's transcript into the
   synthesis.
+- **Go round by round until nothing new turns up.** Each reply you log is one
+  round for its angle. After each round:
+
+  ```bash
+  python3 ${CLAUDE_SKILL_DIR}/scripts/ledger.py status --tsv "$OUT/$BASE.tsv" --level standard
+  ```
+
+  An angle is **saturated** when its last round found nothing new - no new
+  entity on a list angle (every bank, vendor, supplier), no new independent
+  party on any other. An **open** angle gets another round: write its brief
+  with `brief.py ... --tsv "$OUT/$BASE.tsv"`, which lists what earlier rounds
+  found so the next subagent looks for the ones they missed. Standard stops at
+  3 rounds and deep does not; an angle **capped** while still finding new
+  things is reported as "not saturated". The gate fails an angle left open.
+- **Drop no one.** Every entity any round found goes in the report: researched
+  in the findings or the matrix, or listed under `## Found, not researched`
+  with a one-line reason each ("portal offline", "no public page found"). The
+  gate fails a report that leaves one out. **An entity enters the answer only
+  once its own page confirms it is the kind of thing asked about** - a bank
+  with a public sandbox, a flat-pack kit that fits the van. Anything you are
+  unsure of goes under Found, not researched, never in the matrix: graded on
+  29 Sep 2026, runs that put e-money firms in a banks table made seven scope
+  errors in three reports. Subagents set aside what is plainly out of scope
+  themselves, with a reason; `ledger.py status` lists those, so read the list
+  and research any that is wrongly there.
 - **Subagents use the free rungs only.** A page one returns as blocked is yours
   to take up the paid rungs, if the finding needs it.
 - Framing, challenge and writing are judgement, and stay with you.
@@ -291,6 +318,15 @@ A finding that has only been supported has not been tested.
   A finding you believed was strong that scores 1 means one line of enquiry
   produced everything behind it. Find a genuinely different angle, or lower the
   band.
+- **Standard and deep: settle each contradiction.** When two sources disagree,
+  first ask whether they are about the same thing - the same product, plan,
+  region, environment and date. Most apparent contradictions are not (a sandbox
+  rule against a production rule, last year's price against this year's), and
+  saying so resolves them. For one that is, make one targeted fetch for the
+  source that would settle it: the entity's own current page, or a dated
+  first-hand source. A value the entity's own page has moved on from is
+  reported as "was X until D", not as contested. Only what is still in
+  conflict after that is reported as contested, with both sides.
 - **Deep:** the origin audit. For every Strong finding, read the sources and
   check they do not all trace back to one origin. Three articles quoting one
   analyst's estimate are one estimate.
@@ -422,7 +458,8 @@ All standard library only, on any `python3` 3.9 or newer.
 |---|---|
 | `fetch.py "<url>" --find TERM [--relevant Q]` | Open a page for free and keep its text; exit 3 is a block or a shell. `--saved FILE` searches a page already fetched |
 | `platforms.py list \| search --on X` | Ten free platforms that return records rather than pages |
-| `brief.py --angle "..." --effort narrow\|comparison` | The brief for one retrieval subagent, filled and ready to pass unchanged |
+| `brief.py --angle "..." --effort narrow\|comparison [--tsv PATH]` | The brief for one retrieval subagent, filled and ready to pass unchanged; with `--tsv`, it lists what earlier rounds found |
+| `ledger.py status --tsv PATH --level L` | Each angle saturated, open or capped, and every entity found |
 | `bd_search.py "<query\|url>" -m MODE` | The paid Bright Data rungs; `--help` lists the modes |
 | `sources.py log \| log-returns \| kinds \| score \| receipt \| resume \| stale` | The fetch log, source kinds and their fitness per claim, the receipt counts, what a past run fetched, what has gone stale |
 | `independence.py groups \| check \| portfolio` | Independent voices, corroboration per finding, concentration across the run |

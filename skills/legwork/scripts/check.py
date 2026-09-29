@@ -43,6 +43,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from independence import canonicalize, corroboration, portfolio  # noqa: E402
 from index import read_index  # noqa: E402
+import ledger  # noqa: E402
 from matrix import check_matrix, parse_matrix  # noqa: E402
 from sources import SNIPPET_VIA, read_rows, retrieval_receipt  # noqa: E402
 
@@ -576,6 +577,43 @@ def check_matrix_section(content, problems, entries=None, rows=None):
                     row['entity'], ', '.join('[{}]'.format(n) for n in cited)))
 
 
+def check_breadth(tsv_path, content, problems):
+    """Wide enough, measured (ledger.py). Graded against answer keys on
+    29 Sep 2026, runs that skipped their retrieval rounds covered half the
+    core entities, and nothing in the gate could see it.
+
+    - Standard and deep must have recorded rounds: one per subagent reply,
+      logged with `sources.py log-returns`.
+    - No angle may be left open - still finding new things under its cap.
+    - An angle stopped by the cap must be reported as not saturated.
+    - Every entity any round found is named in the report, researched or
+      under "Found, not researched" with its reason.
+    """
+    level = problems.level
+    strict = problems.structural if level in ('standard', 'deep') else problems.warn
+    if not tsv_path:
+        return
+    rows = ledger.status(tsv_path, level)
+    if not rows:
+        if level in ('standard', 'deep'):
+            problems.structural('no retrieval rounds recorded - at {} each angle is searched by subagents, '
+                                'round by round, and each reply logged with sources.py log-returns'.format(level))
+        return
+    lowered = content.lower()
+    for row in rows:
+        if row['state'] == 'open':
+            strict('{}: still finding new {} after {} round{} - run another round (brief.py --tsv passes '
+                   'what is already found)'.format(row['angle'], row['unit'], row['rounds'],
+                                                   '' if row['rounds'] == 1 else 's'))
+        elif row['state'] == 'capped' and 'not saturated' not in lowered:
+            strict('{}: stopped at the round limit while still finding new {} - say "not saturated" for '
+                   'this angle in the receipt or limitations'.format(row['angle'], row['unit']))
+    missing = [name for name in ledger.all_entities(tsv_path) if not ledger.named_in(name, content)]
+    if missing:
+        strict('found and not in the report: {} - research each, or list it under "Found, not researched" '
+               'with the reason it is left out'.format(', '.join(missing)))
+
+
 def check_registered(report_path, problems):
     """Is this run findable by the next one?
 
@@ -672,6 +710,7 @@ def run(report_path, tsv_path, fmt, level):
     # cells and column counts stay graded.
     check_matrix_section(content, problems, entries, rows)
 
+    check_breadth(tsv_path, content, problems)
     check_registered(report_path, problems)
 
     return problems, {'outcome': outcome, 'sources': len(entries), 'fetched': len(rows)}

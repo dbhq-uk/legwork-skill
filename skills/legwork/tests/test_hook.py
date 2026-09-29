@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from conftest import SKILL_ROOT
+from conftest import SKILL_ROOT, saturated_ledger
 
 HOOK = os.path.join(os.path.dirname(os.path.dirname(SKILL_ROOT)), 'hooks', 'gate_on_stop.py')
 
@@ -56,6 +56,7 @@ def build_run(tmp_path, name, body, tsv=None):
     (folder / (name + '.md')).write_text(body, encoding='utf-8')
     if tsv:
         (folder / (name + '.tsv')).write_text(tsv, encoding='utf-8')
+        saturated_ledger(folder / (name + '.tsv'))
     return folder
 
 

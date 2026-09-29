@@ -8,7 +8,7 @@ is the same as no index at all.
 import os
 
 import check
-from conftest import fixture
+from conftest import fixture, saturated_ledger
 
 
 def report_with(tmp_path, extra, name='r.md'):
@@ -18,6 +18,7 @@ def report_with(tmp_path, extra, name='r.md'):
     target.write_text(source.replace('## Findings', extra + '\n## Findings', 1), encoding='utf-8')
     log = tmp_path / (os.path.splitext(name)[0] + '.tsv')
     log.write_text(open(fixture('valid_report.tsv'), encoding='utf-8').read(), encoding='utf-8')
+    saturated_ledger(log)
     return str(target), str(log)
 
 
@@ -164,6 +165,7 @@ def test_no_index_means_no_complaint(tmp_path):
     report.write_text(open(fixture('valid_report.md'), encoding='utf-8').read(), encoding='utf-8')
     log = run_dir / 'Topic_Research_20260802.tsv'
     log.write_text(open(fixture('valid_report.tsv'), encoding='utf-8').read(), encoding='utf-8')
+    saturated_ledger(log)
     problems, _ = check.run(str(report), str(log), 'report', 'deep')
     assert not any('index' in m for m in problems.errors + problems.warnings)
 
@@ -179,6 +181,7 @@ def test_an_unregistered_run_is_flagged_once_an_index_exists(tmp_path):
     report.write_text(open(fixture('valid_report.md'), encoding='utf-8').read(), encoding='utf-8')
     log = run_dir / 'Topic_Research_20260802.tsv'
     log.write_text(open(fixture('valid_report.tsv'), encoding='utf-8').read(), encoding='utf-8')
+    saturated_ledger(log)
     problems, _ = check.run(str(report), str(log), 'report', 'deep')
     assert any('index' in m for m in problems.errors + problems.warnings), problems.warnings
 
@@ -194,6 +197,7 @@ def test_a_registered_run_is_not_flagged(tmp_path):
     report.write_text(open(fixture('valid_report.md'), encoding='utf-8').read(), encoding='utf-8')
     log = run_dir / 'Topic_Research_20260802.tsv'
     log.write_text(open(fixture('valid_report.tsv'), encoding='utf-8').read(), encoding='utf-8')
+    saturated_ledger(log)
     problems, _ = check.run(str(report), str(log), 'report', 'deep')
     assert not any('index' in m for m in problems.errors + problems.warnings)
 
@@ -210,6 +214,7 @@ def test_registration_is_a_warning_not_an_error_even_at_deep(tmp_path):
     report.write_text(open(fixture('valid_report.md'), encoding='utf-8').read(), encoding='utf-8')
     log = run_dir / 'Topic_Research_20260802.tsv'
     log.write_text(open(fixture('valid_report.tsv'), encoding='utf-8').read(), encoding='utf-8')
+    saturated_ledger(log)
     problems, _ = check.run(str(report), str(log), 'report', 'deep')
     assert any('index' in w for w in problems.warnings)
     assert problems.errors == []

@@ -77,17 +77,26 @@ def load(tsv):
         return {}
 
 
-def record_round(tsv, angle, entities, parties):
-    """Add one round for `angle`: the entities its subagent named and the
-    parties it logged. Returns what was new in this round."""
+def record_round(tsv, angle, entities, parties, out_of_scope=()):
+    """Add one round for `angle`: the entities its subagent named, the ones it
+    set aside as not what the angle asks about (with reasons), and the parties
+    it logged. Returns what was new in this round. Set-aside names never count
+    as new: a bank question's tail of e-money firms is not breadth, and counted
+    it would keep the angle open for ever."""
     ledger = load(tsv)
     entry = ledger.setdefault(angle, {'rounds': [], 'entities': {}, 'parties': []})
+    aside = entry.setdefault('out_of_scope', {})
+    for name, reason in out_of_scope or ():
+        key = distinctive(name)
+        if key and key not in entry['entities']:
+            aside.setdefault(key, {'name': ' '.join(str(name).split()), 'reason': reason})
     new_entities = []
     for name in entities or []:
         name = ' '.join(str(name).split())
         key = distinctive(name)
         if key and key not in entry['entities']:
             entry['entities'][key] = name
+            aside.pop(key, None)
             new_entities.append(name)
     seen = set(entry['parties'])
     new_parties = sorted({p for p in parties or [] if p and p not in seen})
@@ -121,6 +130,17 @@ def status(tsv, level='standard'):
     return out
 
 
+def set_aside(tsv):
+    """[(name, reason)] every subagent set aside as out of scope, and no round
+    later found in scope."""
+    out = {}
+    for entry in load(tsv).values():
+        for key, item in (entry.get('out_of_scope') or {}).items():
+            if key not in (entry.get('entities') or {}):
+                out.setdefault(key, (item['name'], item.get('reason') or ''))
+    return sorted(out.values())
+
+
 def all_entities(tsv):
     return sorted({name for entry in load(tsv).values() for name in (entry.get('entities') or {}).values()})
 
@@ -138,6 +158,11 @@ def cmd_status(args):
     if still:
         print('\nnext: one more round for each open angle - brief.py --tsv {} --angle "<angle>" passes the '
               'entities already found, so the subagent looks for others'.format(args.tsv))
+    aside = set_aside(args.tsv)
+    if aside:
+        print('\nset aside by subagents as not what the angle asks about - research any that is wrongly here:')
+        for name, reason in aside:
+            print('  {} - {}'.format(name, reason or 'no reason given'))
     total = all_entities(args.tsv)
     if total:
         print('\n{} entities found in all - every one goes in the report, researched or under '

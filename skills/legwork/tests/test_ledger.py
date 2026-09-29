@@ -96,3 +96,19 @@ def test_the_distinctive_word_merges_names_for_one_entity():
     assert ledger.distinctive('Lloyds Banking Group') == ledger.distinctive('Lloyds Bank') == 'lloyds'
     assert ledger.distinctive('Bank of Ireland UK') == 'ireland'
     assert os.path.basename(ledger.path('/x/run.tsv')) == 'run.entities.json'
+
+
+def test_an_out_of_scope_entity_is_set_aside_and_never_counted_as_new(tmp_path):
+    """Graded 29 Sep 2026: e-money firms in a banks table were seven scope errors."""
+    tsv = str(tmp_path / 'run.tsv')
+    reply = _reply(['Barclays'], []).replace(
+        '{"entities": ["Barclays"]}',
+        '{"entities": ["Barclays"], "out_of_scope": [{"name": "Tide", "reason": "e-money firm"}]}')
+    _log(tmp_path, tsv, reply)
+    reply2 = _reply(['Barclays'], []).replace(
+        '{"entities": ["Barclays"]}',
+        '{"entities": ["Barclays"], "out_of_scope": [{"name": "Wise", "reason": "e-money firm"}]}')
+    _log(tmp_path, tsv, reply2)
+    assert ledger.status(tsv)[0]['state'] == 'saturated'
+    assert ledger.all_entities(tsv) == ['Barclays']
+    assert ledger.set_aside(tsv) == [('Tide', 'e-money firm'), ('Wise', 'e-money firm')]

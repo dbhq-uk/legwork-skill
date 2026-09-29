@@ -119,9 +119,13 @@ platforms.py record.
 
 If your angle asks for a list - every bank, vendor, supplier, product - one
 object naming every one you came across, in anything you opened or saw,
-whether or not you opened its own page, including any listed above:
+whether or not you opened its own page, including any listed above. Put each
+in `entities` if it is the kind of thing the angle asks about, and in
+`out_of_scope` with a short reason if it is not - a bank question meets
+e-money firms, a flat-pack question meets fitted conversions:
 
-{"entities": ["Name", "Name"]}
+{"entities": ["Name", "Name"],
+ "out_of_scope": [{"name": "Name", "reason": "e-money firm, not a bank"}]}
 
 Then one final object recording what you could NOT establish:
 

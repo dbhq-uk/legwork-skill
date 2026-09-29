@@ -847,6 +847,31 @@ def parse_entities(text):
     return found
 
 
+def parse_out_of_scope(text):
+    """(angle or '', name, reason) for everything a reply set aside as not
+    the kind of thing its angle asks about."""
+    decoder = json.JSONDecoder()
+    found, at = [], 0
+    text = text or ''
+    while True:
+        start = text.find('{', at)
+        if start < 0:
+            break
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except ValueError:
+            at = start + 1
+            continue
+        at = end
+        for item in (value if isinstance(value, list) else [value]):
+            if isinstance(item, dict) and isinstance(item.get('out_of_scope'), list):
+                for entry in item['out_of_scope']:
+                    if isinstance(entry, dict) and str(entry.get('name') or '').strip():
+                        found.append(((item.get('angle') or '').strip(), str(entry['name']),
+                                      str(entry.get('reason') or '').strip()))
+    return found
+
+
 def cmd_log_returns(args):
     """Log every source a subagent returned, with its page text wherever it exists.
 
@@ -909,9 +934,12 @@ def cmd_log_returns(args):
     if any(not a for a, _ in entities) and not default:
         summary['failed'].append({'url': '', 'reason': 'entities with no angle - pass --angle for this subagent, '
                                                       'or the round is not counted'})
+    set_aside = parse_out_of_scope(text)
     for angle in sorted(a for a in angles if a):
         names = [n for a, n in entities if (a or default) == angle]
-        new_entities, new_parties = ledger.record_round(args.tsv, angle, names, parties_by_angle.get(angle, ()))
+        aside = [(n, r) for a, n, r in set_aside if (a or default) == angle]
+        new_entities, new_parties = ledger.record_round(args.tsv, angle, names, parties_by_angle.get(angle, ()),
+                                                        out_of_scope=aside)
         summary['new'][angle] = {'entities': new_entities, 'parties': len(new_parties)}
     print(json.dumps(summary, ensure_ascii=False))
     if summary['failed']:

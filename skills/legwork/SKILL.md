@@ -274,8 +274,15 @@ one did, and 103 subagent fetches reached the log with nothing to check. Then:
   things is reported as "not saturated". The gate fails an angle left open.
 - **Drop no one.** Every entity any round found goes in the report: researched
   in the findings or the matrix, or listed under `## Found, not researched`
-  with a one-line reason each ("pre-built, not flat-pack", "portal offline").
-  The gate fails a report that leaves one out.
+  with a one-line reason each ("portal offline", "no public page found"). The
+  gate fails a report that leaves one out. **An entity enters the answer only
+  once its own page confirms it is the kind of thing asked about** - a bank
+  with a public sandbox, a flat-pack kit that fits the van. Anything you are
+  unsure of goes under Found, not researched, never in the matrix: graded on
+  29 Sep 2026, runs that put e-money firms in a banks table made seven scope
+  errors in three reports. Subagents set aside what is plainly out of scope
+  themselves, with a reason; `ledger.py status` lists those, so read the list
+  and research any that is wrongly there.
 - **Subagents use the free rungs only.** A page one returns as blocked is yours
   to take up the paid rungs, if the finding needs it.
 - Framing, challenge and writing are judgement, and stay with you.
@@ -311,6 +318,15 @@ A finding that has only been supported has not been tested.
   A finding you believed was strong that scores 1 means one line of enquiry
   produced everything behind it. Find a genuinely different angle, or lower the
   band.
+- **Standard and deep: settle each contradiction.** When two sources disagree,
+  first ask whether they are about the same thing - the same product, plan,
+  region, environment and date. Most apparent contradictions are not (a sandbox
+  rule against a production rule, last year's price against this year's), and
+  saying so resolves them. For one that is, make one targeted fetch for the
+  source that would settle it: the entity's own current page, or a dated
+  first-hand source. A value the entity's own page has moved on from is
+  reported as "was X until D", not as contested. Only what is still in
+  conflict after that is reported as contested, with both sides.
 - **Deep:** the origin audit. For every Strong finding, read the sources and
   check they do not all trace back to one origin. Three articles quoting one
   analyst's estimate are one estimate.

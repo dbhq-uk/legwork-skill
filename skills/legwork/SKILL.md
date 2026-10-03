@@ -223,8 +223,8 @@ them. A table lifted from one roundup is one source, not one per row. If the
 items cannot be opened, say so in the finding and lower its band.
 
 **Parallelise retrieval, one subagent per angle - at standard and deep, always.**
-Do not research the angles yourself instead: graded against answer keys on 29
-Sep 2026, runs that did covered half the core entities. Write each brief with
+Do not research the angles yourself instead: runs that did covered about half
+the core entities. Write each brief with
 `brief.py`, then copy the text it prints into the subagent's prompt, word for
 word, as the whole prompt. The prompt is text, not a shell: `$(cat file)` or a
 file path reaches the subagent as those characters, not as the brief.
@@ -238,8 +238,8 @@ python3 ${CLAUDE_SKILL_DIR}/scripts/brief.py --angle "what does the incumbent ch
 fills the template in [subagent-brief.md](./reference/subagent-brief.md), which
 also says why each line is there, with the date, the angle and the real path to
 `fetch.py`. **Never retype or summarise a brief.** A subagent has zero context,
-and a paraphrased brief loses the command that keeps page text: on 2026-09-24
-one did, and 103 subagent fetches reached the log with nothing to check. Then:
+and a paraphrased brief loses the command that keeps page text, so nothing the
+subagent fetches can be checked. Then:
 
 - **Choose the model by the shape of the angle.** Snippet gathering and pinning
   one known figure run fine on a cheap model; pass it explicitly. Rebuilding a
@@ -278,9 +278,9 @@ one did, and 103 subagent fetches reached the log with nothing to check. Then:
   gate fails a report that leaves one out. **An entity enters the answer only
   once its own page confirms it is the kind of thing asked about** - a bank
   with a public sandbox, a flat-pack kit that fits the van. Anything you are
-  unsure of goes under Found, not researched, never in the matrix: graded on
-  29 Sep 2026, runs that put e-money firms in a banks table made seven scope
-  errors in three reports. Subagents set aside what is plainly out of scope
+  unsure of goes under Found, not researched, never in the matrix: a row that
+  is out of scope (an e-money firm in a banks table) reads as part of the
+  answer. Subagents set aside what is plainly out of scope
   themselves, with a reason; `ledger.py status` lists those, so read the list
   and research any that is wrongly there.
 - **Subagents use the free rungs only.** A page one returns as blocked is yours
@@ -333,7 +333,7 @@ A finding that has only been supported has not been tested.
 
 ### 5. Write
 
-**brief** (quick, and standard when the question is small): 800 to 2,500 words,
+**brief** (quick, and standard when the question is small): a short findings memo,
 from [brief_template.md](./templates/brief_template.md). **report** (deep, and
 standard when the question warrants it): no word target - stop when the question
 is answered - from [report_template.md](./templates/report_template.md).
@@ -397,7 +397,6 @@ foot of [report_template.md](./templates/report_template.md):
 
 **Then read the draft against itself** with the six questions in
 [methodology.md](./reference/methodology.md#read-the-finished-draft-against-itself).
-Find at least three issues, or read it again.
 
 ### 6. Finish
 

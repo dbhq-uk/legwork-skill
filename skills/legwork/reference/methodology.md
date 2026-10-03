@@ -271,8 +271,7 @@ gate:
    posting, not proof of delivery, was what the law required, and never
    searched for a provider selling proof of posting. One existed.
 
-**Find at least three issues, or read it again.** A pass that finds nothing on a
-document this size has almost always not been run. Fix what you find. Where an
-issue is real but cannot be fixed within the run, name it in Limitations.
+Fix what you find. Where an issue is real but cannot be fixed within the run,
+name it in Limitations.
 
 Then finish the run: steps 6 and 7 in `SKILL.md`.

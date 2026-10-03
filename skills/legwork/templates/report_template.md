@@ -30,7 +30,7 @@ shape at the bottom of this file.
 
 ## Executive Summary
 
-[200-400 words. The answer, what it rests on, and what would overturn it. Someone who
+[The answer, what it rests on, and what would overturn it. Someone who
 reads only this section should be able to act. Load-bearing citations included [1][2];
 this is a summary of evidence, not a preamble to it.]
 

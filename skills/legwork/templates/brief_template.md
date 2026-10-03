@@ -4,7 +4,7 @@
 BRIEF FORMAT - the default deliverable for quick, and for standard when the question
 is small.
 
-WHAT THIS IS: a findings memo, 800-2,500 words. It answers the question and shows its
+WHAT THIS IS: a findings memo, as long as the answer needs. It answers the question and shows its
 receipts. It is NOT a shrunken formal report: it drops the Executive Summary /
 Introduction scaffolding entirely, because at this length the scaffolding IS the
 content.
@@ -58,7 +58,7 @@ support a confident answer, say that here rather than burying it in Limitations.
 English: "the vendor's own pricing page, plus two independent user reports from separate
 searches", or "three articles that all cite the same estimate"]
 
-[150-400 words of prose. Lead with the specific claim, then the evidence that supports
+[Prose. Lead with the specific claim, then the evidence that supports
 it. Exact numbers, embedded in sentences: "throughput fell 34% above 500 concurrent
 connections [3]" - not "performance degraded significantly". Every factual sentence
 gets its [N] in the same sentence.
@@ -88,7 +88,7 @@ caveats paragraph at the end.]
 
 ## So What
 
-[200-500 words. The part the reader actually acts on.
+[The part the reader actually acts on.
 
 - What follows from the findings for the reader's specific situation?
 - What should they do, and what would change that recommendation?

@@ -160,6 +160,17 @@ def test_a_document_that_is_not_a_report_is_ignored(tmp_path):
     assert result.stdout.strip() == ''
 
 
+def test_a_heading_that_only_starts_like_a_marker_is_ignored(tmp_path):
+    """A document of another kind can use "Findings" in a longer heading. Only
+    the legwork headings themselves, as whole lines, mark a run."""
+    folder = tmp_path / 'docs' / 'research' / 'Prompt_Audit_20261003'
+    folder.mkdir(parents=True)
+    (folder / 'Prompt_Audit_20261003.md').write_text(
+        '# Audit\n\n## Findings - project files\n\nA table.\n', encoding='utf-8')
+    result = run_hook(tmp_path)
+    assert result.stdout.strip() == ''
+
+
 def test_an_old_report_is_not_this_session_s_work(tmp_path):
     folder = build_run(tmp_path, 'Ancient_Research_20250101', FAILING)
     old = folder / 'Ancient_Research_20250101.md'

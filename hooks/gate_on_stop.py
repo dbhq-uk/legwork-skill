@@ -39,10 +39,13 @@ import time
 # being wrong is one extra gate run rather than a missed one.
 RECENT_SECONDS = 6 * 60 * 60
 
-# A file only looks like a legwork run if it carries one of these. Without this
-# the hook would gate every markdown file under the output base, including notes
-# and supporting documents that were never meant to be reports.
-MARKERS = ('## Findings', '## Could not answer', '### Finding 1')
+# A file only looks like a legwork run if it carries one of these headings as a
+# whole line. Without this the hook would gate every markdown file under the
+# output base, including notes and supporting documents that were never meant to
+# be reports. A substring match was too loose: an audit headed "## Findings -
+# project files" was gated as a run and told to grow a bibliography it had no
+# sources for.
+MARKERS = re.compile(r'^(## Findings|## Could not answer|### Finding 1:.*)\s*$', re.M)
 
 
 def skill_dir():
@@ -150,7 +153,7 @@ def recent_reports(base, now):
                     head = handle.read(20000)
             except OSError:
                 continue
-            if not any(marker in head for marker in MARKERS):
+            if not MARKERS.search(head):
                 continue
             if not is_session_work(path, now):
                 continue

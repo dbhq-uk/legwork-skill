@@ -112,8 +112,8 @@ Two ladders, free rungs first.
 
 | Situation | Provider |
 |-----------|----------|
-| Every angle, 6 to 10 wordings in one call | `search.py`: every wording to Bright Data Google in parallel, and the angle to Exa Answer once. Leads are ranked, never filtered, and every one is reachable with `--more` |
-| Every angle, two or three of the wordings | `WebSearch` (free), which finds pages Bright Data does not |
+| Every angle, the wordings `SKILL.md` step 3 asks for, in one call | `search.py`: every wording to Bright Data Google in parallel, and the angle to Exa Answer once. Leads are ranked, never filtered, and every one is reachable with `--more` |
+| Every angle, the wordings `SKILL.md` step 3 also sends to it | `WebSearch` (free), which finds pages Bright Data does not |
 | No search provider available (`search.py` exits 4) | `WebSearch` for every wording |
 | The answer is a record a platform holds - a thread, a package, a repository, a dated news item, a vendor's changelog | `platforms.py` (free, keyless) |
 | Thin after the wordings, or geo-specific | Bright Data SERP on a second engine, with `--country` and `--language` |

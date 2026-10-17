@@ -133,6 +133,7 @@ jobs:
           expect_fail tests/fixtures/undated_evidence.md   "finding whose age cannot be judged"
           expect_fail tests/fixtures/concentrated.md       "run resting almost entirely on one party"
           expect_fail tests/fixtures/snippet_only.md       "cites pages it only ever saw in a search result" brief
+          expect_fail tests/fixtures/own_site_missing.md   "a matrix row citing no opened page on its entity's own site"
 
       - name: Full run lifecycle (log -> score -> group -> gate)
         working-directory: skills/legwork

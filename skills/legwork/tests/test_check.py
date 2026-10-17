@@ -573,3 +573,10 @@ def test_webfetch_rows_are_not_asked_for_page_text(tmp_path):
     report, tsv = _valid_with_log(tmp_path, 'webfetch', '')
     problems, _ = check.run(report, tsv, 'brief', 'deep')
     assert not any('never checked' in m for m in problems.errors + problems.warnings)
+
+
+def test_the_own_site_fixture_fails_for_that_reason_only():
+    """A MUST-fail fixture is evidence about one check only if it fails for one reason."""
+    problems, _ = run('own_site_missing.md', level='deep')
+    assert len(problems.errors) == 1, problems.errors
+    assert 'own site' in problems.errors[0]

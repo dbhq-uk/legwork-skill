@@ -5,6 +5,7 @@ blank cells; an index nothing checks stays empty, and an index nobody writes to
 is the same as no index at all.
 """
 
+import json
 import os
 
 import check
@@ -151,6 +152,134 @@ def test_snippet_citations_in_prose_stay_a_warning_at_standard(tmp_path):
 
 def messages_of(problems):
     return ' | '.join(problems.errors + problems.warnings)
+
+
+# ---------------------------------------------------------------------------
+# An entity's own site settles it. Graded on 2026-09-27, wide runs got facts
+# wrong where an aggregator or review stood in for the entity's own page; this
+# check is the rebuild, for main, of that branch's fix (b8a90a4).
+# ---------------------------------------------------------------------------
+
+def with_sites(log, sites):
+    """Record own sites in the ledger beside `log`, as log-returns would."""
+    path = os.path.splitext(log)[0] + '.entities.json'
+    data = json.load(open(path, encoding='utf-8'))
+    first = next(iter(data.values()))
+    first['sites'] = {name: list(keys) for name, keys in sites.items()}
+    json.dump(data, open(path, 'w', encoding='utf-8'))
+
+
+def own_site_errors(problems, entity):
+    return [e for e in problems.errors if e.startswith(entity + ':') and 'own site' in e]
+
+
+def test_a_row_citing_no_page_on_its_own_site_fails(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    with_sites(log, {'acme': ['acme.example']})  # Acme cites acme-software.example and contoso
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert own_site_errors(problems, 'Acme'), messages_of(problems)
+
+
+def test_a_row_citing_an_opened_page_on_a_subdomain_of_its_site_passes(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    with_sites(log, {'contoso': ['contoso.example']})  # Contoso cites learn.contoso.example, opened
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert not own_site_errors(problems, 'Contoso'), problems.errors
+
+
+def test_an_own_site_page_seen_only_in_search_does_not_count(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    contoso_seen_only_in_search(log)
+    with_sites(log, {'contoso': ['contoso.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert own_site_errors(problems, 'Contoso'), messages_of(problems)
+
+
+def test_a_row_of_unknowns_is_not_checked(tmp_path):
+    matrix = COMPLETE_MATRIX.replace('| Acme | 30 USD/seat [1] | No [2] |', '| Acme | [unknown] | [unknown] |')
+    report, log = report_with(tmp_path, matrix)
+    with_sites(log, {'acme': ['acme.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert not own_site_errors(problems, 'Acme'), problems.errors
+
+
+def test_a_partly_unknown_row_is_still_checked(tmp_path):
+    matrix = COMPLETE_MATRIX.replace('| Acme | 30 USD/seat [1] | No [2] |', '| Acme | 30 USD/seat [1] | [unknown] |')
+    report, log = report_with(tmp_path, matrix)
+    with_sites(log, {'acme': ['acme.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert own_site_errors(problems, 'Acme'), messages_of(problems)
+
+
+def test_another_entitys_site_does_not_satisfy_the_row(tmp_path):
+    matrix = COMPLETE_MATRIX.replace('| Acme |', '| Acme Analytics |')
+    report, log = report_with(tmp_path, matrix)
+    # Acme Analytics' own site is analytics.example.com; its row cites only Acme Software and Contoso
+    with_sites(log, {'acme analytics': ['analytics.example.com'], 'acme': ['acme-software.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert own_site_errors(problems, 'Acme Analytics'), messages_of(problems)
+
+
+def test_a_formatted_entity_cell_is_still_matched(tmp_path):
+    for index, label in enumerate(('**Acme**', '[Acme](https://acme.example)', 'Acme [1]')):
+        matrix = COMPLETE_MATRIX.replace('| Acme |', '| {} |'.format(label))
+        report, log = report_with(tmp_path, matrix, name='r{}.md'.format(index))
+        with_sites(log, {'acme': ['acme.example']})
+        problems, _ = check.run(report, log, 'report', 'standard')
+        assert [e for e in problems.errors if 'own site' in e], (label, messages_of(problems))
+
+
+def test_an_entity_with_no_recorded_site_is_not_checked(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert not [e for e in problems.errors if 'own site' in e], problems.errors
+
+
+def test_quick_does_not_run_the_own_site_check(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    with_sites(log, {'acme': ['acme.example']})
+    problems, _ = check.run(report, log, 'report', 'quick')
+    assert not [e for e in problems.errors if 'own site' in e], problems.errors
+
+
+def test_the_own_site_check_changes_nothing_without_a_tsv_path():
+    import matrix
+    parsed = matrix.parse_matrix(COMPLETE_MATRIX)
+    problems = check.Problems('standard')
+    check.check_rows_on_own_site(parsed, {}, [], None, problems)
+    assert problems.errors == []
+
+
+def test_a_row_for_a_longer_name_is_not_checked_against_a_shorter_recorded_one(tmp_path):
+    """Exact names only: "Acme Hosting" is not "Acme", so a site recorded for
+    Acme neither fails nor passes Acme Hosting's row."""
+    matrix = COMPLETE_MATRIX.replace('| Acme |', '| Acme Hosting |')
+    report, log = report_with(tmp_path, matrix)
+    with_sites(log, {'acme': ['acme.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert not [e for e in problems.errors if 'own site' in e], problems.errors
+
+
+def test_names_differing_only_in_parentheses_keep_separate_sites(tmp_path):
+    matrix = COMPLETE_MATRIX.replace('| Acme |', '| Acme (UK) |')
+    report, log = report_with(tmp_path, matrix)
+    # Acme (UK)'s own site is acme-software.example, which its row cites and was opened;
+    # Acme (US) has a different site. The UK row must pass on its own site alone.
+    with_sites(log, {'acme (uk)': ['acme-software.example'], 'acme (us)': ['acme-us.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert not own_site_errors(problems, 'Acme (UK)'), problems.errors
+    with_sites(log, {'acme (uk)': ['acme-us.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert own_site_errors(problems, 'Acme (UK)'), messages_of(problems)
+
+
+def test_a_log_with_no_ledger_file_means_no_own_site_check(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    os.remove(os.path.splitext(log)[0] + '.entities.json')
+    import matrix as matrix_module
+    problems = check.Problems('standard')
+    check.check_rows_on_own_site(matrix_module.parse_matrix(COMPLETE_MATRIX), {}, [], log, problems)
+    assert problems.errors == []
 
 
 # ---------------------------------------------------------------------------

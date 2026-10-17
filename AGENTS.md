@@ -54,6 +54,7 @@ python3 scripts/check.py --report tests/fixtures/one_origin.md --level deep     
 python3 scripts/check.py --report tests/fixtures/no_evidence.md --level deep         # MUST fail
 python3 scripts/check.py --report tests/fixtures/undated_evidence.md --level deep    # MUST fail
 python3 scripts/check.py --report tests/fixtures/concentrated.md --level deep        # MUST fail
+python3 scripts/check.py --report tests/fixtures/own_site_missing.md --level deep    # MUST fail
 cd ../.. && claude plugin validate .         # manifest + structure
 bash -n install.sh                           # installer parses
 ```
@@ -74,6 +75,7 @@ The fixtures that MUST fail are the important ones - they exist so the gate is p
 | `undated_evidence.md` | a finding whose age cannot be judged |
 | `concentrated.md` | a run resting almost entirely on one party |
 | `snippet_only.md` | a report citing pages it only ever saw in a search result |
+| `own_site_missing.md` | a matrix row about an entity that cites no page opened on its own site |
 
 A change that makes any of them pass has broken the gate, even if every other test is green.
 

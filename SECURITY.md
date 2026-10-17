@@ -57,6 +57,11 @@ Search queries and the URLs being fetched. The research question itself reaches
 the search provider as a query string. Do not run legwork on a question whose
 wording is itself confidential - the question is the thing most likely to leak.
 
+**When `search.py` runs:** each wording goes to Bright Data as search text, as
+with `bd_search.py`; the angle's text goes to Exa at `api.exa.ai`, only if an
+Exa key is set; and, only if a TypeSafe key is set, each lead's title and
+snippet and the angle go to TypeSafe to order the leads.
+
 **Only if you provide a TypeSafe key** (`TYPESAFE_API_KEY`, or
 `~/.dbhq/legwork/typesafe-api-key`): when `fetch.py --relevant` is used and
 `--find` matched nothing, the text of that page (already public, since it was
@@ -75,14 +80,18 @@ Without the key nothing is sent there.
   output folder, and the fetch log stores only the quote and the numeric
   tokens. Nothing deletes it for you - clear `$TMPDIR/legwork/` if the pages
   themselves are sensitive
+- Writes one search record per `search.py` call beside the run's fetch log
+  (`<run>.searches/`), or under `/tmp/legwork/searches/` without one: the
+  wordings, every provider's results and Exa's answer
 - Stores no cache of fetched pages between runs
 
 ### Credentials
 
-Only a Bright Data API key and a TypeSafe API key, and each only if you choose
-to use that option. Both are read from the environment; the TypeSafe key may
-instead sit alone in `~/.dbhq/legwork/typesafe-api-key`, which you create (keep
-it mode 600). The skill writes neither to disk.
+Only a Bright Data API key, an Exa API key and a TypeSafe API key, and each only
+if you choose to use that option. Each is read from the environment; the Exa
+and TypeSafe keys may instead sit alone in `~/.dbhq/legwork/exa-api-key` and
+`~/.dbhq/legwork/typesafe-api-key`, which you create (keep them mode 600). The
+skill writes none of them to disk.
 
 ## Evidence handling
 

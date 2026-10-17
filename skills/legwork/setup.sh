@@ -45,6 +45,22 @@ echo "Python: $(python3 -V 2>&1) (standard library only, no packages required)"
 
 chmod +x "$SKILL_DIR/scripts/"*.py 2>/dev/null || true
 
+# --- Optional keys: Exa (search.py) and TypeSafe (Jev ranking) ---
+# Never prompted for: each is optional, and setup must succeed without either.
+report_key() {
+    local label="$1" var="$2" file="$3"
+    if [ -n "${!var:-}" ]; then
+        echo "$label: key set in \$$var"
+    elif [ -s "$file" ]; then
+        echo "$label: key found in $file"
+    else
+        echo "$label: no key (optional). To enable: save the key alone in $file (chmod 600)"
+    fi
+}
+echo ""
+report_key "Exa (search.py)" EXA_API_KEY "$HOME/.dbhq/legwork/exa-api-key"
+report_key "TypeSafe Jev (ranking)" TYPESAFE_API_KEY "$HOME/.dbhq/legwork/typesafe-api-key"
+
 # --- Bright Data CLI (optional fallback) ---
 find_cli() { command -v brightdata 2>/dev/null || command -v bdata 2>/dev/null; }
 CLI_BIN=$(find_cli || true)

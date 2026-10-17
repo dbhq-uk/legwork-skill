@@ -112,9 +112,11 @@ Two ladders, free rungs first.
 
 | Situation | Provider |
 |-----------|----------|
-| Every angle, three query variants | `WebSearch` (free) |
+| Every angle, 6 to 10 wordings in one call | `search.py`: every wording to Bright Data Google in parallel, and the angle to Exa Answer once. Leads are ranked, never filtered, and every one is reachable with `--more` |
+| Every angle, two or three of the wordings | `WebSearch` (free), which finds pages Bright Data does not |
+| No search provider available (`search.py` exits 4) | `WebSearch` for every wording |
 | The answer is a record a platform holds - a thread, a package, a repository, a dated news item, a vendor's changelog | `platforms.py` (free, keyless) |
-| Thin after three variants, or geo-specific | Bright Data SERP on a second engine, with `--country` and `--language` |
+| Thin after the wordings, or geo-specific | Bright Data SERP on a second engine, with `--country` and `--language` |
 | Two engines still thin | Bright Data `-m discover`, intent-ranked |
 
 **To open a page:**
@@ -135,6 +137,12 @@ country and language control, any site's own RSS or Atom feed, and the Wayback
 Machine. Every row carries the platform's own numbers - points, weekly
 downloads, stars, answer counts - which is the evidence a search snippet cannot
 give you.
+
+**Optional keys.** `search.py` runs on whatever is available. Bright Data uses
+the CLI's own login. Exa reads `EXA_API_KEY`, or a file holding only the key at
+`~/.dbhq/legwork/exa-api-key` (mode 600); without it, `search.py` runs on
+Google alone and says `exa: no key`. Exa's written answer is shown, marked as
+unverified and not a source; only its cited pages, once opened, can be cited.
 
 On any failure the wrapper emits JSON to stderr and exits non-zero, and the skill falls back to the built-ins. Auth and quota failures map to exit code `2`, so you are told to re-authenticate rather than left silently degraded.
 
@@ -175,6 +183,7 @@ All standard library only, Python 3.9+.
 |--------|---------|
 | `fetch.py "<url>" --find TERM [--relevant Q]` | Open a page directly and keep its text; reads the publication date; exits 3 on a block or a client-rendered shell. On a miss it prints the page's headings, and with a TypeSafe key the passages Jev ranks most relevant. `--saved FILE` searches a page already fetched |
 | `platforms.py list \| search --on X` | Ten free platform-native sources, returning records rather than pages about them |
+| `search.py --angle "..." --wording "..." [...] --tsv F` | Many wordings in one call: Bright Data Google for each, Exa Answer for the angle. Leads are ranked, never dropped, and written to a search record; exits 4 when no provider is available |
 | `brief.py --angle "..." --effort narrow\|comparison` | The retrieval subagent's brief, filled from the template with the date, the angle and real script paths, so it is passed rather than retyped |
 | `sources.py kinds \| log \| log-returns \| receipt \| score \| stale \| resume` | The source-kind vocabulary, the fetch log, logging a subagent's whole reply with its page text, the retrieval receipt, fitness scoring per claim kind, staleness, resume |
 | `independence.py groups \| check \| portfolio` | Collapse sources into independent voices; angle-aware corroboration; run-wide concentration |

@@ -7,10 +7,10 @@ an optional timeout on `fetch.py`'s Jev request;
 the gather step in `SKILL.md`; the subagent brief and `brief.py`; entity sites in
 `sources.py` and `ledger.py`; one gate check in `check.py`; `SECURITY.md`,
 `README.md`, `AGENTS.md`, `setup.sh`; tests; one eval.
-**Verified by:** gpt-6-astra, blind, in five passes (runs
+**Verified by:** gpt-6-astra, blind, in six passes (runs
 `20261017T105734Z-17046b`, `20261017T111043Z-915654`,
-`20261017T111655Z-481cad`, `20261017T112324Z-4420fb` and
-`20261017T113100Z-bf0d16`); every finding is resolved in this version (see
+`20261017T111655Z-481cad`, `20261017T112324Z-4420fb`,
+`20261017T113100Z-bf0d16` and `20261017T113657Z-c9286f`); every finding is resolved in this version (see
 [Review](#review)).
 **Evidence:** the DBHQ research run `Wide_Search_Service_Research_20261016` in
 `dbhq-uk/dbhq` (`docs/research/`), and this repo's `evals/runs/2026-09-2*`.
@@ -202,8 +202,12 @@ No failure of one provider or one wording stops the call.
 | No Jev key, or Jev fails | RRF only; status line says `jev: off` or `jev: failed (<reason>)` |
 | No `--tsv` and no `--out-dir` | Search record written under `/tmp/legwork/searches/` |
 
-**The deadline contract.** `--time-limit` is wall-clock from start to printed
-output and covers searching, retries and Jev. Python cannot kill a thread, so
+**The deadline contract.** `--time-limit` is wall-clock from start and bounds
+every network call: searching, retries and Jev. After it the command does only
+local work - ranking at most a few hundred leads, writing one JSON file and
+printing - with no network and no waiting on another process. That work is not
+time-bounded, because nothing can bound a write to a terminal that has stopped
+reading; it is measured, and the status line reports the total seconds. Python cannot kill a thread, so
 the guarantee rests on two things: every blocking call has a timeout no longer
 than the time left, and nothing the main thread waits on can outlive the
 deadline.
@@ -235,9 +239,10 @@ deadline.
   against the same point.
 
 Tests patch `subprocess.Popen` and `os.killpg` for these calls. One drives a
-`bd_search.py` that never returns and asserts the whole command, output
-included, finishes within the limit, with `killpg` called for its process
-group; another does the same for an Exa call that never returns, and a third
+`bd_search.py` that never returns and asserts the command, output
+excluded, finishes its network phase within the limit, and the whole
+command within the limit plus 1 second on the test machine, with `killpg`
+called for its process group; another does the same for an Exa call that never returns, and a third
 for a Jev batch that never returns.
 
 Exit codes: 0 when at least one provider call succeeded, even with no results
@@ -386,10 +391,12 @@ and "Acme (US)" stay apart. Each value is a list of distinct
 `party_of` reduces `analytics.example.com` and `hosting.example.com` to one
 party, which is right for counting independent voices and wrong for "is this
 the entity's own site". `site_key` prefixes `https://` when the site has no
-scheme, then returns the host lowercased without `www.`; for a host
-`party_of` treats as a path tenant (a code host such as `github.com/acme`), it
-returns `party_of`'s value, which keeps the tenant. A site that gives an empty
-key is not stored. `party_of` itself is unchanged; a later round can add a site but never removes one. Ledger
+scheme, then returns the host lowercased without `www.`. For a host that
+`party_of` treats as a path tenant (`independence.PATH_TENANT_HOSTS`, such as
+`github.com`, `pypi.org` or `npmjs.com`) it returns the host plus the site's
+**whole** path, lowercased, without a trailing slash - not `party_of`'s value,
+which keeps one segment and so reduces every PyPI project to
+`pypi.org/project`. A site that gives an empty key is not stored. `party_of` itself is unchanged; a later round can add a site but never removes one. Ledger
 files without `sites` load as before. Nothing about saturation changes: a site
 never makes an entity new, and `entities` is still keyed by `distinctive()`.
 
@@ -422,7 +429,10 @@ URLs both **belongs to** one of that entity's recorded sites **and** is in
 a host site when its host, lowercased without `www.`, equals the site or ends
 with `.` plus the site (so `docs.acme.example` belongs to `acme.example`, and
 `hosting.example.com` does not belong to `analytics.example.com`); it belongs
-to a tenant site when its `party_of` equals the site. An
+to a path-tenant site when its host matches and its path, split on `/`, starts
+with every segment of the site's path (so `github.com/acme/repo` belongs to
+`github.com/acme`, and `pypi.org/project/beta` does not belong to
+`pypi.org/project/alpha`). An
 own-site URL seen only in search results does not count. The message is worded
 as in `b8a90a4`: cite a page you opened on its own site, or mark the cells
 `[unknown]`. An entity with no recorded
@@ -480,7 +490,8 @@ Hermetic, as `AGENTS.md` requires: `subprocess.run`, `subprocess.Popen`,
   without `tsv_path`, means no check; a bare-domain site matches a cited page
   on it and on its subdomains; `analytics.example.com` and
   `hosting.example.com` stay separate sites and a row for one citing only the
-  other fails; `github.com/acme` and `github.com/other` stay separate; a row
+  other fails; `github.com/acme` and `github.com/other` stay separate, and so do
+`pypi.org/project/alpha` and `pypi.org/project/beta`, and two npm packages; a row
   labelled `**Acme**` or `[Acme](https://acme.example)` is checked against a
   recorded "Acme"; and the check runs end to end through
   `check.run()` on a report, a log and a ledger, at standard, and not at quick. A new must-fail fixture, `own_site_missing.md`, fails for that
@@ -607,3 +618,14 @@ design level, and found two more in C9, each resolved:
 | `party_of` merges distinct sites under one registrable domain, so one entity's site could pass another's row | A separate `site_key` keeps the host (or tenant); a cited URL belongs to a site by host or subdomain; `party_of` unchanged ([L](#l-an-entitys-own-site-settles-it)) |
 | Markdown in a matrix entity cell (`**Acme**`, a link) stopped the name matching | `full_name` removes Markdown presentation first ([L](#l-an-entitys-own-site-settles-it)) |
 | The deadline test allowed two seconds over the limit | Searching stops 3 seconds early; the test asserts the whole command finishes within the limit ([D](#d-failures)) |
+
+The sixth pass (run `20261017T113657Z-c9286f`, C4 and C9 only, major and
+blocker findings only) found two more, each resolved:
+
+| Finding | Resolution |
+|---|---|
+| No timeout can bound ranking, writing and printing, so "the whole command within the limit" was a promise nothing could keep | The limit bounds every network call; the local work after it is measured and reported, not promised ([D](#d-failures)) |
+| `party_of` keeps one path segment on `pypi.org` and `npmjs.com`, so two packages shared one tenant site | Path-tenant sites keep their whole path and match by segment prefix ([L](#l-an-entitys-own-site-settles-it)) |
+
+After six passes the findings had narrowed from design to edge cases in one
+check; the remaining risk is carried by that check's tests and by the eval.

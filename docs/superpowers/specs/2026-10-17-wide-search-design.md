@@ -6,9 +6,10 @@
 the gather step in `SKILL.md`; the subagent brief and `brief.py`; entity sites in
 `sources.py` and `ledger.py`; one gate check in `check.py`; `SECURITY.md`,
 `README.md`, `AGENTS.md`, `setup.sh`; tests; one eval.
-**Verified by:** gpt-6-astra, blind, in two passes (runs
-`20261017T105734Z-17046b` and `20261017T111043Z-915654`); every finding is
-resolved in this version (see [Review](#review)).
+**Verified by:** gpt-6-astra, blind, in three passes (runs
+`20261017T105734Z-17046b`, `20261017T111043Z-915654` and
+`20261017T111655Z-481cad`); every finding is resolved in this version (see
+[Review](#review)).
 **Evidence:** the DBHQ research run `Wide_Search_Service_Research_20261016` in
 `dbhq-uk/dbhq` (`docs/research/`), and this repo's `evals/runs/2026-09-2*`.
 
@@ -174,7 +175,7 @@ new function and an entry in one table; nothing else changes.
 
 | Provider | How | Key |
 |---|---|---|
-| `google` | `bd_search.py "<wording>" -m general --engine google --country C --language L -c 10` | the Bright Data CLI's own login |
+| `google` | `bd_search.py "<wording>" -m general --engine google --country C --language L -c 10`. Its stdout is JSON with `results`, each carrying `rank`, `title`, `url`, `snippet` and `date`; exit 2 means auth or quota, any other non-zero exit a failure | the Bright Data CLI's own login |
 | `bing` | the same with `--engine bing`; only with `--engine bing` or `both` | the same |
 | `exa` | `POST https://api.exa.ai/answer`, body `{"query": angle, "text": true}`, header `x-api-key`, a `User-Agent` set (Cloudflare refused Python's default with 403 on 16 Oct). Citations become results in order; `text` becomes the snippet, first 600 characters, whitespace collapsed; `answer` is kept separately | `EXA_API_KEY`, else `~/.dbhq/legwork/exa-api-key` |
 | Jev | ranking only, as `fetch.py` | as `fetch.py` |
@@ -189,12 +190,26 @@ No failure of one provider or one wording stops the call.
 | Exa HTTP error, timeout or bad JSON (out of credit, rate limit, refusal) | Exa skipped for this call; the reason (status code and first 120 characters of the body) printed and recorded |
 | Bright Data CLI missing | Google skipped; `google: not installed` |
 | `bd_search.py` exit 2 (auth or quota) on a wording | That wording recorded as refused; the others carry on |
-| Any other `bd_search.py` failure or empty result | Retried once; then recorded as failed |
-| A Google call over 60 seconds | Stopped and recorded as timed out |
-| The call over `--time-limit` (default 150 s) | Returns what has finished; lists the wordings and providers that did not |
+| `bd_search.py` exits non-zero (not 2), or its stdout is not JSON | Retried once; then recorded as failed |
+| A call succeeds with zero results | A success with no leads. Not retried, not a failure; counts towards exit 0 |
+| A Google call over 60 seconds | Its subprocess is killed (`subprocess.run(..., timeout=60)`); recorded as timed out, and retried once only if the deadline allows |
+| The whole call reaches `--time-limit` (default 150 s) | See the deadline contract below |
 | Every provider call failed, was refused or was unavailable | Prints `search: no search provider available - use WebSearch` and exits 4 |
 | No Jev key, or Jev fails | RRF only; status line says `jev: off` or `jev: failed (<reason>)` |
 | No `--tsv` and no `--out-dir` | Search record written under `/tmp/legwork/searches/` |
+
+**The deadline contract.** `--time-limit` is wall-clock from start to printed
+output and covers searching, retries and Jev. Searches run in a
+`ThreadPoolExecutor` used without a `with` block. The main thread waits with
+`concurrent.futures.wait(..., timeout=remaining)`. At the deadline it calls
+`shutdown(wait=False, cancel_futures=True)`, so queued work never starts, and
+kills every subprocess still running (each one started through a small
+wrapper that records its `Popen` handle). Each unfinished wording or provider
+is recorded as `deadline`. Jev runs only if at least 20 seconds remain, with a
+timeout of the time left minus 5 seconds; otherwise ranking is RRF alone and
+the status line says `jev: skipped (time)`. A test drives a provider that
+never returns and asserts the call ends within the limit plus 2 seconds, with
+the subprocess killed.
 
 Exit codes: 0 when at least one provider call succeeded, even with no results
 (the status line then says `0 leads`); 4 when every provider call failed, was
@@ -290,8 +305,10 @@ Each rule changes in one place (`AGENTS.md`, "Each rule is stated once").
   `{WORDINGS_RULE}` marker followed by the exact command,
   `python3 {SKILL_DIR}/scripts/search.py --angle "<your angle>" --wording "..." [...] --tsv "{TSV}"`,
   with no restatement of the rule. "What to return" adds `serp` to the `via`
-  values (a lead from `search.py` you did not open) and lets an entity be an
-  object with its own site ([L](#l-an-entitys-own-site-settles-it)). The effort
+  values and rewrites the transport sentence so the two cannot overlap: `serp`
+  for a `search.py` lead you did not open, `websearch` for a WebSearch result
+  you did not open. It also lets an entity be an object with its own site
+  ([L](#l-an-entitys-own-site-settles-it)). The effort
   line reads `{n} to {m} wordings.` The return-only rule stays the last line.
 - **`scripts/brief.py`.** `BUDGET` becomes `'{n} to {m} wordings.'`; the filled
   line reads `'{} to {} wordings.'`. `DEFAULT_SEARCHES` becomes
@@ -328,29 +345,38 @@ object entity it takes `name`. A new `sources.parse_entity_sites(text)` returns
 `(angle, name, site)` for object entities that carry a site. `log-returns`
 passes those to `ledger.record_round`, which gains an optional `sites=()`
 argument of `(name, site)` pairs. The ledger keeps them under
-`entry['sites'][full]`, where `full` is the entity's whole name lowercased with
-whitespace collapsed and anything from the first `(` dropped - **not** the
-`distinctive()` key, which can merge two different entities sharing a first
-word ("Acme Analytics", "Acme Hosting"). Each value is a list of distinct
+`entry['sites'][full]`, where `full` is `ledger.full_name(name)`, a new
+function: the whole name, lowercased, whitespace collapsed, nothing removed.
+It is **not** the `distinctive()` key, which can merge different entities
+("Acme Analytics", "Acme Hosting"), and it keeps parentheses, so "Acme (UK)"
+and "Acme (US)" stay apart. Each value is a list of distinct
 `party_of` results; a later round can add a site but never removes one. Ledger
 files without `sites` load as before. Nothing about saturation changes: a site
 never makes an entity new, and `entities` is still keyed by `distinctive()`.
 
-**Checked.** A new `check.py` function, `check_rows_on_own_site`, run from
-`check_matrix_section` beside the existing opened-citation check, ported from
-`b8a90a4`. A row is checked only when all of these hold:
+**Checked.** A new `check.py` function, `check_rows_on_own_site(parsed,
+entries, rows, tsv_path, problems)`, ported from `b8a90a4`. It is reached
+through `check_matrix_section`, which gains a keyword argument
+`tsv_path=None`; `run()`, its only caller, passes the `tsv_path` it already
+holds, and the ledger is read from `ledger.path(tsv_path)` - the run's real
+log, never a filename guessed from the report. Existing calls without
+`tsv_path` skip the check. A row is checked only when all of these hold:
 
-- its entity cell, normalised the same way as `full`, **equals** a key in some
-  angle's `sites`, or contains that key as a whole phrase at word boundaries
-  (so "Acme Analytics Ltd" matches `acme analytics`, and "Acme Hosting" does
-  not). No first-word matching;
+- `ledger.full_name()` of its entity cell **equals** a key in some angle's
+  `sites`. Exact match only: no containment, no first-word matching. A row
+  named differently from the recorded entity is not checked, so the check can
+  miss a row but never passes one on another entity's site. If the same key
+  is in several angles, their site lists are combined;
 - at least one of its cells is not `[unknown]` (`b8a90a4` skipped a row with
   any `[unknown]` cell; that exemption is dropped);
 - it cites at least one bibliography entry.
 
-A checked row fails as a structural error when none of its cited URLs resolves
-by `party_of` to one of that entity's recorded sites, worded as in `b8a90a4`:
-cite its own page, or mark the cells `[unknown]`. An entity with no recorded
+A checked row fails as a structural error unless at least one of its cited
+URLs both resolves by `party_of` to one of that entity's recorded sites **and**
+is in `opened_urls(rows)`, the existing set of pages actually read. An
+own-site URL seen only in search results does not count. The message is worded
+as in `b8a90a4`: cite a page you opened on its own site, or mark the cells
+`[unknown]`. An entity with no recorded
 site is not checked. With no ledger, the check does nothing. It changes no
 band, no count and no other check.
 
@@ -367,7 +393,8 @@ network. New `tests/test_search.py`, plus additions to `test_bd_search.py` and
   wordings; the longest snippet wins.
 - **Rank:** RRF orders a lead found by three lists above one found once; Jev
   scores average in when a key is present; Jev absent or raising leaves RRF.
-- **Every row of the failure table**, including exit 4 and the time limit.
+- **Every row of the failure table**, including a zero-result success (exit 0),
+  exit 4, and the deadline contract with a provider that never returns.
 - **Output:** the status line; `--show` caps the list and the `+N more` line
   names the record; Exa's heading and 1,500-character cap; the answer printed
   last.
@@ -392,8 +419,11 @@ network. New `tests/test_search.py`, plus additions to `test_bd_search.py` and
 - **The own-site check:** a row citing only an aggregator for an entity with a
   recorded site fails; the same row citing one page on the site passes; an
   all-`[unknown]` row passes; a partly-`[unknown]` row is still checked; a row
-  for "Acme Analytics" citing only Acme Hosting's site fails; an entity with no
-  site is not checked; no ledger means no check. A new must-fail fixture, `own_site_missing.md`, fails for that
+  for "Acme Analytics" citing only Acme Hosting's site fails; a row for "Acme
+  Hosting" is not checked against a recorded "Acme"; "Acme (UK)" and "Acme
+  (US)" keep separate sites; a row whose only own-site citation was never
+  opened fails; an entity with no site is not checked; no ledger, or a call
+  without `tsv_path`, means no check. A new must-fail fixture, `own_site_missing.md`, fails for that
   reason only, and joins the `AGENTS.md` table.
 
 **Live check before the eval:** one real call on a sample angle with both
@@ -482,3 +512,15 @@ confirmed the five resolutions and found three more, each resolved:
 | `parse_entities` returning triples would break three unpackings in `log-returns` | `parse_entities` unchanged; a separate `parse_entity_sites` and an optional `sites` argument ([L](#l-an-entitys-own-site-settles-it)) |
 | Sites keyed by `distinctive()` let one entity's site pass another's row | Keyed and matched on the full normalised name, with a collision test ([L](#l-an-entitys-own-site-settles-it)) |
 | The ladder repeated the "two or three wordings" number | The ladder points at the marked rule ([J](#j-changes-to-the-skills-text)) |
+
+The third pass (run `20261017T111655Z-481cad`) confirmed the second pass's
+fixes and found six more, each resolved:
+
+| Finding | Resolution |
+|---|---|
+| `serp` and the existing `websearch` instruction overlapped | The transport sentence is rewritten so each tool has one value ([J](#j-changes-to-the-skills-text)) |
+| The own-site check had no route to the run's ledger | `check_matrix_section(..., tsv_path=None)`, passed by `run()` ([L](#l-an-entitys-own-site-settles-it)) |
+| An empty result was both a failure and a success | Zero results is a success; only a non-zero exit or bad JSON is a failure ([D](#d-failures)) |
+| The time limit had no cancellation contract | The deadline contract, with a never-returning provider test ([D](#d-failures)) |
+| Containment matching and dropped parentheses still let entities collide | Exact match on the full name, parentheses kept ([L](#l-an-entitys-own-site-settles-it)) |
+| An unopened own-site URL could satisfy the check | The own-site citation must also be in `opened_urls(rows)` ([L](#l-an-entitys-own-site-settles-it)) |

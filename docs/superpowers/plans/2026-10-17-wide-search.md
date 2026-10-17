@@ -31,7 +31,7 @@ After Task 8, Opus and Astra each review the whole branch (`git diff origin/main
 - Tests are hermetic: no network, ever. Patch `subprocess.run`, `subprocess.Popen`, `os.killpg` and `urlopen`. A test that needs a socket is a defect.
 - British English in prose and messages. Plain hyphens only: no em dashes, no en dashes (CI fails them).
 - `party_of` in `independence.py` is not changed by any task.
-- No task writes search leads into the run's `.tsv`.
+- `search.py` writes nothing to the run's `.tsv`: its leads go only to its own search record. A lead a subagent relied on and returns with `"via": "serp"` is logged by `sources.py log-returns` as an unopened search result (spec G); that is intended.
 - The subagent brief's last line stays `first object is discarded.`
 - Each rule is stated once (`AGENTS.md`): the wording rule lives only in `SKILL.md` between `<!-- wordings-rule -->` and `<!-- /wordings-rule -->`.
 - Commit after every task with a conventional-commit message (`feat:`, `fix:`, `test:`, `docs:`), ending with `Co-Authored-By: Claude <noreply@anthropic.com>`.

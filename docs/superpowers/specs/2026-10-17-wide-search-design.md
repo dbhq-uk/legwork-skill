@@ -3,12 +3,13 @@
 **Date:** 2026-10-17
 **Status:** design, approved section by section by Dan on 17 Oct 2026. Not built.
 **Scope:** a new `skills/legwork/scripts/search.py`; two fixes in `bd_search.py`;
+an optional timeout on `fetch.py`'s Jev request;
 the gather step in `SKILL.md`; the subagent brief and `brief.py`; entity sites in
 `sources.py` and `ledger.py`; one gate check in `check.py`; `SECURITY.md`,
 `README.md`, `AGENTS.md`, `setup.sh`; tests; one eval.
-**Verified by:** gpt-6-astra, blind, in three passes (runs
-`20261017T105734Z-17046b`, `20261017T111043Z-915654` and
-`20261017T111655Z-481cad`); every finding is resolved in this version (see
+**Verified by:** gpt-6-astra, blind, in four passes (runs
+`20261017T105734Z-17046b`, `20261017T111043Z-915654`,
+`20261017T111655Z-481cad` and `20261017T112324Z-4420fb`); every finding is resolved in this version (see
 [Review](#review)).
 **Evidence:** the DBHQ research run `Wide_Search_Service_Research_20261016` in
 `dbhq-uk/dbhq` (`docs/research/`), and this repo's `evals/runs/2026-09-2*`.
@@ -153,8 +154,9 @@ every script here. In one call:
    keeps every wording number and provider that found it, its best rank in each
    list, the longest snippet and the first title.
 3. **Rank.** Reciprocal rank fusion, `sum(1 / (60 + rank))` over every list the
-   lead appears in, each wording's Google list and Exa's citation order counted
-   as separate lists. With a Jev key, each lead's `title + snippet` is scored
+   lead appears in. There is one list per provider per wording - wording 3 on
+   Google and wording 3 on Bing are two lists - and one for Exa's citations in
+   the order Exa gave them. With a Jev key, each lead's `title + snippet` is scored
    against `--angle` on `fetch.py`'s four levels, in batches of 30, and the
    final score is the mean of RRF scaled to the top lead and the Jev expected
    score. The 27 Sep offline test found the mean of a lexical and a Jev score
@@ -191,7 +193,8 @@ No failure of one provider or one wording stops the call.
 | Bright Data CLI missing | Google skipped; `google: not installed` |
 | `bd_search.py` exit 2 (auth or quota) on a wording | That wording recorded as refused; the others carry on |
 | `bd_search.py` exits non-zero (not 2), or its stdout is not JSON | Retried once; then recorded as failed |
-| A call succeeds with zero results | A success with no leads. Not retried, not a failure; counts towards exit 0 |
+| `bd_search.py` exits 1 with `SERP returned zero organic results` in its stderr | A success with zero results: `bd_search.py` reports an empty SERP that way, and its exit stays as it is because subagents calling it directly rely on it to fall down the ladder. Not retried, not a failure; counts towards exit 0 |
+| Exa returns no citations | A success with zero results, as above |
 | A Google call over 60 seconds | Its subprocess is killed by the wrapper below; recorded as timed out, and retried once only if the deadline allows |
 | The whole call reaches `--time-limit` (default 150 s) | See the deadline contract below |
 | Every provider call failed, was refused or was unavailable | Prints `search: no search provider available - use WebSearch` and exits 4 |
@@ -199,19 +202,37 @@ No failure of one provider or one wording stops the call.
 | No `--tsv` and no `--out-dir` | Search record written under `/tmp/legwork/searches/` |
 
 **The deadline contract.** `--time-limit` is wall-clock from start to printed
-output and covers searching, retries and Jev. Searches run in a
-`ThreadPoolExecutor` used without a `with` block. The main thread waits with
-`concurrent.futures.wait(..., timeout=remaining)`. At the deadline it calls
-`shutdown(wait=False, cancel_futures=True)`, so queued work never starts, and
-kills every subprocess still running. Every `bd_search.py` call goes through
-one small wrapper: `subprocess.Popen`, its handle kept in a shared set, then
-`communicate(timeout=min(60, time left))`, killing the process on timeout.
-Tests patch `subprocess.Popen` for these calls. Each unfinished wording or provider
-is recorded as `deadline`. Jev runs only if at least 20 seconds remain, with a
-timeout of the time left minus 5 seconds; otherwise ranking is RRF alone and
-the status line says `jev: skipped (time)`. A test drives a provider that
-never returns and asserts the call ends within the limit plus 2 seconds, with
-the subprocess killed.
+output and covers searching, retries and Jev. Python cannot kill a thread, so
+the guarantee rests on two things: every blocking call has a timeout no longer
+than the time left, and nothing the main thread waits on can outlive the
+deadline.
+
+- **Workers are daemon threads** (`threading.Thread(daemon=True)`), at most 10
+  at a time, pulling from a queue. The main thread waits on a result queue with
+  a timeout and never joins a worker, so a stuck worker cannot hold the process
+  open after output is printed.
+- **Every `bd_search.py` call goes through one wrapper:** `subprocess.Popen(...,
+  start_new_session=True)`, its handle kept in a shared set, then
+  `communicate(timeout=min(60, time left))`. On timeout, and for every handle
+  still in the set at the deadline, the wrapper kills the whole process group
+  (`os.killpg(proc.pid, signal.SIGKILL)`), so the Bright Data CLI that
+  `bd_search.py` starts dies with it. A retry starts only if at least 15 seconds
+  remain.
+- **Exa** uses `urlopen(..., timeout=min(30, time left))`.
+- **Jev** runs only if at least 20 seconds remain. `fetch._jev_request` gains
+  an optional `timeout=60` argument; existing callers are unchanged. All Jev
+  batches start in parallel, each with `timeout=` the time left minus 5
+  seconds. If any batch fails or times out, all Jev scores are discarded and
+  ranking is RRF alone, so no lead is scored on a different basis from another;
+  the status line says `jev: failed` or `jev: skipped (time)`.
+- **At the deadline** the main thread records each unfinished wording or
+  provider as `deadline`, kills the remaining process groups, ranks what it
+  has, writes the record and prints.
+
+Tests patch `subprocess.Popen` and `os.killpg` for these calls. One drives a
+`bd_search.py` that never returns and asserts the command returns within the
+limit plus 2 seconds, with `killpg` called for its process group; another does
+the same for an Exa call that never returns.
 
 Exit codes: 0 when at least one provider call succeeded, even with no results
 (the status line then says `0 leads`); 4 when every provider call failed, was
@@ -234,7 +255,8 @@ Exa's written answer - UNVERIFIED, NOT A SOURCE. Open the cited pages before usi
 ```
 
 - Snippets cut to 160 characters, titles to 100.
-- `[g1 g2 g5 exa]` lists the Google wordings by number and Exa if it cited it.
+- `[g1 g2 g5 b2 exa]` lists the lists the lead came from: `g` for Google and
+  `b` for Bing with the wording's number, and `exa` if Exa cited it.
 - Exa's answer is cut to 1,500 characters, whitespace collapsed, and always
   printed last under that exact heading, so it cannot be mistaken for a lead.
 - Failed or skipped providers and wordings appear in the status line, with
@@ -352,7 +374,9 @@ function: the whole name, lowercased, whitespace collapsed, nothing removed.
 It is **not** the `distinctive()` key, which can merge different entities
 ("Acme Analytics", "Acme Hosting"), and it keeps parentheses, so "Acme (UK)"
 and "Acme (US)" stay apart. Each value is a list of distinct
-`party_of` results; a later round can add a site but never removes one. Ledger
+`party_of` results, computed on the site with `https://` prefixed when it has
+no scheme (`party_of("acme.example")` returns an empty string; a site that
+still gives an empty party is not stored); a later round can add a site but never removes one. Ledger
 files without `sites` load as before. Nothing about saturation changes: a site
 never makes an entity new, and `entities` is still keyed by `distinctive()`.
 
@@ -362,7 +386,13 @@ through `check_matrix_section`, which gains a keyword argument
 `tsv_path=None`; `run()`, its only caller, passes the `tsv_path` it already
 holds, and the ledger is read from `ledger.path(tsv_path)` - the run's real
 log, never a filename guessed from the report. Existing calls without
-`tsv_path` skip the check. A row is checked only when all of these hold:
+`tsv_path` skip the check. The call goes **inside the existing standard and
+deep block**, after the opened-citation loop, so it follows that block's level
+policy: not run at quick, and not run when there are no bibliography entries
+or no log rows (a run with no log rows already fails the gate elsewhere). Rows
+come from `matrix.parse_matrix`, whose `cells` maps each field to its text;
+"every cell is `[unknown]`" means every value in `cells`, stripped, equals
+`[unknown]` case-insensitively. A row is checked only when all of these hold:
 
 - `ledger.full_name()` of its entity cell **equals** a key in some angle's
   `sites`. Exact match only: no containment, no first-word matching. A row
@@ -384,8 +414,8 @@ band, no count and no other check.
 
 ## Testing
 
-Hermetic, as `AGENTS.md` requires: `subprocess.run` and `urlopen` patched, no
-network. New `tests/test_search.py`, plus additions to `test_bd_search.py` and
+Hermetic, as `AGENTS.md` requires: `subprocess.run`, `subprocess.Popen`,
+`os.killpg` and `urlopen` patched, no network. New `tests/test_search.py`, plus additions to `test_bd_search.py` and
 `test_brief.py`.
 
 - **Fan-out mapping:** each wording becomes one `bd_search.py` call with the
@@ -395,8 +425,13 @@ network. New `tests/test_search.py`, plus additions to `test_bd_search.py` and
   wordings; the longest snippet wins.
 - **Rank:** RRF orders a lead found by three lists above one found once; Jev
   scores average in when a key is present; Jev absent or raising leaves RRF.
-- **Every row of the failure table**, including a zero-result success (exit 0),
-  exit 4, and the deadline contract with a provider that never returns.
+- **Every row of the failure table**, including the zero-result message from
+  `bd_search.py` (exit 0), Exa with no citations, exit 4, and the deadline
+  contract with a `bd_search.py` and an Exa call that never return.
+- **Bing:** with `--engine both`, each wording yields a `g` and a `b` list,
+  fused separately and labelled separately.
+- **`fetch._jev_request`:** the new `timeout` reaches `urlopen`; its default
+  stays 60.
 - **Output:** the status line; `--show` caps the list and the `+N more` line
   names the record; Exa's heading and 1,500-character cap; the answer printed
   last.
@@ -425,7 +460,9 @@ network. New `tests/test_search.py`, plus additions to `test_bd_search.py` and
   Hosting" is not checked against a recorded "Acme"; "Acme (UK)" and "Acme
   (US)" keep separate sites; a row whose only own-site citation was never
   opened fails; an entity with no site is not checked; no ledger, or a call
-  without `tsv_path`, means no check. A new must-fail fixture, `own_site_missing.md`, fails for that
+  without `tsv_path`, means no check; a bare-domain site and a cited page on
+  it resolve to the same party; and the check runs end to end through
+  `check.run()` on a report, a log and a ledger, at standard, and not at quick. A new must-fail fixture, `own_site_missing.md`, fails for that
   reason only, and joins the `AGENTS.md` table.
 
 **Live check before the eval:** one real call on a sample angle with both
@@ -526,3 +563,16 @@ fixes and found six more, each resolved:
 | The time limit had no cancellation contract | The deadline contract, with a never-returning provider test ([D](#d-failures)) |
 | Containment matching and dropped parentheses still let entities collide | Exact match on the full name, parentheses kept ([L](#l-an-entitys-own-site-settles-it)) |
 | An unopened own-site URL could satisfy the check | The own-site citation must also be in `opened_urls(rows)` ([L](#l-an-entitys-own-site-settles-it)) |
+
+The fourth pass (run `20261017T112324Z-4420fb`, with `check.py`'s `run()`,
+`bd_search.py`'s SERP path and `fetch.py`'s Jev helpers added) confirmed the
+transport, ledger-path, full-name and opened-citation fixes and found five
+more, each resolved:
+
+| Finding | Resolution |
+|---|---|
+| A thread pool cannot be cancelled, and killing `bd_search.py` leaves its CLI child running | Daemon workers, process groups killed with `killpg`, a timeout on every blocking call ([D](#d-failures)) |
+| `bd_search.py` reports zero results as exit 1, so zero results could not be a success | `search.py` recognises that exact message as zero results; `bd_search.py` is unchanged because subagents rely on its exit ([D](#d-failures)) |
+| `_jev_request` hard-codes a 60-second timeout | An optional `timeout` argument; all batches in parallel; any failure discards Jev scores ([D](#d-failures)) |
+| Bing's place in the ranking and labels was unspecified | One list per provider per wording; `g` and `b` labels ([B](#b-searchpy), [E](#e-output)) |
+| `party_of` returns nothing for a bare domain, and the check's place among the early returns was unstated | `https://` prefixed before `party_of`; the call sits inside the standard and deep block ([L](#l-an-entitys-own-site-settles-it)) |

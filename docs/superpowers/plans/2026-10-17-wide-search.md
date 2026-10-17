@@ -17,8 +17,8 @@
 Each of Tasks 1 to 8 runs as:
 
 1. **Build.** A fresh Sonnet subagent implements the task from this plan and the spec, test first, and commits.
-2. **Verify.** A fresh Opus subagent reviews that commit against the task, the spec and the Global Constraints: the tests exist and pass, the code does what the task says and nothing else, no existing caller is broken.
-3. **Double-check.** gpt-6-astra, through `groupwork verify`, rules on the same diff against the same constraints, blind to the Opus verdict.
+2. **Verify.** A fresh Opus subagent reviews that commit against the task, the spec and the Global Constraints - **for Tasks 4, 5 and 6 only** (the gate check and `search.py`, where a mistake costs most). For the other tasks the Sonnet subagent's own test run is the first check. Cut for cost (Dan, 17 Oct 2026).
+3. **Double-check.** gpt-6-astra, through `groupwork verify`, rules on the same diff against the same constraints, blind to any Opus verdict - **for every task**. Astra runs on the Codex account, not on Claude usage.
 4. **Fix loop.** Any finding either reviewer raises goes back to a Sonnet subagent with the finding quoted; steps 2 and 3 repeat until both pass. A finding the orchestrator judges wrong is recorded with its reason, not silently dropped.
 5. **Next task** only when both pass.
 
@@ -2576,13 +2576,13 @@ Write `evals/runs/2026-10-<day>-wide-search-live-check.md`: what was run, the st
 
 ### Task 10: The eval (orchestrator, before merge)
 
-Not a subagent task: it runs 18 legwork sessions (about $50 to $100 of Claude usage plus a few pounds of search) and needs Dan's go-ahead to spend it. It follows the spec's "The eval" section exactly; this task only restates the steps.
+Not a subagent task: it runs eight legwork sessions (about $45 of Claude usage at the 29 Sep rate, plus a few pounds of search) and needs Dan's go-ahead to spend it. It follows the spec's "The eval" section exactly.
 
-- [ ] **Step 1:** Run banks, Postgres and campervan from `evals/keys/`, three runs each on `main` and three on this branch, on the current Sonnet, a few at a time.
-- [ ] **Step 2:** Anonymise the 18 reports (remove the receipt line), and grade each case blind against its key with the prompts in `evals/grading.md`.
-- [ ] **Step 3:** Per case, take the mean of three runs for core entities covered, wrong facts (WRONG ratings plus other errors) and scope errors.
-- [ ] **Step 4:** Merge only if core coverage is higher than `main`'s in at least two of the three cases and lower in none, and wrong facts and scope errors are no higher than `main`'s in any case. Report time per question, Claude cost, Bright Data and Exa spend, searches run, and how often subagents used `--more`.
-- [ ] **Step 5:** Write `evals/runs/<date>-wide-search-against-answer-keys.md` whichever way it falls, as the scripted-gathering trial's record was written, and update the spec's Status line.
+- [ ] **Step 1:** Run banks and Postgres from `evals/keys/`, two runs each on `main` and two on this branch, on the current Sonnet, a few at a time.
+- [ ] **Step 2:** Anonymise the eight reports (remove the receipt line) and grade each case blind against its key with the prompts in `evals/grading.md`, four reports per key.
+- [ ] **Step 3:** Per case, take the mean of two runs for core entities covered, wrong facts (WRONG ratings plus other errors) and scope errors.
+- [ ] **Step 4:** Merge only if core coverage is higher than `main`'s in at least one case and lower in neither, and wrong facts and scope errors are no higher than `main`'s in either. A difference within one entity or one error either way is inconclusive, not a pass. Report time per question, Claude cost, Bright Data and Exa spend, searches run, and how often subagents used `--more`.
+- [ ] **Step 5:** Write `evals/runs/<date>-wide-search-against-answer-keys.md` whichever way it falls, and update the spec's Status line.
 
 ---
 

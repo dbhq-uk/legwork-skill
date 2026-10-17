@@ -106,7 +106,7 @@ Five lessons this design keeps:
 | 5 | Exa's written answer is shown, marked unverified and not a source | 17 Oct |
 | 6 | Leads are not written to the run's `.tsv`; each call keeps its own search record | 17 Oct |
 | 7 | WebSearch stays, for two or three of an angle's wordings | 17 Oct |
-| 8 | The full eval: three answer-keyed cases, three runs an arm | 17 Oct |
+| 8 | The eval, cut for cost: banks and Postgres, two runs an arm (eight runs, about $45 of Claude usage at the 29 Sep rate). Campervan dropped: its key has three core entities and barely separates the arms | 17 Oct |
 | 9 | The own-site rule is part of this build: subagents record each entity's own site, and the gate fails a matrix row about it that cites none of that site (option A of three) | 17 Oct |
 | 10 | Subagents may make paid search calls through `search.py`; paid page retrieval (scrape, render, pipelines, Reddit) stays the orchestrator's | 17 Oct |
 
@@ -503,24 +503,29 @@ providers, by hand, output saved to `evals/runs/`.
 
 ## The eval
 
-Before merge, recorded in `evals/runs/` whichever way it falls.
+Before merge, recorded in `evals/runs/` whichever way it falls. Cut for cost
+(decision 8).
 
-- **Cases:** banks, Postgres and campervan, the three with answer keys in
-  `evals/keys/`.
-- **Arms:** `main` and the branch, three runs each, on the current Sonnet,
-  run a few at a time.
-- **Grading:** blind against the keys, per `evals/grading.md`.
-- **Measures, per case, each the mean of three runs:** core entities covered
+- **Cases:** banks and Postgres, from `evals/keys/`. Campervan is left out: its
+  key has three core entities, so it barely separates the arms.
+- **Arms:** `main` and the branch, two runs each, on the current Sonnet, run a
+  few at a time.
+- **Grading:** blind against the keys, per `evals/grading.md`, four anonymised
+  reports per key.
+- **Measures, per case, each the mean of two runs:** core entities covered
   (the grader's "covered", not "mentioned"); wrong facts, which are the
   grader's WRONG ratings plus its "other errors"; scope errors.
 - **Merge if, judged per case and never pooled:** core coverage is higher than
-  `main`'s in at least two of the three cases and lower in none; wrong facts
-  are no higher than `main`'s in any case; scope errors are no higher than
-  `main`'s in any case.
+  `main`'s in at least one of the two cases and lower in neither; wrong facts
+  are no higher than `main`'s in either case; scope errors are no higher than
+  `main`'s in either case.
 - **Reported, not blocking:** time per question, Claude cost, Bright Data and
   Exa spend, searches run, and how often subagents used `--more`.
-- **Expected cost:** roughly $50 to $100 of Claude usage for 18 runs, plus a few
-  pounds of search.
+- **Expected cost:** about $45 of Claude usage for eight runs at the 29 Sep
+  rate ($5.60 to $6.40 a run, `evals/runs/2026-09-29-saturation.md`), plus a
+  few pounds of search. Two runs an arm is noisier than three; a result within
+  one entity or one error either way is reported as inconclusive rather than
+  as a pass or a fail.
 
 ## Not yet known
 

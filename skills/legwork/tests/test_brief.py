@@ -191,3 +191,26 @@ def test_the_angle_in_the_return_shape_is_json_escaped():
     angle = 'the "pro" plan, $20'
     out = render('--angle', angle, '--effort', 'narrow').stdout
     assert '"angle": ' + json.dumps(angle) in out
+
+
+def test_a_tsv_path_holding_a_marker_cannot_undo_the_angle_quoting():
+    tsv = '/tmp/{ANGLE_ARG}.tsv'
+    argv = _search_argv(render('--angle', '$(id)', '--effort', 'narrow', '--tsv', tsv).stdout)
+    assert argv[argv.index('--angle') + 1] == '$(id)'
+    assert argv[argv.index('--tsv') + 1] == tsv
+
+
+def test_an_angle_holding_markers_stays_literal():
+    angle = 'what is {DATE} and {KNOWN}'
+    out = render('--angle', angle, '--effort', 'narrow', '--date', '2026-10-17').stdout
+    assert '## Your angle\n\n' + angle in out
+    assert out.count(angle) == 3
+    assert "Today's date is 2026-10-17." in out
+    assert 'Nothing yet - this is the first round' in out
+
+
+def test_a_known_item_holding_a_marker_stays_literal():
+    template = brief.read_template()
+    out = brief.fill(template, ANGLE, 'narrow', '2026-10-17', None, known=['Acme {ANGLE} {DATE}'],
+                     rule='rule text')
+    assert '- Acme {ANGLE} {DATE}' in out

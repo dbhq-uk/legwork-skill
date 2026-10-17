@@ -114,25 +114,30 @@ def fill(template, angle, effort, date, wordings, known=(), rule=None, tsv=None)
             'the template in subagent-brief.md no longer has {} - update brief.py to match '
             'rather than hand-writing the brief'.format(', '.join(repr(m) for m in missing)))
     low, high = wordings or DEFAULT_WORDINGS[effort]
-    out = template.replace(EFFORT, EFFORT_TEXT[effort])
-    out = out.replace(BUDGET, '{} to {} wordings.'.format(low, high))
-    out = out.replace(WORDINGS_RULE, read_wordings_rule() if rule is None else rule)
-    # The two values that reach a shell are quoted for it, so an angle such as
-    # 'Does Acme cost $20 per user?' or one holding a quote, $(...) or a
-    # backtick arrives as one argument and runs nothing. The angle in the JSON
+    # Two values reach a shell, so they are quoted for it: an angle such as
+    # 'Does Acme cost $20 per user?', or one holding a quote, $(...) or a
+    # backtick, arrives as one argument and runs nothing. The angle in the JSON
     # return shape sits inside the template's own quotes, so it is escaped for
     # JSON instead. Everywhere else it is prose and stays as written.
-    out = out.replace(TSV_ARG, shlex.quote(tsv or 'RUN.tsv'))
-    out = out.replace(ANGLE_ARG, shlex.quote(angle))
-    out = out.replace(DATE, date)
-    out = out.replace(RETURN_ANGLE, json.dumps(angle)[1:-1])
-    out = out.replace(ANGLE, angle)
-    out = out.replace(SKILL, SKILL_DIR)
-    out = out.replace(KNOWN, known_text(known))
-    left = [marker for marker in PLACEHOLDERS if marker in out]
-    if left:
-        raise TemplateChanged('placeholders left unfilled: {}'.format(left))
-    return out
+    values = {
+        EFFORT: EFFORT_TEXT[effort],
+        BUDGET: '{} to {} wordings.'.format(low, high),
+        WORDINGS_RULE: read_wordings_rule() if rule is None else rule,
+        TSV_ARG: shlex.quote(tsv or 'RUN.tsv'),
+        ANGLE_ARG: shlex.quote(angle),
+        DATE: date,
+        RETURN_ANGLE: json.dumps(angle)[1:-1],
+        ANGLE: angle,
+        SKILL: SKILL_DIR,
+        KNOWN: known_text(known),
+    }
+    # One pass over the template, so a value is never read again: an angle, a
+    # path or a known item that happens to hold a marker stays literal, and
+    # cannot undo another value's quoting. Every marker in the template is
+    # substituted by that pass, so there is no unfilled-marker check after it;
+    # the one before it refuses a template that has lost a marker.
+    pattern = re.compile('|'.join(re.escape(m) for m in sorted(values, key=len, reverse=True)))
+    return pattern.sub(lambda match: values[match.group(0)], template)
 
 
 def _date(value):

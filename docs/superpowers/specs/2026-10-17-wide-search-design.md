@@ -216,7 +216,9 @@ deadline.
   `communicate(timeout=min(60, time left))`. On timeout, and for every handle
   still in the set at the deadline, the wrapper kills the whole process group
   (`os.killpg(proc.pid, signal.SIGKILL)`), so the Bright Data CLI that
-  `bd_search.py` starts dies with it. A retry starts only if at least 15 seconds
+  `bd_search.py` starts dies with it. Where `os.killpg` does not exist
+  (Windows), `start_new_session` is not passed and `proc.kill()` is used; the
+  CLI child may then outlive it, which the status line does not hide. A retry starts only if at least 15 seconds
   remain.
 - **Exa** uses `urlopen(..., timeout=min(30, time left))`.
 - **Jev** runs only if at least 20 seconds remain. `fetch._jev_request` gains

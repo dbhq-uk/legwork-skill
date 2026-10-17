@@ -575,6 +575,39 @@ def test_log_returns_reports_rows_it_could_not_log_and_exits_1(tmp_path, capsys)
     assert summary['logged'] == 1 and len(summary['failed']) == 1
 
 
+def test_object_entities_parse_to_the_same_pairs_as_strings():
+    reply = ('{"angle": "q", "entities": ["Contoso", {"name": "Acme", "site": "acme.example"}, '
+             '{"name": "Globex"}, {"site": "orphan.example"}, ""]}')
+    assert sources.parse_entities(reply) == [('q', 'Contoso'), ('q', 'Acme'), ('q', 'Globex')]
+
+
+def test_parse_entity_sites_returns_only_object_entities_with_a_site():
+    reply = ('{"angle": "q", "entities": ["Contoso", {"name": "Acme", "site": "acme.example"}, '
+             '{"name": "Globex", "site": ""}]}')
+    assert sources.parse_entity_sites(reply) == [('q', 'Acme', 'acme.example')]
+
+
+def test_log_returns_records_entity_sites_in_the_ledger(tmp_path, capsys):
+    import ledger
+    tsv = str(tmp_path / 'run.tsv')
+    reply = '\n'.join([
+        json.dumps({'url': 'https://acme.example/pricing', 'angle': 'q', 'via': 'direct', 'status': 'ok'}),
+        json.dumps({'entities': [{'name': 'Acme', 'site': 'acme.example'}, 'Contoso']}),
+        json.dumps({'gaps': ['none']}),
+    ])
+    sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply), '--angle', 'q'])
+    assert ledger.entity_sites(tsv) == {'acme': {'acme.example'}}
+    assert sorted(ledger.all_entities(tsv)) == ['Acme', 'Contoso']
+
+
+def test_log_returns_logs_a_search_py_lead_as_serp(tmp_path, capsys):
+    tsv = str(tmp_path / 'run.tsv')
+    reply = json.dumps({'url': 'https://c.example/x', 'angle': 'q', 'via': 'serp', 'opened': False,
+                        'quote': 'A snippet.'})
+    sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply)])
+    assert sources.read_rows(tsv)[0]['via'] == 'serp'
+
+
 def test_a_home_page_canonical_on_a_deep_page_is_ignored():
     """Measured 2026-09-27: a blog post logged as its site's home page."""
     assert sources.logged_url({'url': 'https://a.example/blog/post', 'canonical': 'https://a.example/'}) == \

@@ -843,7 +843,41 @@ def parse_entities(text):
         at = end
         for item in (value if isinstance(value, list) else [value]):
             if isinstance(item, dict) and isinstance(item.get('entities'), list):
-                found += [((item.get('angle') or '').strip(), str(name)) for name in item['entities'] if str(name).strip()]
+                angle = (item.get('angle') or '').strip()
+                for entry in item['entities']:
+                    name = entry.get('name') if isinstance(entry, dict) else entry
+                    name = str(name or '').strip()
+                    if name:
+                        found.append((angle, name))
+    return found
+
+
+def parse_entity_sites(text):
+    """(angle or '', name, site) for every entity a reply gave as an object with
+    its own site, {"name": "Acme", "site": "acme.example"}. Strings carry no
+    site. Kept apart from parse_entities so its callers keep their pairs."""
+    decoder = json.JSONDecoder()
+    found, at = [], 0
+    text = text or ''
+    while True:
+        start = text.find('{', at)
+        if start < 0:
+            break
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except ValueError:
+            at = start + 1
+            continue
+        at = end
+        for item in (value if isinstance(value, list) else [value]):
+            if isinstance(item, dict) and isinstance(item.get('entities'), list):
+                angle = (item.get('angle') or '').strip()
+                for entry in item['entities']:
+                    if isinstance(entry, dict):
+                        name = str(entry.get('name') or '').strip()
+                        site = str(entry.get('site') or '').strip()
+                        if name and site:
+                            found.append((angle, name, site))
     return found
 
 
@@ -935,11 +969,13 @@ def cmd_log_returns(args):
         summary['failed'].append({'url': '', 'reason': 'entities with no angle - pass --angle for this subagent, '
                                                       'or the round is not counted'})
     set_aside = parse_out_of_scope(text)
+    entity_sites = parse_entity_sites(text)
     for angle in sorted(a for a in angles if a):
         names = [n for a, n in entities if (a or default) == angle]
         aside = [(n, r) for a, n, r in set_aside if (a or default) == angle]
+        sites = [(n, s) for a, n, s in entity_sites if (a or default) == angle]
         new_entities, new_parties = ledger.record_round(args.tsv, angle, names, parties_by_angle.get(angle, ()),
-                                                        out_of_scope=aside)
+                                                        out_of_scope=aside, sites=sites)
         summary['new'][angle] = {'entities': new_entities, 'parties': len(new_parties)}
     print(json.dumps(summary, ensure_ascii=False))
     if summary['failed']:

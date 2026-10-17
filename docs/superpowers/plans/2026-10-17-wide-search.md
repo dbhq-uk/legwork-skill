@@ -12,6 +12,18 @@
 
 **Working copy:** `~/dbhq-uk/legwork-skill-wide-search`, branch `feat/wide-search-design`. All paths below are relative to that directory. Run tests from `skills/legwork`.
 
+## Execution protocol (Dan, 17 Oct 2026)
+
+Each of Tasks 1 to 8 runs as:
+
+1. **Build.** A fresh Sonnet subagent implements the task from this plan and the spec, test first, and commits.
+2. **Verify.** A fresh Opus subagent reviews that commit against the task, the spec and the Global Constraints: the tests exist and pass, the code does what the task says and nothing else, no existing caller is broken.
+3. **Double-check.** gpt-6-astra, through `groupwork verify`, rules on the same diff against the same constraints, blind to the Opus verdict.
+4. **Fix loop.** Any finding either reviewer raises goes back to a Sonnet subagent with the finding quoted; steps 2 and 3 repeat until both pass. A finding the orchestrator judges wrong is recorded with its reason, not silently dropped.
+5. **Next task** only when both pass.
+
+After Task 8, Opus and Astra each review the whole branch (`git diff origin/main...HEAD`) once more before the pull request is opened. Tasks 9 and 10 are the orchestrator's.
+
 ## Global Constraints
 
 - Standard library only. No `requirements.txt`, no third-party import. CI fails any import outside the standard library and the skill's own scripts.

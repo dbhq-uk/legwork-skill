@@ -450,6 +450,29 @@ as in `b8a90a4`: cite a page you opened on its own site, or mark the cells
 site is not checked. With no ledger, the check does nothing. It changes no
 band, no count and no other check.
 
+**A blocked own page is rendered before it is given up** (added 17 Oct 2026,
+after the eval). Graded against the banks key, the branch lost Barclays and
+Starling because their own pages came back blocked or as empty shells and no
+run rendered them, while a `main` run rendered the same Barclays page the same
+day and read the key's own sentence on it
+(`evals/runs/2026-10-17-wide-search-against-answer-keys.md`). So, for a matrix
+row about an entity with a recorded site, when no cited URL is an opened page
+on that site, and the log holds a row on that site with status `blocked` or
+`shell` but no row on that site with via `brightdata`, the row fails as a
+structural error naming the render command: `bd_search.py "<url>" -m render`,
+logged `--via brightdata`. This holds whether the row's cells are `[unknown]`
+or cite something else, and it takes precedence over the own-site message
+above. It applies only when the Bright Data CLI is installed; without it,
+`[unknown]` stays the honest answer. A failed render, logged `brightdata`
+with any status, counts as tried.
+
+**An entity may have several own sites.** A group site and a developer portal
+are often on different domains (`natwestgroup.com`, `natwest.com`), so a
+subagent may give `"site"` as a list, and each is recorded under the entity.
+Matching stays per site as above; no registrable-domain matching, which would
+not join those two anyway. The own-site message adds: if the page you opened is
+the entity's own on another domain, record that domain too.
+
 ## Testing
 
 Hermetic, as `AGENTS.md` requires: `subprocess.run`, `subprocess.Popen`,

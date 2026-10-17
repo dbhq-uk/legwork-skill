@@ -359,15 +359,11 @@ def test_registration_is_a_warning_not_an_error_even_at_deep(tmp_path):
 ALL_UNKNOWN_ACME = COMPLETE_MATRIX.replace('| Acme | 30 USD/seat [1] | No [2] |', '| Acme | [unknown] | [unknown] |')
 
 
-def add_log_row(log, url, status, via='webfetch', query=''):
+def add_log_row(log, url, status, via='webfetch'):
     """Append a fetch-log row, as fetch.py or log-returns would."""
-    lines = open(log, encoding='utf-8').read().splitlines()
-    if 'query' not in lines[0].split('\t'):
-        lines[0] += '\tquery'
-        open(log, 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
     with open(log, 'a', encoding='utf-8') as handle:
         handle.write('\t'.join([url, 'vendor_pricing', 'incumbent pricing', via, '2026-07-28T09:05:00+00:00',
-                                status, '2026-07-01', '', 'Page', 'A line.', query]) + '\n')
+                                status, '2026-07-01', '', 'Page', 'A line.']) + '\n')
 
 
 def render_errors(problems, entity):
@@ -394,8 +390,8 @@ def test_an_all_unknown_row_with_a_blocked_own_page_never_rendered_fails(tmp_pat
     assert 'bd_search.py "https://acme.example/pricing" -m render' in errors[0]
     assert '--via brightdata' in errors[0] and '[unknown]' in errors[0]
     assert 'cite a page you opened on its own site' in errors[0]
-    assert 'sources.py log --url https://acme.example/pricing --via brightdata --status blocked' in errors[0]
-    assert 'bd_search.py exits 2' in errors[0]
+    assert 'if the render fails or comes back a shell again, mark the cells [unknown] and log it by hand' in errors[0]
+    assert errors[0].endswith('sources.py log --url https://acme.example/pricing --via brightdata --status blocked')
 
 
 def test_a_shell_own_page_never_rendered_fails_the_same_way(tmp_path):
@@ -457,15 +453,9 @@ def test_an_entity_with_two_sites_passes_on_an_opened_page_on_the_second(tmp_pat
     assert not own_site_errors(problems, 'Acme') and not render_errors(problems, 'Acme'), problems.errors
 
 
-def test_a_scrape_that_returned_a_shell_is_not_a_render(tmp_path):
-    report, log = report_with(tmp_path, ALL_UNKNOWN_ACME)
-    with_sites(log, {'acme': ['acme.example']})
-    add_log_row(log, 'https://acme.example/pricing', 'blocked')
-    add_log_row(log, 'https://acme.example/pricing', 'shell', via='brightdata', query='bd_search -m scrape')
-    assert render_errors(run_with_bright_data(report, log), 'Acme')
-
-
-def test_a_brightdata_shell_with_no_recorded_mode_is_not_a_render(tmp_path):
+def test_a_brightdata_shell_is_not_a_render(tmp_path):
+    """A scrape that returns a shell has rendered nothing, and the log does not
+    say which mode produced the row, so a brightdata shell never counts."""
     report, log = report_with(tmp_path, ALL_UNKNOWN_ACME)
     with_sites(log, {'acme': ['acme.example']})
     add_log_row(log, 'https://acme.example/pricing', 'blocked')
@@ -473,11 +463,21 @@ def test_a_brightdata_shell_with_no_recorded_mode_is_not_a_render(tmp_path):
     assert render_errors(run_with_bright_data(report, log), 'Acme')
 
 
-def test_a_render_that_returned_a_shell_counts_as_tried(tmp_path):
+def test_a_hand_logged_failed_render_counts_as_tried(tmp_path):
     report, log = report_with(tmp_path, ALL_UNKNOWN_ACME)
     with_sites(log, {'acme': ['acme.example']})
     add_log_row(log, 'https://acme.example/pricing', 'blocked')
-    add_log_row(log, 'https://acme.example/pricing', 'shell', via='brightdata', query='bd_search -m render')
+    add_log_row(log, 'https://acme.example/pricing', 'shell', via='brightdata')
+    add_log_row(log, 'https://acme.example/pricing', 'blocked', via='brightdata')
+    problems = run_with_bright_data(report, log)
+    assert not render_errors(problems, 'Acme'), problems.errors
+
+
+def test_a_brightdata_ok_row_counts_as_tried(tmp_path):
+    report, log = report_with(tmp_path, ALL_UNKNOWN_ACME)
+    with_sites(log, {'acme': ['acme.example']})
+    add_log_row(log, 'https://acme.example/pricing', 'blocked')
+    add_log_row(log, 'https://acme.example/pricing', 'ok', via='brightdata')
     problems = run_with_bright_data(report, log)
     assert not render_errors(problems, 'Acme'), problems.errors
 
@@ -485,7 +485,7 @@ def test_a_render_that_returned_a_shell_counts_as_tried(tmp_path):
 def test_a_render_on_one_site_does_not_excuse_a_blocked_page_on_another(tmp_path):
     report, log = report_with(tmp_path, ALL_UNKNOWN_ACME)
     with_sites(log, {'acme': ['acme.example', 'acmebank.example']})
-    add_log_row(log, 'https://acme.example/pricing', 'ok', via='brightdata', query='bd_search -m render')
+    add_log_row(log, 'https://acme.example/pricing', 'ok', via='brightdata')
     add_log_row(log, 'https://acmebank.example/api', 'blocked')
     errors = render_errors(run_with_bright_data(report, log), 'Acme')
     assert len(errors) == 1 and 'https://acmebank.example/api' in errors[0], errors

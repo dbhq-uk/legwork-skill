@@ -190,9 +190,9 @@ failure logged by hand defaults to `ok`, which records a page nobody read.
    are usually the navigation.
 3. A client-rendered shell: `bd_search.py "<url>" -m render`. With Bright Data
    installed, the gate fails a matrix row whose entity's own page is logged
-   blocked or a shell and was never rendered. If the render itself fails
-   (`bd_search.py` exits 2), log it by hand with `sources.py log --url <url>
-   --via brightdata --status blocked`.
+   blocked or a shell and was never rendered. If the render fails or comes back
+   a shell again, log it by hand: `sources.py log --url <url> --via brightdata
+   --status blocked`.
 4. **Refused by every transport: change the address.** Every step above asks
    the same host for the same URL, so a publisher refusing by policy refuses all
    of them. Search the document's own title (add `filetype:pdf` for a PDF) and

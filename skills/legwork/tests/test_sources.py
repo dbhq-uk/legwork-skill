@@ -450,28 +450,16 @@ def test_from_fetch_fills_the_row_from_the_sidecar(tmp_path, capsys):
     assert '30' in row['numbers']
 
 
-def test_from_fetch_on_a_bd_search_render_records_the_mode_in_query(tmp_path, capsys):
+def test_from_fetch_on_a_bd_search_sidecar_writes_no_mode_into_query(tmp_path, capsys):
+    """The gate cannot tell a render from a scrape by the log, and the receipt
+    counts distinct queries, so a Bright Data page adds none."""
     tsv = str(tmp_path / 'run.tsv')
     sources.main_with_args([
         'log', '--tsv', tsv, '--angle', 'a', '--kind', 'vendor_docs',
         '--from-fetch', _sidecar(tmp_path, provider='brightdata', mode='render')])
-    row = sources.read_rows(tsv)[0]
-    assert row['via'] == 'brightdata' and row['query'] == 'bd_search -m render'
-
-
-def test_from_fetch_keeps_a_query_the_caller_gave(tmp_path, capsys):
-    tsv = str(tmp_path / 'run.tsv')
-    sources.main_with_args([
-        'log', '--tsv', tsv, '--angle', 'a', '--kind', 'vendor_docs', '--query', 'mine',
-        '--from-fetch', _sidecar(tmp_path, provider='brightdata', mode='scrape')])
-    assert sources.read_rows(tsv)[0]['query'] == 'mine'
-
-
-def test_from_fetch_on_a_fetch_py_sidecar_leaves_query_empty(tmp_path, capsys):
-    tsv = str(tmp_path / 'run.tsv')
-    sources.main_with_args(['log', '--tsv', tsv, '--angle', 'a', '--kind', 'vendor_docs',
-                            '--from-fetch', _sidecar(tmp_path)])
-    assert sources.read_rows(tsv)[0]['query'] == ''
+    rows = sources.read_rows(tsv)
+    assert rows[0]['via'] == 'brightdata' and rows[0]['query'] == ''
+    assert sources.retrieval_receipt(rows)['queries'] == 0
 
 
 def test_explicit_flags_beat_the_sidecar(tmp_path, capsys):

@@ -650,9 +650,9 @@ def check_rows_on_own_site(parsed, entries, rows, tsv_path, problems):
             problems.structural(
                 '{}: its own page {} came back {} and was never rendered - run bd_search.py "{}" -m render, '
                 'log it --via brightdata and cite it, or cite a page you opened on its own site; if the '
-                'render fails, mark the cells [unknown] and log the failed render --via brightdata with '
-                'its status (by hand with sources.py log --url {} --via brightdata --status blocked '
-                'when bd_search.py exits 2)'.format(row['entity'], url, status, url, url))
+                'render fails or comes back a shell again, mark the cells [unknown] and log it by hand: '
+                'sources.py log --url {} --via brightdata --status blocked'.format(
+                    row['entity'], url, status, url, url))
             continue
         values = [value.strip().lower() for value in row['cells'].values()]
         if (values and all(value == '[unknown]' for value in values)) or not urls:
@@ -665,14 +665,12 @@ def check_rows_on_own_site(parsed, entries, rows, tsv_path, problems):
 
 
 def _is_render_attempt(row):
-    """A Bright Data row that tried to render. A scrape that came back a shell
-    rendered nothing; log --from-fetch records the mode in `query` so the two
-    can be told apart."""
-    if (row.get('via') or '').strip().lower() != 'brightdata':
-        return False
-    if (row.get('status') or '').strip().lower() != 'shell':
-        return True
-    return '-m render' in (row.get('query') or '')
+    """A row that went through Bright Data and is not a shell. A scrape that
+    returns a shell has rendered nothing, and the log does not say which mode
+    produced a row, so a brightdata shell never counts. A render that fails, or
+    comes back a shell again, is logged by hand with --status blocked."""
+    return ((row.get('via') or '').strip().lower() == 'brightdata'
+            and (row.get('status') or '').strip().lower() != 'shell')
 
 
 def unrendered_own_page(rows, keys):

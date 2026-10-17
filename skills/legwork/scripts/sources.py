@@ -699,10 +699,6 @@ def _apply_sidecar(args):
     args.title = args.title or payload.get('title') or ''
     args.date = args.date or payload.get('date') or ''
     args.query = args.query or payload.get('query') or ''
-    if not args.query and payload.get('provider') == 'brightdata' and payload.get('mode'):
-        # Which Bright Data mode got this page. The gate tells a render from a
-        # scrape that came back a shell by it (check.py, _is_render_attempt).
-        args.query = 'bd_search -m {}'.format(payload['mode'])
     if not args.text_file and payload.get('text_file') and os.path.exists(payload['text_file']):
         args.text_file = payload['text_file']
     if not args.via:

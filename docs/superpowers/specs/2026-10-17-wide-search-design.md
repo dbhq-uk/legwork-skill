@@ -247,7 +247,7 @@ for a Jev batch that never returns.
 
 Exit codes: 0 when at least one provider call succeeded, even with no results
 (the status line then says `0 leads`); 4 when every provider call failed, was
-refused or was unavailable; 1 on bad arguments.
+refused or was unavailable; 2 on bad arguments (argparse's own exit code).
 
 ### E. Output
 

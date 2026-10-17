@@ -150,6 +150,8 @@ def test_full_name_strips_presentation_and_keeps_words(raw, expected):
     ('not a site', ''),
     ('https://[bad', ''),
     ('not a.site', ''),
+    ('bücher.de', 'xn--bcher-kva.de'),
+    ('https://www.Bücher.de/preise', 'xn--bcher-kva.de'),
 ])
 def test_site_key(site, key):
     assert ledger.site_key(site) == key
@@ -168,6 +170,8 @@ def test_site_key(site, key):
     ('https://www.npmjs.com/package/beta', 'npmjs.com/package/alpha', False),
     ('https://acme.example/', '', False),
     ('https://[bad', 'acme.example', False),
+    ('https://bücher.de/x', 'xn--bcher-kva.de', True),
+    ('https://xn--bcher-kva.de/x', 'xn--bcher-kva.de', True),
 ])
 def test_site_belongs(url, key, belongs):
     assert ledger.site_belongs(url, key) is belongs
@@ -224,3 +228,9 @@ def test_a_malformed_site_never_interrupts_a_round(tmp_path):
     tsv = str(tmp_path / 'run.tsv')
     ledger.record_round(tsv, 'q', ['Acme'], [], sites=[('Acme', 'https://[bad')])
     assert ledger.entity_sites(tsv) == {}
+
+
+def test_an_international_site_is_stored_in_its_ascii_form(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    ledger.record_round(tsv, 'q', ['Bücher'], [], sites=[('Bücher', 'bücher.de')])
+    assert ledger.entity_sites(tsv) == {'bücher': {'xn--bcher-kva.de'}}

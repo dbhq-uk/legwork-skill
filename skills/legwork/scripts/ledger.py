@@ -96,6 +96,10 @@ def _host_and_path(raw):
         return '', []
     if host.startswith('www.'):
         host = host[4:]
+    try:
+        host = host.encode('idna').decode('ascii')
+    except UnicodeError:
+        return '', []
     if '.' not in host or not re.fullmatch(r'[a-z0-9.-]+', host):
         return '', []
     return host, [part for part in path.lower().split('/') if part]

@@ -192,7 +192,7 @@ No failure of one provider or one wording stops the call.
 | `bd_search.py` exit 2 (auth or quota) on a wording | That wording recorded as refused; the others carry on |
 | `bd_search.py` exits non-zero (not 2), or its stdout is not JSON | Retried once; then recorded as failed |
 | A call succeeds with zero results | A success with no leads. Not retried, not a failure; counts towards exit 0 |
-| A Google call over 60 seconds | Its subprocess is killed (`subprocess.run(..., timeout=60)`); recorded as timed out, and retried once only if the deadline allows |
+| A Google call over 60 seconds | Its subprocess is killed by the wrapper below; recorded as timed out, and retried once only if the deadline allows |
 | The whole call reaches `--time-limit` (default 150 s) | See the deadline contract below |
 | Every provider call failed, was refused or was unavailable | Prints `search: no search provider available - use WebSearch` and exits 4 |
 | No Jev key, or Jev fails | RRF only; status line says `jev: off` or `jev: failed (<reason>)` |
@@ -203,8 +203,10 @@ output and covers searching, retries and Jev. Searches run in a
 `ThreadPoolExecutor` used without a `with` block. The main thread waits with
 `concurrent.futures.wait(..., timeout=remaining)`. At the deadline it calls
 `shutdown(wait=False, cancel_futures=True)`, so queued work never starts, and
-kills every subprocess still running (each one started through a small
-wrapper that records its `Popen` handle). Each unfinished wording or provider
+kills every subprocess still running. Every `bd_search.py` call goes through
+one small wrapper: `subprocess.Popen`, its handle kept in a shared set, then
+`communicate(timeout=min(60, time left))`, killing the process on timeout.
+Tests patch `subprocess.Popen` for these calls. Each unfinished wording or provider
 is recorded as `deadline`. Jev runs only if at least 20 seconds remain, with a
 timeout of the time left minus 5 seconds; otherwise ranking is RRF alone and
 the status line says `jev: skipped (time)`. A test drives a provider that

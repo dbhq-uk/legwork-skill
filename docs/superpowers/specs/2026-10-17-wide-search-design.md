@@ -6,9 +6,9 @@
 the gather step in `SKILL.md`; the subagent brief and `brief.py`; entity sites in
 `sources.py` and `ledger.py`; one gate check in `check.py`; `SECURITY.md`,
 `README.md`, `AGENTS.md`, `setup.sh`; tests; one eval.
-**Verified by:** gpt-6-astra, blind against eight constraints, run
-`20261017T105734Z-17046b`; its five findings are resolved in this version
-(see [Review](#review)).
+**Verified by:** gpt-6-astra, blind, in two passes (runs
+`20261017T105734Z-17046b` and `20261017T111043Z-915654`); every finding is
+resolved in this version (see [Review](#review)).
 **Evidence:** the DBHQ research run `Wide_Search_Service_Research_20261016` in
 `dbhq-uk/dbhq` (`docs/research/`), and this repo's `evals/runs/2026-09-2*`.
 
@@ -105,6 +105,7 @@ Five lessons this design keeps:
 | 7 | WebSearch stays, for two or three of an angle's wordings | 17 Oct |
 | 8 | The full eval: three answer-keyed cases, three runs an arm | 17 Oct |
 | 9 | The own-site rule is part of this build: subagents record each entity's own site, and the gate fails a matrix row about it that cites none of that site (option A of three) | 17 Oct |
+| 10 | Subagents may make paid search calls through `search.py`; paid page retrieval (scrape, render, pipelines, Reddit) stays the orchestrator's | 17 Oct |
 
 ## Goal and pass test
 
@@ -278,9 +279,12 @@ Each rule changes in one place (`AGENTS.md`, "Each rule is stated once").
   how searching goes: `search.py` once with all the wordings whenever a
   provider is available, then WebSearch for two or three of them, WebSearch
   alone when `search.py` exits 4, and `--more` when the first 40 leads do not
-  answer the angle. The ladder table's first row becomes `search.py`; its
-  WebSearch row says "two or three wordings". Every `brief.py` example uses
-  `--wordings`. Logging, rounds, the refusal ladder and everything after are
+  answer the angle. The ladder table's first row becomes `search.py` and its
+  WebSearch row says "as the wording rule above says", with no number of its
+  own. The paragraph "Subagents use the free rungs only" gains one exception
+  (decision 10): they may run `search.py`, which makes paid search calls;
+  paid page retrieval stays the orchestrator's. Every `brief.py` example uses
+  `--wordings`. Logging, rounds, the refusal ladder and everything else are
   unchanged.
 - **`reference/subagent-brief.md`.** Step 1 of "How to work" becomes the
   `{WORDINGS_RULE}` marker followed by the exact command,
@@ -318,21 +322,37 @@ today, or `{"name": "Acme", "site": "acme.example"}`. The site is the entity's
 own domain, recorded only when the subagent opened a page on it. Strings keep
 working, so earlier replies and evals parse unchanged.
 
-**Stored.** `sources.parse_entities` returns `(angle, name, site)`, with `site`
-empty for a string. `ledger.record_round` keeps an entity's sites under
-`entry['sites'][key]` as a list of distinct `party_of` values, in the same
-`<tsv>.entities.json`; a later round can add a site but never removes one.
-Nothing about saturation changes: a site never makes an entity new.
+**Stored.** `sources.parse_entities` is unchanged: it still returns
+`(angle, name)` pairs, so its caller in `log-returns` is untouched; for an
+object entity it takes `name`. A new `sources.parse_entity_sites(text)` returns
+`(angle, name, site)` for object entities that carry a site. `log-returns`
+passes those to `ledger.record_round`, which gains an optional `sites=()`
+argument of `(name, site)` pairs. The ledger keeps them under
+`entry['sites'][full]`, where `full` is the entity's whole name lowercased with
+whitespace collapsed and anything from the first `(` dropped - **not** the
+`distinctive()` key, which can merge two different entities sharing a first
+word ("Acme Analytics", "Acme Hosting"). Each value is a list of distinct
+`party_of` results; a later round can add a site but never removes one. Ledger
+files without `sites` load as before. Nothing about saturation changes: a site
+never makes an entity new, and `entities` is still keyed by `distinctive()`.
 
-**Checked.** A new `check.py` function, run from `check_matrix_section` beside
-the existing opened-citation check, ported from `b8a90a4`'s
-`check_rows_on_own_site`. For each matrix row whose entity matches a ledger
-entity with at least one recorded site (matched as `ledger.named_in` matches
-names), whose cells are not all `[unknown]` and that cites anything: if none of
-the row's citations resolves to one of those sites by `party_of`, it is a
-structural error, worded as in `b8a90a4`: cite its own page, or mark the cells
-`[unknown]`. An entity with no recorded site is not checked. With no ledger, the
-check does nothing. It changes no band, no count and no other check.
+**Checked.** A new `check.py` function, `check_rows_on_own_site`, run from
+`check_matrix_section` beside the existing opened-citation check, ported from
+`b8a90a4`. A row is checked only when all of these hold:
+
+- its entity cell, normalised the same way as `full`, **equals** a key in some
+  angle's `sites`, or contains that key as a whole phrase at word boundaries
+  (so "Acme Analytics Ltd" matches `acme analytics`, and "Acme Hosting" does
+  not). No first-word matching;
+- at least one of its cells is not `[unknown]` (`b8a90a4` skipped a row with
+  any `[unknown]` cell; that exemption is dropped);
+- it cites at least one bibliography entry.
+
+A checked row fails as a structural error when none of its cited URLs resolves
+by `party_of` to one of that entity's recorded sites, worded as in `b8a90a4`:
+cite its own page, or mark the cells `[unknown]`. An entity with no recorded
+site is not checked. With no ledger, the check does nothing. It changes no
+band, no count and no other check.
 
 ## Testing
 
@@ -364,13 +384,16 @@ network. New `tests/test_search.py`, plus additions to `test_bd_search.py` and
   rejected.
 - **`--more`:** reads a record and prints the requested slice; past the end it
   prints nothing and says so; it makes no network call.
-- **Entity sites:** a string entity and an object entity both parse; a site is
-  stored once per party and survives a later round; a site never counts as a
-  new entity.
+- **Entity sites:** a string entity and an object entity both parse into the
+  same `parse_entities` pairs; `parse_entity_sites` returns only object
+  entities with a site; a site is stored once per party and survives a later
+  round; a site never counts as a new entity; a ledger file with no `sites`
+  loads; "Acme Analytics" and "Acme Hosting" keep separate sites.
 - **The own-site check:** a row citing only an aggregator for an entity with a
   recorded site fails; the same row citing one page on the site passes; an
-  all-`[unknown]` row passes; an entity with no site is not checked; no ledger
-  means no check. A new must-fail fixture, `own_site_missing.md`, fails for that
+  all-`[unknown]` row passes; a partly-`[unknown]` row is still checked; a row
+  for "Acme Analytics" citing only Acme Hosting's site fails; an entity with no
+  site is not checked; no ledger means no check. A new must-fail fixture, `own_site_missing.md`, fails for that
   reason only, and joins the `AGENTS.md` table.
 
 **Live check before the eval:** one real call on a sample angle with both
@@ -448,3 +471,14 @@ held and five broken, and each is resolved here:
 | The spec relied on an own-site gate check that is not on `main` | Built here (decision 9, [L](#l-an-entitys-own-site-settles-it)) |
 | `brief.py`'s defaults and output still said searches, 2 to 8 | Specified in full ([J](#j-changes-to-the-skills-text)) |
 | The pass test did not say per case or pooled, nor what counts as wrong | Per case, never pooled; WRONG plus other errors ([The eval](#the-eval)) |
+
+The second pass (run `20261017T111043Z-915654`, with the spec and every code
+excerpt it depends on pasted in, after a first attempt could not read files)
+confirmed the five resolutions and found three more, each resolved:
+
+| Finding | Resolution |
+|---|---|
+| The brief tells subagents to make paid calls; `SKILL.md` restricts them to free rungs | An explicit exception for `search.py` only (decision 10, [J](#j-changes-to-the-skills-text)) |
+| `parse_entities` returning triples would break three unpackings in `log-returns` | `parse_entities` unchanged; a separate `parse_entity_sites` and an optional `sites` argument ([L](#l-an-entitys-own-site-settles-it)) |
+| Sites keyed by `distinctive()` let one entity's site pass another's row | Keyed and matched on the full normalised name, with a collision test ([L](#l-an-entitys-own-site-settles-it)) |
+| The ladder repeated the "two or three wordings" number | The ladder points at the marked rule ([J](#j-changes-to-the-skills-text)) |

@@ -259,7 +259,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
   - `parse_entities(text) -> list[tuple[str, str]]` - unchanged shape; an entity may now be a string or `{"name": ..., "site": ...}`.
   - `parse_entity_sites(text) -> list[tuple[str, str, str]]` - `(angle, name, site)` for object entities with a non-empty site.
 
-- [ ] **Step 1: Write the failing ledger tests** (append to `tests/test_ledger.py`; add `import json` at the top if it is not already imported)
+- [ ] **Step 1: Write the failing ledger tests** (append to `tests/test_ledger.py`; make sure `import json` and `import pytest` are in the imports at the top of the file - add whichever is missing there, never mid-file)
 
 ```python
 # ---------------------------------------------------------------------------
@@ -267,9 +267,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 # so the gate can ask whether a matrix row cites it. Keyed by the full name,
 # never by distinctive(), which merges "Acme Analytics" and "Acme Hosting".
 # ---------------------------------------------------------------------------
-
-import pytest
-
 
 @pytest.mark.parametrize('raw, expected', [
     ('Acme', 'acme'),
@@ -604,7 +601,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Consumes (Task 3): `ledger.full_name`, `ledger.site_belongs`, `ledger.entity_sites`.
 - Produces: `check_matrix_section(content, problems, entries=None, rows=None, tsv_path=None)`; `check_rows_on_own_site(parsed, entries, rows, tsv_path, problems)`.
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_check_matrix_index.py`; `import json` at the top if missing)
+- [ ] **Step 1: Write the failing tests** (append to `tests/test_check_matrix_index.py`; add `import json` to the imports at the top of the file if it is missing)
 
 ```python
 # ---------------------------------------------------------------------------
@@ -674,9 +671,9 @@ def test_another_entitys_site_does_not_satisfy_the_row(tmp_path):
 
 
 def test_a_formatted_entity_cell_is_still_matched(tmp_path):
-    for label in ('**Acme**', '[Acme](https://acme.example)', 'Acme [1]'):
+    for index, label in enumerate(('**Acme**', '[Acme](https://acme.example)', 'Acme [1]')):
         matrix = COMPLETE_MATRIX.replace('| Acme |', '| {} |'.format(label))
-        report, log = report_with(tmp_path, matrix, name='r{}.md'.format(len(label)))
+        report, log = report_with(tmp_path, matrix, name='r{}.md'.format(index))
         with_sites(log, {'acme': ['acme.example']})
         problems, _ = check.run(report, log, 'report', 'standard')
         assert [e for e in problems.errors if 'own site' in e], (label, messages_of(problems))
@@ -701,6 +698,38 @@ def test_the_own_site_check_changes_nothing_without_a_tsv_path():
     problems = check.Problems('standard')
     check.check_rows_on_own_site(parsed, {}, [], None, problems)
     assert problems.errors == []
+
+
+def test_a_row_for_a_longer_name_is_not_checked_against_a_shorter_recorded_one(tmp_path):
+    """Exact names only: "Acme Hosting" is not "Acme", so a site recorded for
+    Acme neither fails nor passes Acme Hosting's row."""
+    matrix = COMPLETE_MATRIX.replace('| Acme |', '| Acme Hosting |')
+    report, log = report_with(tmp_path, matrix)
+    with_sites(log, {'acme': ['acme.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert not [e for e in problems.errors if 'own site' in e], problems.errors
+
+
+def test_names_differing_only_in_parentheses_keep_separate_sites(tmp_path):
+    matrix = COMPLETE_MATRIX.replace('| Acme |', '| Acme (UK) |')
+    report, log = report_with(tmp_path, matrix)
+    # Acme (UK)'s own site is acme-software.example, which its row cites and was opened;
+    # Acme (US) has a different site. The UK row must pass on its own site alone.
+    with_sites(log, {'acme (uk)': ['acme-software.example'], 'acme (us)': ['acme-us.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert not own_site_errors(problems, 'Acme (UK)'), problems.errors
+    with_sites(log, {'acme (uk)': ['acme-us.example']})
+    problems, _ = check.run(report, log, 'report', 'standard')
+    assert own_site_errors(problems, 'Acme (UK)'), messages_of(problems)
+
+
+def test_a_log_with_no_ledger_file_means_no_own_site_check(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    os.remove(os.path.splitext(log)[0] + '.entities.json')
+    import matrix as matrix_module
+    problems = check.Problems('standard')
+    check.check_rows_on_own_site(matrix_module.parse_matrix(COMPLETE_MATRIX), {}, [], log, problems)
+    assert problems.errors == []
 ```
 
 Append to `tests/test_check.py`:
@@ -717,7 +746,7 @@ def test_the_own_site_fixture_fails_for_that_reason_only():
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd skills/legwork && python3 -m pytest tests/test_check_matrix_index.py -q -k "own_site or unknown or formatted or another_entitys or recorded_site or quick_does_not"`
+Run: `cd skills/legwork && python3 -m pytest tests/test_check_matrix_index.py -q -k "own_site or unknown or formatted or another_entitys or recorded_site or quick_does_not or subdomain or longer_name or parentheses or no_ledger"`
 Expected: the failing-row tests FAIL (no own-site error is raised yet); `check_rows_on_own_site` does not exist.
 
 - [ ] **Step 3: Implement in `check.py`**
@@ -787,7 +816,7 @@ Expected: all PASS.
 - [ ] **Step 5: Create the must-fail fixture**
 
 ```bash
-cd skills/legwork/tests/fixtures
+cd "$(git rev-parse --show-toplevel)/skills/legwork/tests/fixtures"
 cp valid_report.tsv own_site_missing.tsv
 python3 - <<'EOF'
 import json
@@ -857,28 +886,33 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 - Create: `skills/legwork/tests/test_search.py`
 
 **Interfaces:**
-- Consumes (Task 2): `fetch._jev_request(..., timeout=)` (used in Task 6).
+- Consumes: nothing from earlier tasks.
 - Produces, all module-level in `search.py`:
-  - Constants: `BD_SEARCH`, `EXA_API`, `EXA_KEY_FILE`, `USER_AGENT`, `ZERO_RESULTS = 'SERP returned zero organic results'`, `EXIT_NO_PROVIDER = 4`, `MAX_WORKERS = 10`, `GOOGLE_TIMEOUT = 60`, `EXA_TIMEOUT = 30`, `RESERVE = 3.0`, `RETRY_MIN = 15.0`, `JEV_MIN = 20.0`, `JEV_MARGIN = 5.0`, `SNIPPET_KEEP = 600`, `_GROUPS` (bool).
-  - `exa_key() -> str`
-  - `bright_data_installed() -> bool`
+  - Constants: `BD_SEARCH`, `EXA_API`, `EXA_KEY_FILE`, `USER_AGENT`, `ZERO_RESULTS = 'SERP returned zero organic results'`, `EXIT_NO_PROVIDER = 4`, `MAX_WORKERS = 10`, `GOOGLE_TIMEOUT = 60`, `EXA_TIMEOUT = 30`, `RESERVE = 3.0`, `RETRY_MIN = 15.0`, `JEV_MIN = 20.0`, `JEV_MARGIN = 5.0`, `SNIPPET_KEEP = 600`, `_GROUPS` (bool), `_PROCS` (set), `_PROCS_LOCK`, `_CLOSED` (`threading.Event`).
+  - `class Cancelled(Exception)`.
+  - `exa_key() -> str`; `bright_data_installed() -> bool`.
   - `class Clock(limit)` with `.elapsed()` and `.remaining()` (seconds before the network phase must stop: `limit - RESERVE - elapsed`, reading `RESERVE` at call time).
   - `provider_result(provider, query, wording=None, status='ok', reason='', seconds=0.0, results=None, **extra) -> dict` with keys `provider, wording, query, ok, status, reason, seconds, results` plus extras (`answer`, `cost` for Exa).
-  - `run_process(cmd, timeout) -> (returncode | None, stdout, stderr, timed_out)`; `kill_all()`.
-  - `search_bd(engine, wording, number, opts, clock) -> dict` (`opts` has `country`, `language`).
+  - `run_process(cmd, timeout) -> (returncode | None, stdout, stderr, timed_out)`, raising `Cancelled` after the deadline; `kill_all()`.
+  - `search_bd(engine, wording, number, opts, clock) -> dict` (`opts` may carry `country` and `language`; each is sent only when set).
   - `search_exa(angle, key, clock) -> dict` (extras `answer: str`, `cost: float | None`).
-  - `run_jobs(jobs, clock, workers=MAX_WORKERS) -> list[dict]`, where each job is `(label, fn, placeholder)` and results come back in job order.
+  - `run_jobs(jobs, clock, workers=MAX_WORKERS) -> list[dict]`; each job is `(label, fn, placeholder)` and results come back in job order. It clears `_CLOSED` when it starts.
   - A result row is `{'url', 'title', 'snippet', 'rank', 'date'}`.
 
-- [ ] **Step 1: Write the failing tests** (`tests/test_search.py`)
+This code and its tests were run before the plan was approved. Task 5 alone: 21 tests pass and ruff `E9,F` is clean. With Task 6: 64 tests pass on Python 3.12 and 3.9. Under load (24 busy processes on 8 cores) the full file passed 12 of 12 runs, then failed 1 of 40: the end-to-end deadline test asserted the whole command finished within the limit plus 1 second and took 7.6. The spec promises only the network phase, so the test now asserts `network_seconds` and gives the whole command a loose bound; after that change the deadline tests passed 53 of 53 loaded runs.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `skills/legwork/tests/test_search.py` with exactly this content:
 
 ```python
 """search.py: one angle asked many ways across Bright Data and Exa.
 
 Hermetic. subprocess.Popen, os.killpg and urlopen are replaced, so no CLI runs,
-no request is billed and no socket opens. What these pin is the mapping from
-wordings to calls, the failure table in the spec (section D) and the deadline
-contract: no provider can hold the command open past its limit.
+no request is billed, no socket opens and no real process is signalled. What
+these pin is the mapping from wordings to calls, the failure table in the spec
+(section D) and the deadline contract: no provider can hold the command open
+past its limit.
 """
 
 import json
@@ -891,6 +925,10 @@ from urllib.error import HTTPError
 import pytest
 
 import search
+
+# Fake process ids above any real pid_max, so even a stray real os.killpg can
+# never reach a process on the machine running the tests.
+FAKE_PID_BASE = 10 ** 9
 
 
 def serp(wording, n=3):
@@ -905,17 +943,24 @@ def serp(wording, n=3):
 class FakePopen:
     """Stands in for subprocess.Popen. FakePopen.script maps a wording to
     (returncode, stdout, stderr) or to 'hang', which blocks until the process
-    is killed. Unscripted wordings return three results."""
+    is killed. Unscripted wordings return three results. `started` is set as
+    soon as any fake process exists, so a test can wait for a launch instead
+    of guessing how long a thread takes to start."""
     script = {}
     instances = []
+    started = threading.Event()
+    on_launch = None
 
     def __init__(self, cmd, **kwargs):
         self.cmd, self.kwargs = cmd, kwargs
-        self.pid = 4000 + len(FakePopen.instances)
+        self.pid = FAKE_PID_BASE + len(FakePopen.instances)
         self.killed = threading.Event()
         self.returncode = None
         FakePopen.instances.append(self)
+        FakePopen.started.set()
         self.outcome = FakePopen.script.get(cmd[2], (0, serp(cmd[2]), ''))
+        if FakePopen.on_launch:
+            FakePopen.on_launch(self)
 
     def communicate(self, timeout=None):
         if self.outcome == 'hang':
@@ -944,6 +989,17 @@ class FakeResponse:
         return False
 
 
+class _Body:
+    def __init__(self, data):
+        self.data = data
+
+    def read(self, *args):
+        return self.data
+
+    def close(self):
+        pass
+
+
 EXA_PAYLOAD = {'requestId': 'r1', 'answer': 'Acme charges 30 dollars.',
                'costDollars': {'total': 0.005},
                'citations': [{'url': 'https://acme.example/pricing', 'title': 'Acme pricing',
@@ -952,11 +1008,13 @@ EXA_PAYLOAD = {'requestId': 'r1', 'answer': 'Acme charges 30 dollars.',
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
-    FakePopen.script, FakePopen.instances = {}, []
-    killed, exa_calls = [], []
+    FakePopen.script, FakePopen.instances, FakePopen.on_launch = {}, [], None
+    FakePopen.started = threading.Event()
+    killed = []
     release = threading.Event()
 
     def fake_killpg(pid, sig):
+        assert pid >= FAKE_PID_BASE, 'a test tried to signal a real process group'
         killed.append(pid)
         for proc in FakePopen.instances:
             if proc.pid == pid:
@@ -971,9 +1029,15 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setattr(search.shutil, 'which', lambda name: '/usr/bin/brightdata')
     monkeypatch.setattr(search, 'exa_key', lambda: '')
     monkeypatch.setattr(search, 'urlopen', no_network)
-    monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: '')
-    yield SimpleNamespace(tmp=tmp_path, killed=killed, exa_calls=exa_calls, release=release, monkeypatch=monkeypatch)
-    release.set()  # free any thread a test left blocked
+    search._CLOSED.clear()
+    yield SimpleNamespace(tmp=tmp_path, killed=killed, release=release, monkeypatch=monkeypatch)
+    # Free every thread a test left blocked before monkeypatch restores the
+    # real functions, so no late worker reaches them.
+    release.set()
+    for proc in FakePopen.instances:
+        proc.killed.set()
+    time.sleep(0.05)
+    search._CLOSED.clear()
 
 
 def clock(limit=150):
@@ -999,9 +1063,19 @@ def test_a_wording_with_quotes_and_symbols_reaches_bd_search_as_one_argument(env
     assert FakePopen.instances[0].cmd[2] == wording
 
 
-def test_the_subprocess_starts_its_own_process_group(env):
+def test_the_subprocess_starts_its_own_group_and_speaks_utf8(env):
     search.search_bd('google', 'q', 1, {}, clock())
-    assert FakePopen.instances[0].kwargs.get('start_new_session') is True
+    kwargs = FakePopen.instances[0].kwargs
+    assert kwargs.get('start_new_session') is True
+    assert kwargs.get('encoding') == 'utf-8' and kwargs['env'].get('PYTHONIOENCODING') == 'utf-8'
+
+
+def test_a_rank_that_is_not_a_number_falls_back_to_its_position(env):
+    FakePopen.script['q'] = (0, json.dumps({'results': [
+        {'rank': 'first', 'url': 'https://a.example', 'title': 't'},
+        {'url': 'https://b.example'}]}), '')
+    result = search.search_bd('google', 'q', 1, {}, clock())
+    assert result['ok'] and [r['rank'] for r in result['results']] == [1, 2]
 
 
 def test_exa_is_asked_once_with_the_key_a_user_agent_and_text(env):
@@ -1018,11 +1092,25 @@ def test_exa_is_asked_once_with_the_key_a_user_agent_and_text(env):
     assert seen['url'] == search.EXA_API
     assert seen['headers']['x-api-key'] == 'k123' and seen['headers']['user-agent'] == search.USER_AGENT
     assert seen['body'] == {'query': 'what does acme charge', 'text': True}
-    assert seen['timeout'] <= search.EXA_TIMEOUT
+    assert seen['timeout'] == search.EXA_TIMEOUT
     assert result['ok'] and result['answer'] == 'Acme charges 30 dollars.' and result['cost'] == 0.005
     row = result['results'][0]
     assert row == {'url': 'https://acme.example/pricing', 'title': 'Acme pricing',
                    'snippet': 'Team plan: 30 USD', 'rank': 1, 'date': '2026-07-01'}
+
+
+def test_exas_timeout_never_exceeds_the_time_left(env):
+    seen = {}
+
+    def fake_urlopen(request, timeout=None):
+        seen['timeout'] = timeout
+        return FakeResponse(EXA_PAYLOAD)
+
+    env.monkeypatch.setattr(search, 'urlopen', fake_urlopen)
+    env.monkeypatch.setattr(search, 'RESERVE', 0.0)
+    c = search.Clock(10.0)
+    search.search_exa('q', 'k', c)
+    assert seen['timeout'] <= 10.0
 
 
 def test_the_exa_key_comes_from_the_environment_then_the_file(monkeypatch, tmp_path):
@@ -1078,17 +1166,6 @@ def test_exa_http_error_is_recorded_with_its_status_and_body(env):
     assert result['status'] == 'failed' and result['reason'].startswith('HTTP 402') and 'out of credits' in result['reason']
 
 
-class _Body:
-    def __init__(self, data):
-        self.data = data
-
-    def read(self, *args):
-        return self.data
-
-    def close(self):
-        pass
-
-
 def test_exa_with_no_citations_is_a_success_with_no_results(env):
     env.monkeypatch.setattr(search, 'urlopen', lambda r, timeout=None: FakeResponse({'answer': 'x', 'citations': []}))
     result = search.search_exa('q', 'k', clock())
@@ -1105,11 +1182,13 @@ def test_exa_returning_something_that_is_not_an_object_is_a_failure(env):
 def test_a_bd_search_that_never_returns_is_killed_with_its_group(env):
     env.monkeypatch.setattr(search, 'RESERVE', 0.2)
     FakePopen.script['q'] = 'hang'
-    jobs = [('g1', lambda: search.search_bd('google', 'q', 1, {}, c), search.provider_result('google', 'q', 1, 'deadline'))]
-    c = search.Clock(1.0)
+    c = search.Clock(3.0)
+    jobs = [('g1', lambda: search.search_bd('google', 'q', 1, {}, c),
+             search.provider_result('google', 'q', 1, 'deadline'))]
     started = time.monotonic()
     results = search.run_jobs(jobs, c)
-    assert time.monotonic() - started < 1.5
+    assert FakePopen.started.wait(2), 'the worker never launched bd_search.py'
+    assert time.monotonic() - started < 3.0 + 1.0
     assert results[0]['status'] in ('timeout', 'deadline')
     assert FakePopen.instances[0].pid in env.killed
 
@@ -1122,12 +1201,30 @@ def test_an_exa_call_that_never_returns_cannot_hold_the_call_open(env):
         return FakeResponse(EXA_PAYLOAD)
 
     env.monkeypatch.setattr(search, 'urlopen', hang)
-    c = search.Clock(1.0)
+    c = search.Clock(2.0)
     jobs = [('exa', lambda: search.search_exa('q', 'k', c), search.provider_result('exa', 'q', status='deadline'))]
     started = time.monotonic()
     results = search.run_jobs(jobs, c)
-    assert time.monotonic() - started < 1.5
+    assert time.monotonic() - started < 2.0 + 1.0
     assert results[0]['status'] == 'deadline'
+
+
+def test_a_launch_after_the_deadline_is_refused(env):
+    search._CLOSED.set()
+    with pytest.raises(search.Cancelled):
+        search.run_process(['x', 'y', 'q'], 5)
+    assert FakePopen.instances == []
+
+
+def test_a_process_launched_as_the_deadline_falls_is_killed_not_missed(env):
+    # The deadline lands between Popen returning and the process being
+    # registered: kill_all runs from inside the launch.
+    FakePopen.on_launch = lambda proc: search.kill_all()
+    FakePopen.script['q'] = 'hang'
+    with pytest.raises(search.Cancelled):
+        search.run_process(['x', 'y', 'q'], 5)
+    assert FakePopen.instances[0].pid in env.killed
+    assert search._PROCS == set()
 
 
 def test_run_jobs_returns_results_in_job_order_and_turns_exceptions_into_failures(env):
@@ -1146,7 +1243,7 @@ def test_where_killpg_does_not_exist_the_process_alone_is_killed(env):
     env.monkeypatch.setattr(search, '_GROUPS', False)
     env.monkeypatch.setattr(search, 'RESERVE', 0.2)
     FakePopen.script['q'] = 'hang'
-    search.search_bd('google', 'q', 1, {}, search.Clock(1.0))
+    search.search_bd('google', 'q', 1, {}, search.Clock(1.5))
     proc = FakePopen.instances[0]
     assert 'start_new_session' not in proc.kwargs and proc.killed.is_set()
 ```
@@ -1158,7 +1255,7 @@ Expected: collection error, `ModuleNotFoundError: No module named 'search'`.
 
 - [ ] **Step 3: Implement part 1 of `search.py`**
 
-Create `skills/legwork/scripts/search.py` with exactly this content (Task 6 appends to it):
+Create `skills/legwork/scripts/search.py` with exactly this content (Task 6 adds imports to it and appends the rest):
 
 ```python
 #!/usr/bin/env python3
@@ -1167,7 +1264,7 @@ search.py - ask one angle many ways, across Google and Exa, in one call.
 
     search.py --angle "what does the incumbent charge" \\
       --wording "..." --wording "..." [--wording ...]    # 1 to 12; 6 to 10 expected
-      [--tsv RUN.tsv | --out-dir DIR] [--country gb] [--language en]
+      [--tsv RUN.tsv | --out-dir DIR] [--country CC] [--language LL]
       [--engine google|bing|both] [--no-exa] [--show 40] [--time-limit 150]
     search.py --more RECORD.json [--from 41] [--show 40]
 
@@ -1186,33 +1283,27 @@ skips that provider and says so. Exit 4 means no provider answered at all, and
 the caller searches with WebSearch instead.
 
 Exit codes: 0 when at least one provider call succeeded, even with no results;
-4 when none did; 2 on bad arguments.
+4 when none did; 2 on bad arguments or an unreadable --more record.
 
 Stdlib only. Runs on any python3 >= 3.9.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import queue
-import re
 import shutil
 import signal
 import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-
-import fetch  # noqa: E402
-from independence import canonicalize  # noqa: E402
 
 BD_SEARCH = os.path.join(HERE, 'bd_search.py')
 EXA_API = 'https://api.exa.ai/answer'
@@ -1241,6 +1332,14 @@ SNIPPET_KEEP = 600
 _GROUPS = hasattr(os, 'killpg')
 _PROCS = set()
 _PROCS_LOCK = threading.Lock()
+# Set by kill_all at the deadline, under the same lock that registers a
+# process, so a process launched as the deadline falls is killed rather than
+# missed.
+_CLOSED = threading.Event()
+
+
+class Cancelled(Exception):
+    """The deadline passed before or while a process was being launched."""
 
 
 def exa_key():
@@ -1291,8 +1390,10 @@ def _kill(proc):
 
 
 def kill_all():
-    """Kill every bd_search.py still running, with its process group."""
+    """At the deadline: refuse new launches, and kill every bd_search.py still
+    running, with its process group."""
     with _PROCS_LOCK:
+        _CLOSED.set()
         procs = list(_PROCS)
     for proc in procs:
         _kill(proc)
@@ -1300,15 +1401,26 @@ def kill_all():
 
 def run_process(cmd, timeout):
     """(returncode or None, stdout, stderr, timed_out). On timeout the process
-    is killed with its whole group."""
-    kwargs = {'stdout': subprocess.PIPE, 'stderr': subprocess.PIPE, 'text': True}
+    is killed with its whole group. Raises Cancelled when the deadline has
+    already passed, or passes while the process is being launched."""
+    if _CLOSED.is_set():
+        raise Cancelled()
+    kwargs = {'stdout': subprocess.PIPE, 'stderr': subprocess.PIPE, 'text': True,
+              'encoding': 'utf-8', 'errors': 'replace',
+              'env': dict(os.environ, PYTHONIOENCODING='utf-8')}
     if _GROUPS:
         kwargs['start_new_session'] = True
     proc = subprocess.Popen(cmd, **kwargs)
     with _PROCS_LOCK:
         _PROCS.add(proc)
+        closed = _CLOSED.is_set()
+    if closed:
+        _kill(proc)
+        with _PROCS_LOCK:
+            _PROCS.discard(proc)
+        raise Cancelled()
     try:
-        out, err = proc.communicate(timeout=max(0.1, timeout))
+        out, err = proc.communicate(timeout=timeout)
         return proc.returncode, out or '', err or '', False
     except subprocess.TimeoutExpired:
         _kill(proc)
@@ -1331,9 +1443,19 @@ def _reason(stderr):
     return ' '.join(str(text).split())[:120]
 
 
+def _rank(value, fallback):
+    try:
+        rank = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return rank if rank > 0 else fallback
+
+
 def search_bd(engine, wording, number, opts, clock):
     """One wording on one Bright Data engine. A failure is retried once, if the
-    deadline allows; a refusal (exit 2, auth or quota) is not."""
+    deadline allows; a refusal (exit 2, auth or quota) is not. Country and
+    language are passed only when given: Google is left alone, and bd_search.py
+    gives Bing its own gb/en default."""
     cmd = [sys.executable, BD_SEARCH, wording, '-m', 'general', '--engine', engine, '-c', '10']
     if opts.get('country'):
         cmd += ['--country', opts['country']]
@@ -1347,7 +1469,11 @@ def search_bd(engine, wording, number, opts, clock):
         if left <= 0:
             return provider_result(engine, wording, number, 'deadline', 'no time left', time.monotonic() - started)
         wait = min(GOOGLE_TIMEOUT, left)
-        code, out, err, timed_out = run_process(cmd, wait)
+        try:
+            code, out, err, timed_out = run_process(cmd, wait)
+        except Cancelled:
+            return provider_result(engine, wording, number, 'deadline', 'not finished by the time limit',
+                                   time.monotonic() - started)
         if timed_out:
             status, reason = 'timeout', 'no answer in {:.0f}s'.format(wait)
         elif code == 0:
@@ -1357,7 +1483,7 @@ def search_bd(engine, wording, number, opts, clock):
                 status, reason = 'failed', 'stdout was not JSON'
             else:
                 results = [{'url': row['url'], 'title': row.get('title') or '', 'snippet': row.get('snippet') or '',
-                            'rank': int(row.get('rank') or index + 1), 'date': row.get('date') or ''}
+                            'rank': _rank(row.get('rank'), index + 1), 'date': row.get('date') or ''}
                            for index, row in enumerate(rows) if isinstance(row, dict) and row.get('url')]
                 return provider_result(engine, wording, number, 'ok', '' if results else 'zero results',
                                        time.monotonic() - started, results)
@@ -1381,7 +1507,7 @@ def search_exa(angle, key, clock):
     request = Request(EXA_API, data=json.dumps({'query': angle, 'text': True}).encode('utf-8'),
                       headers={'x-api-key': key, 'Content-Type': 'application/json', 'User-Agent': USER_AGENT})
     try:
-        with urlopen(request, timeout=max(1.0, min(EXA_TIMEOUT, left))) as response:  # noqa: S310 - fixed endpoint
+        with urlopen(request, timeout=min(EXA_TIMEOUT, left)) as response:  # noqa: S310 - fixed endpoint
             payload = json.loads(response.read().decode('utf-8'))
     except HTTPError as exc:
         try:
@@ -1415,6 +1541,7 @@ def run_jobs(jobs, clock, workers=MAX_WORKERS):
     joins one: it waits on a queue until the clock runs out, then kills every
     subprocess still running and returns each unfinished job's placeholder,
     marked 'deadline'. A worker that raises becomes a failed result."""
+    _CLOSED.clear()
     tasks, done = queue.Queue(), queue.Queue()
     for index, job in enumerate(jobs):
         tasks.put((index, job))
@@ -1459,12 +1586,12 @@ def run_jobs(jobs, clock, workers=MAX_WORKERS):
 - [ ] **Step 4: Run the tests**
 
 Run: `cd skills/legwork && python3 -m pytest tests/test_search.py -q`
-Expected: all PASS, in a few seconds.
+Expected: 21 passed, in about ten seconds.
 
-- [ ] **Step 5: Lint the way CI does, then commit**
+- [ ] **Step 5: Lint and run the whole suite, then commit**
 
-Run: `cd skills/legwork && python3 -m ruff check --select E9,F scripts/search.py tests/test_search.py 2>/dev/null || python3 -m pyflakes scripts/search.py 2>/dev/null; python3 -m pytest tests/ -q`
-Expected: no lint errors reported (if neither linter is installed, skip the lint and rely on CI); full suite PASS.
+Run: `cd skills/legwork && ruff check --select E9,F scripts/search.py tests/test_search.py && python3 -m pytest tests/ -q`
+Expected: `All checks passed!`, then the suite PASSES. If `ruff` is not installed, install it (`pipx install ruff` or `pip install --user ruff`) rather than skip the check: CI runs it, and a lint failure must stop this step.
 
 ```bash
 git add skills/legwork/scripts/search.py skills/legwork/tests/test_search.py
@@ -1475,27 +1602,96 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 ---
 
-### Task 6: `search.py` part 2 - merge, rank, record, output, `--more` and the CLI
+### Task 6: `search.py` part 2 - the provider table, merge, rank, record, output, `--more` and the CLI
 
 **Files:**
-- Modify: `skills/legwork/scripts/search.py` (append)
-- Test: `skills/legwork/tests/test_search.py` (append)
+- Modify: `skills/legwork/scripts/search.py` (add imports; append the rest)
+- Test: `skills/legwork/tests/test_search.py` (add imports and one fixture line; append tests)
 
 **Interfaces:**
-- Consumes (Task 5): everything in its Produces list. (Task 2): `fetch._jev_request(state, questions, key, timeout=)`, plus existing `fetch.typesafe_key`, `fetch.JEV_LEVELS`, `fetch.JEV_BATCH`, `fetch._expected_score`.
+- Consumes (Task 5): everything in its Produces list. (Task 2): `fetch._jev_request(state, questions, key, timeout=)`, plus the existing `fetch.typesafe_key`, `fetch.JEV_LEVELS`, `fetch.JEV_BATCH`, `fetch._expected_score`.
 - Produces:
+  - `PROVIDERS`: a list of `{'name', 'label', 'per': 'wording' | 'angle', 'available': () -> (ok, detail), 'run': (query, number, detail, opts, clock) -> provider_result}`, in the order Exa, Google, Bing. Adding a provider is a function and an entry here (spec C). `ENGINES = {'google': ['google'], 'bing': ['bing'], 'both': ['google', 'bing']}`.
   - `list_label(result) -> str` (`g3`, `b3`, `exa`)
   - `merge(results) -> list[dict]`, a lead being `{'url', 'title', 'snippet', 'date', 'ranks': {label: rank}}`
   - `rrf(lead) -> float` (`RRF_K = 60`)
   - `jev_scores(angle, leads, clock) -> (list[float] | None, status: str)`, status one of `on`, `off`, `skipped (time)`, `failed (...)`
   - `rank(leads, jev=None) -> list[dict]`, adding `rrf`, `jev`, `score`
-  - `record_path(angle, tsv=None, out_dir=None, now=None) -> str`
-  - `lead_lines(leads, start, show) -> list[str]`
+  - `record_path(angle, tsv=None, out_dir=None, now=None) -> str`; `_write_record(path, record) -> str` (the path actually written)
+  - `lead_lines(leads, start, show) -> list[str]`; `_more_line(path, remaining, start) -> str`
   - `main(argv=None) -> int`
 
-- [ ] **Step 1: Write the failing tests** (append to `tests/test_search.py`)
+- [ ] **Step 1: Write the failing tests**
+
+In `skills/legwork/tests/test_search.py`:
+
+1. Add to the imports at the top, keeping them sorted: `import os` (after `import json`) and `from datetime import datetime, timezone` (after `import time`).
+2. In the `env` fixture, after the line `monkeypatch.setattr(search, 'urlopen', no_network)`, add:
 
 ```python
+    monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: '')
+```
+
+3. Append to the end of the file:
+
+```python
+def datetime_utc(*args):
+    return datetime(*args, tzinfo=timezone.utc)
+
+
+def test_by_default_google_gets_no_country_or_language(env, capsys):
+    search.main(['--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)])
+    cmd = FakePopen.instances[0].cmd
+    assert '--country' not in cmd and '--language' not in cmd
+
+
+def test_the_whole_command_keeps_its_limit_with_everything_hanging(env, capsys):
+    """Spec D: a bd_search.py, an Exa call and a Jev batch that never return.
+    The network phase ends by the limit and the hanging process group is
+    killed. The local work after it is measured, not promised, so the whole
+    command gets a loose bound that a starved CPU cannot trip."""
+    env.monkeypatch.setattr(search, 'RESERVE', 0.5)
+    env.monkeypatch.setattr(search, 'JEV_MIN', 0.1)
+    env.monkeypatch.setattr(search, 'JEV_MARGIN', 0.1)
+    env.monkeypatch.setattr(search, 'exa_key', lambda: 'k')
+    env.monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: 'k')
+    env.monkeypatch.setattr(search.fetch, '_jev_request', lambda *a, **k: env.release.wait())
+
+    def hang(request, timeout=None):
+        env.release.wait()
+        return FakeResponse(EXA_PAYLOAD)
+
+    env.monkeypatch.setattr(search, 'urlopen', hang)
+    FakePopen.script['w-hang'] = 'hang'
+    started = time.monotonic()
+    code = search.main(['--angle', 'q', '--wording', 'w-ok', '--wording', 'w-hang',
+                        '--time-limit', '5', '--out-dir', str(env.tmp)])
+    elapsed = time.monotonic() - started
+    assert code == 0  # w-ok answered
+    record = json.load(open(next(env.tmp.glob('*.json'))))
+    assert record['network_seconds'] <= 5 + 0.5, record['network_seconds']  # one poll interval of slack
+    assert elapsed < 5 + 5, elapsed
+    hung = [p for p in FakePopen.instances if p.cmd[2] == 'w-hang']
+    assert hung and all(p.pid in env.killed for p in hung)
+    out = capsys.readouterr().out
+    assert 'exa: deadline' in out and 'jev: skipped (time)' in out
+
+# --- the provider table ----------------------------------------------------
+
+def test_a_provider_added_only_to_the_table_is_run_merged_and_reported(env, capsys):
+    def search_stub(query, number, detail, opts, c):
+        return search.provider_result('stub', query, status='ok', results=[
+            {'url': 'https://stub.example/x', 'title': 'Stub', 'snippet': 'from the stub', 'rank': 1, 'date': ''}])
+
+    table = search.PROVIDERS + [{'name': 'stub', 'label': 'stub', 'per': 'angle',
+                                 'available': lambda: (True, ''), 'run': search_stub}]
+    env.monkeypatch.setattr(search, 'PROVIDERS', table)
+    assert search.main(['--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)]) == 0
+    out = capsys.readouterr().out
+    assert 'stub ok' in out.splitlines()[0]
+    assert 'https://stub.example/x' in out and '[stub]' in out
+
+
 # --- merge and rank --------------------------------------------------------
 
 def ok(provider, wording, rows):
@@ -1557,25 +1753,32 @@ def test_jev_is_off_without_a_key(env):
     assert search.jev_scores('q', [{'title': 't', 'snippet': 's'}], clock()) == (None, 'off')
 
 
-def test_jev_scores_every_lead_when_it_answers(env):
+def test_jev_scores_every_lead_and_gets_the_time_left_less_its_margin(env):
     env.monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: 'k')
+    timeouts = []
 
     def fake(state, questions, key, timeout=60):
+        timeouts.append(timeout)
         return {'answers': {name: {'probabilities': {'3': 1.0}} for name in questions}}
 
     env.monkeypatch.setattr(search.fetch, '_jev_request', fake)
+    c = clock(150)
     leads = [{'title': 't{}'.format(i), 'snippet': 's'} for i in range(45)]  # two batches
-    scores, status = search.jev_scores('q', leads, clock())
+    scores, status = search.jev_scores('q', leads, c)
     assert status == 'on' and scores == [1.0] * 45
+    expected = 150 - search.RESERVE - search.JEV_MARGIN
+    assert len(timeouts) == 2 and all(expected - 1 < t <= expected for t in timeouts)
 
 
 def test_one_failed_jev_batch_discards_every_jev_score(env):
     env.monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: 'k')
-    calls = []
+    lock, calls = threading.Lock(), []
 
     def fake(state, questions, key, timeout=60):
-        calls.append(1)
-        if len(calls) == 2:
+        with lock:
+            calls.append(1)
+            second = len(calls) == 2
+        if second:
             raise RuntimeError('jev down')
         return {'answers': {name: {'probabilities': {'3': 1.0}} for name in questions}}
 
@@ -1593,26 +1796,21 @@ def test_jev_is_skipped_when_time_is_short(env):
 def test_a_jev_batch_that_never_returns_cannot_hold_the_call_open(env):
     env.monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: 'k')
     env.monkeypatch.setattr(search, 'JEV_MIN', 0.1)
+    env.monkeypatch.setattr(search, 'JEV_MARGIN', 0.1)
     env.monkeypatch.setattr(search, 'RESERVE', 0.2)
     env.monkeypatch.setattr(search.fetch, '_jev_request', lambda *a, **k: env.release.wait())
     started = time.monotonic()
-    scores, status = search.jev_scores('q', [{'title': 't', 'snippet': 's'}], search.Clock(1.0))
-    assert time.monotonic() - started < 1.5
+    scores, status = search.jev_scores('q', [{'title': 't', 'snippet': 's'}], search.Clock(2.0))
+    assert time.monotonic() - started < 2.0 + 1.0
     assert scores is None and status == 'skipped (time)'
 
 
 # --- the record ------------------------------------------------------------
 
-def test_the_record_sits_beside_the_tsv_and_its_folder_is_created(env):
-    tsv = str(env.tmp / 'run' / 'Run_20261017.tsv')
-    path = search.record_path('What does Acme charge?', tsv=tsv,
-                              now=datetime_utc(2026, 10, 17, 10, 15, 0))
-    assert path == str(env.tmp / 'run' / 'Run_20261017.searches' / '20261017T101500Z-what-does-acme-charge.json')
-
-
-def datetime_utc(*args):
-    from datetime import datetime, timezone
-    return datetime(*args, tzinfo=timezone.utc)
+def test_the_record_path_sits_beside_the_tsv():
+    tsv = '/runs/run/Run_20261017.tsv'
+    path = search.record_path('What does Acme charge?', tsv=tsv, now=datetime_utc(2026, 10, 17, 10, 15, 0))
+    assert path == '/runs/run/Run_20261017.searches/20261017T101500Z-what-does-acme-charge.json'
 
 
 def test_without_a_tsv_the_record_goes_to_out_dir_or_tmp():
@@ -1620,16 +1818,32 @@ def test_without_a_tsv_the_record_goes_to_out_dir_or_tmp():
     assert search.record_path('a', now=datetime_utc(2026, 1, 1)).startswith('/tmp/legwork/searches/')
 
 
-def search_main(env, *argv):
-    return search.main(list(argv))
+def test_a_call_with_a_fresh_tsv_creates_the_searches_folder(env, capsys):
+    tsv = str(env.tmp / 'new-run' / 'Run.tsv')
+    assert search.main(['--angle', 'a', '--wording', 'w1', '--tsv', tsv]) == 0
+    assert (env.tmp / 'new-run' / 'Run.searches').is_dir()
+    assert not os.path.exists(tsv)  # search.py writes nothing to the run's .tsv
 
 
-def test_two_calls_in_one_second_do_not_overwrite_each_other(env, capsys):
-    tsv = str(env.tmp / 'run.tsv')
-    for _ in range(2):
-        assert search_main(env, '--angle', 'a', '--wording', 'w1', '--tsv', tsv) == 0
-    files = list((env.tmp / 'run.searches').iterdir())
-    assert len(files) == 2
+def test_two_records_on_the_same_path_never_overwrite_each_other(env):
+    path = str(env.tmp / 'r' / 'same.json')
+    first = search._write_record(path, {'n': 1})
+    second = search._write_record(path, {'n': 2})
+    assert first != second
+    assert json.load(open(first)) == {'n': 1} and json.load(open(second)) == {'n': 2}
+
+
+def test_records_written_at_once_on_the_same_path_all_survive(env):
+    path = str(env.tmp / 'r' / 'race.json')
+    written = []
+    threads = [threading.Thread(target=lambda n=n: written.append(search._write_record(path, {'n': n})))
+               for n in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(set(written)) == 8
+    assert sorted(json.load(open(p))['n'] for p in written) == list(range(8))
 
 
 def test_the_record_holds_wordings_failures_leads_and_the_answer(env, capsys):
@@ -1637,13 +1851,13 @@ def test_the_record_holds_wordings_failures_leads_and_the_answer(env, capsys):
     env.monkeypatch.setattr(search, 'urlopen', lambda r, timeout=None: FakeResponse(EXA_PAYLOAD))
     FakePopen.script['w2'] = (2, '', '{"error": "quota"}')
     tsv = str(env.tmp / 'run.tsv')
-    assert search_main(env, '--angle', 'what does acme charge', '--wording', 'w1', '--wording', 'w2', '--tsv', tsv) == 0
+    assert search.main(['--angle', 'what does acme charge', '--wording', 'w1', '--wording', 'w2', '--tsv', tsv]) == 0
     record = json.load(open(next((env.tmp / 'run.searches').iterdir())))
     assert record['angle'] == 'what does acme charge' and record['wordings'] == ['w1', 'w2']
     assert {p['status'] for p in record['providers']} == {'ok', 'refused'}
     assert record['exa_answer'] == 'Acme charges 30 dollars.' and record['exa_cost'] == 0.005
     assert record['jev'] == 'off' and len(record['leads']) == 4
-    assert not os.path.exists(tsv)  # search.py writes nothing to the run's .tsv
+    assert not os.path.exists(tsv)
 
 
 # --- output ----------------------------------------------------------------
@@ -1652,11 +1866,10 @@ def test_output_has_a_status_line_capped_leads_a_more_line_and_the_answer_last(e
     env.monkeypatch.setattr(search, 'exa_key', lambda: 'k')
     env.monkeypatch.setattr(search, 'urlopen', lambda r, timeout=None: FakeResponse(
         dict(EXA_PAYLOAD, answer='A' * 2000)))
-    wordings = ['w{}'.format(i) for i in range(1, 7)]
     args = ['--angle', 'q', '--show', '5', '--tsv', str(env.tmp / 'run.tsv')]
-    for wording in wordings:
+    for wording in ['w{}'.format(i) for i in range(1, 7)]:
         args += ['--wording', wording]
-    assert search_main(env, *args) == 0
+    assert search.main(args) == 0
     out = capsys.readouterr().out
     lines = out.splitlines()
     assert lines[0].startswith('search: 6 wordings · google 6/6 ok · exa ok · jev: off · 19 leads (top 5 shown)')
@@ -1666,6 +1879,21 @@ def test_output_has_a_status_line_capped_leads_a_more_line_and_the_answer_last(e
     assert heading in out
     answer = out.split(heading, 1)[1].strip()
     assert len(answer) <= 1500 and out.rstrip().endswith(answer)
+
+
+def test_exa_is_queued_ahead_of_the_wordings(env, capsys):
+    order = []
+    env.monkeypatch.setattr(search, 'exa_key', lambda: 'k')
+
+    def fake_urlopen(request, timeout=None):
+        order.append('exa')
+        return FakeResponse(EXA_PAYLOAD)
+
+    FakePopen.on_launch = lambda proc: order.append(proc.cmd[2])
+    env.monkeypatch.setattr(search, 'urlopen', fake_urlopen)
+    env.monkeypatch.setattr(search, 'MAX_WORKERS', 1)  # one at a time, so order is the queue's
+    search.main(['--angle', 'q', '--wording', 'w1', '--wording', 'w2', '--out-dir', str(env.tmp)])
+    assert order[0] == 'exa'
 
 
 def test_a_lead_line_shows_title_url_snippet_and_its_lists(env):
@@ -1678,9 +1906,13 @@ def test_a_lead_line_shows_title_url_snippet_and_its_lists(env):
     assert len(lines[2].split('"')[1]) <= 163  # 160 characters and an ellipsis
 
 
+def test_a_more_line_quotes_a_path_with_spaces(env):
+    assert search._more_line('/runs/my run/x.json', 3, 41) == "+3 more: search.py --more '/runs/my run/x.json' --from 41"
+
+
 def test_no_bright_data_and_no_exa_key_exits_4_and_says_use_websearch(env, capsys):
     env.monkeypatch.setattr(search.shutil, 'which', lambda name: None)
-    assert search_main(env, '--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)) == search.EXIT_NO_PROVIDER
+    assert search.main(['--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)]) == search.EXIT_NO_PROVIDER
     out = capsys.readouterr().out
     assert 'google: not installed' in out and 'exa: no key' in out
     assert 'search: no search provider available - use WebSearch' in out
@@ -1688,23 +1920,23 @@ def test_no_bright_data_and_no_exa_key_exits_4_and_says_use_websearch(env, capsy
 
 def test_every_call_refused_also_exits_4(env, capsys):
     FakePopen.script['w1'] = (2, '', '{"error": "quota"}')
-    assert search_main(env, '--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)) == 4
+    assert search.main(['--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)]) == 4
 
 
 def test_zero_results_from_a_working_provider_is_exit_0(env, capsys):
     FakePopen.script['w1'] = (1, '', json.dumps({'error': search.ZERO_RESULTS}))
-    assert search_main(env, '--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)) == 0
+    assert search.main(['--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)]) == 0
     assert '0 leads' in capsys.readouterr().out
 
 
 def test_no_exa_flag_sends_nothing_to_exa(env, capsys):
     env.monkeypatch.setattr(search, 'exa_key', lambda: 'k')  # urlopen still raises if called
-    assert search_main(env, '--angle', 'q', '--wording', 'w1', '--no-exa', '--out-dir', str(env.tmp)) == 0
+    assert search.main(['--angle', 'q', '--wording', 'w1', '--no-exa', '--out-dir', str(env.tmp)]) == 0
     assert 'exa: off' in capsys.readouterr().out
 
 
 def test_engine_both_sends_each_wording_to_google_and_bing(env, capsys):
-    search_main(env, '--angle', 'q', '--wording', 'w1', '--engine', 'both', '--out-dir', str(env.tmp))
+    search.main(['--angle', 'q', '--wording', 'w1', '--engine', 'both', '--out-dir', str(env.tmp)])
     engines = sorted(p.cmd[p.cmd.index('--engine') + 1] for p in FakePopen.instances)
     assert engines == ['bing', 'google']
 
@@ -1715,6 +1947,8 @@ def test_engine_both_sends_each_wording_to_google_and_bing(env, capsys):
     ['--angle', 'q'] + ['--wording', 'w'] * 13,                 # too many
     ['--angle', 'q', '--wording', 'w1', '--show', '0'],
     ['--angle', 'q', '--wording', 'w1', '--engine', 'yandex'],
+    ['--angle', 'q', '--wording', 'w1', '--time-limit', '3'],   # no time for any search
+    ['--angle', 'q', '--wording', 'w1', '--tsv', 'a.tsv', '--out-dir', '/tmp'],
 ])
 def test_bad_arguments_exit_2(env, argv):
     with pytest.raises(SystemExit) as exc:
@@ -1726,10 +1960,7 @@ def test_bad_arguments_exit_2(env, argv):
 
 def test_more_prints_the_next_slice_with_no_network(env, capsys):
     tsv = str(env.tmp / 'run.tsv')
-    args = ['--angle', 'q', '--show', '3', '--tsv', tsv]
-    for wording in ('w1', 'w2'):
-        args += ['--wording', wording]
-    search_main(env, *args)
+    search.main(['--angle', 'q', '--show', '3', '--tsv', tsv, '--wording', 'w1', '--wording', 'w2'])
     capsys.readouterr()
     record = str(next((env.tmp / 'run.searches').iterdir()))
     before = len(FakePopen.instances)
@@ -1748,20 +1979,71 @@ def test_more_past_the_end_or_on_an_empty_record_says_so(env, capsys):
     assert capsys.readouterr().out.strip() == 'search: no leads from 41; the record has 0'
 
 
-def test_more_on_a_missing_record_exits_2(env, capsys):
-    assert search.main(['--more', str(env.tmp / 'nope.json')]) == 2
+@pytest.mark.parametrize('content', ['', 'not json', '[1, 2]', '{"leads": "x"}', '{"leads": [{"title": "no url"}]}'])
+def test_more_on_a_missing_or_malformed_record_exits_2_without_a_traceback(env, capsys, content):
+    path = env.tmp / 'bad.json'
+    if content:
+        path.write_text(content)
+    assert search.main(['--more', str(path)]) == 2
+    assert 'search: cannot read' in capsys.readouterr().err
 ```
-
-Also add `import os` to the imports at the top of `tests/test_search.py`.
 
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `cd skills/legwork && python3 -m pytest tests/test_search.py -q`
-Expected: the new tests FAIL with `AttributeError: module 'search' has no attribute 'merge'` (and similar); the Task 5 tests still pass.
+Expected: every test in the file ERRORS, because the fixture's new line names `search.fetch`, which does not exist until Step 3. That is the intended failing state.
 
-- [ ] **Step 3: Implement part 2** (append to `skills/legwork/scripts/search.py`)
+- [ ] **Step 3: Implement part 2**
+
+In `skills/legwork/scripts/search.py`:
+
+1. Add to the imports, keeping them sorted: `import argparse` (before `import json`), `import re` and `import shlex` (after `import queue`), and `from datetime import datetime, timezone` (after `import time`).
+2. Directly after the line `sys.path.insert(0, HERE)`, add:
 
 ```python
+import fetch  # noqa: E402
+from independence import canonicalize  # noqa: E402
+```
+
+3. Append to the end of the file:
+
+```python
+# ---------------------------------------------------------------------------
+# Providers: one table. Adding a provider is a function and an entry here.
+# ---------------------------------------------------------------------------
+
+def _bright_data_available():
+    return (True, '') if bright_data_installed() else (False, 'not installed')
+
+
+def _exa_available():
+    key = exa_key()
+    return (True, key) if key else (False, 'no key')
+
+
+# name: the provider's name in results, the status line and the record.
+# label: the prefix of its lists in a lead's provenance (g3, b3) or, for a
+#   provider asked once per angle, the whole label (exa).
+# per: 'wording' (one call per wording, chosen by --engine) or 'angle' (one
+#   call with the angle, always run unless switched off).
+# available: () -> (ok, detail); detail is the reason when not ok, otherwise
+#   whatever the provider needs (Exa's key).
+# run: (query, number, detail, opts, clock) -> provider_result.
+PROVIDERS = [
+    {'name': 'exa', 'label': 'exa', 'per': 'angle', 'available': _exa_available,
+     'run': lambda query, number, detail, opts, clock: search_exa(query, detail, clock)},
+    {'name': 'google', 'label': 'g', 'per': 'wording', 'available': _bright_data_available,
+     'run': lambda query, number, detail, opts, clock: search_bd('google', query, number, opts, clock)},
+    {'name': 'bing', 'label': 'b', 'per': 'wording', 'available': _bright_data_available,
+     'run': lambda query, number, detail, opts, clock: search_bd('bing', query, number, opts, clock)},
+]
+ENGINES = {'google': ['google'], 'bing': ['bing'], 'both': ['google', 'bing']}
+
+
+def _provider(name):
+    return next((p for p in PROVIDERS if p['name'] == name), None)
+
+
 # ---------------------------------------------------------------------------
 # Merge, rank, record and print
 # ---------------------------------------------------------------------------
@@ -1772,14 +2054,15 @@ SHOW_SNIPPET = 160
 SHOW_ANSWER = 1500
 ANSWER_HEADING = ("Exa's written answer - UNVERIFIED, NOT A SOURCE. "
                   "Open the cited pages before using anything in it:")
-_LETTER = {'google': 'g', 'bing': 'b'}
 
 
 def list_label(result):
     """One ranked list per provider per wording: g3 and b3 are two lists."""
-    if result['provider'] == 'exa':
-        return 'exa'
-    return '{}{}'.format(_LETTER.get(result['provider'], result['provider'][:1]), result['wording'])
+    provider = _provider(result['provider'])
+    label = provider['label'] if provider else result['provider']
+    if provider is None or provider['per'] == 'wording':
+        return '{}{}'.format(label, result['wording'])
+    return label
 
 
 def merge(results):
@@ -1804,7 +2087,7 @@ def merge(results):
                 lead['title'] = row['title']
             if not lead['date'] and row.get('date'):
                 lead['date'] = row['date']
-            rank = int(row.get('rank') or 1)
+            rank = _rank(row.get('rank'), 1)
             lead['ranks'][label] = min(rank, lead['ranks'].get(label, rank))
     return list(leads.values())
 
@@ -1822,11 +2105,11 @@ def jev_scores(angle, leads, clock):
     key = fetch.typesafe_key()
     if not key:
         return None, 'off'
-    if clock.remaining() < JEV_MIN:
+    timeout = clock.remaining() - JEV_MARGIN
+    if clock.remaining() < JEV_MIN or timeout <= 0:
         return None, 'skipped (time)'
     texts = ['{}\n{}'.format(lead.get('title') or '', lead.get('snippet') or '') for lead in leads]
     batches = [texts[i:i + fetch.JEV_BATCH] for i in range(0, len(texts), fetch.JEV_BATCH)]
-    timeout = max(1.0, clock.remaining() - JEV_MARGIN)
     out, errors = [None] * len(batches), []
 
     def work(number, batch):
@@ -1880,23 +2163,29 @@ def record_path(angle, tsv=None, out_dir=None, now=None):
 
 
 def _write_record(path, record):
-    """Write the record, never over an earlier one from the same second."""
+    """Write the record, never over another: each candidate name is created
+    exclusively, so two calls in the same second each get their own file."""
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     base, ext = os.path.splitext(path)
-    candidate, n = path, 1
-    while os.path.exists(candidate):
-        n += 1
-        candidate = '{}-{}{}'.format(base, n, ext)
-    with open(candidate, 'w', encoding='utf-8') as handle:
-        json.dump(record, handle, ensure_ascii=False, indent=1)
-    return candidate
+    n = 1
+    while True:
+        candidate = path if n == 1 else '{}-{}{}'.format(base, n, ext)
+        try:
+            with open(candidate, 'x', encoding='utf-8') as handle:
+                json.dump(record, handle, ensure_ascii=False, indent=1)
+            return candidate
+        except FileExistsError:
+            n += 1
 
 
 def _label_order(label):
-    if label == 'exa':
-        return (2, 0)
-    number = int(label[1:]) if label[1:].isdigit() else 0
-    return (0 if label[0] == 'g' else 1, number)
+    for position, provider in enumerate(PROVIDERS):
+        prefix = provider['label']
+        if provider['per'] == 'angle' and label == prefix:
+            return (1, position, 0)
+        if provider['per'] == 'wording' and label.startswith(prefix) and label[len(prefix):].isdigit():
+            return (0, position, int(label[len(prefix):]))
+    return (2, 0, 0)
 
 
 def lead_lines(leads, start, show):
@@ -1914,20 +2203,25 @@ def lead_lines(leads, start, show):
 
 
 def _more_line(path, remaining, start):
-    return '+{} more: search.py --more {} --from {}'.format(remaining, path, start)
+    return '+{} more: search.py --more {} --from {}'.format(remaining, shlex.quote(path), start)
 
 
 def _provider_status(results):
     parts = []
-    for provider in ('google', 'bing'):
-        mine = [r for r in results if r['provider'] == provider]
+    for provider in sorted(PROVIDERS, key=lambda p: p['per'] == 'angle'):
+        mine = [r for r in results if r['provider'] == provider['name']]
         if not mine:
             continue
         skipped = [r for r in mine if r['status'] == 'skipped']
         if skipped:
-            parts.append('{}: {}'.format(provider, skipped[0]['reason']))
+            parts.append('{}: {}'.format(provider['name'], skipped[0]['reason']))
             continue
-        text = '{} {}/{} ok'.format(provider, sum(r['ok'] for r in mine), len(mine))
+        if provider['per'] == 'angle':
+            result = mine[0]
+            parts.append('{} ok'.format(provider['name']) if result['ok']
+                         else '{}: {} ({})'.format(provider['name'], result['status'], result['reason']))
+            continue
+        text = '{} {}/{} ok'.format(provider['name'], sum(r['ok'] for r in mine), len(mine))
         bad = {}
         for r in mine:
             if not r['ok']:
@@ -1935,42 +2229,38 @@ def _provider_status(results):
         if bad:
             text += ' ({})'.format(', '.join('{} {}'.format(count, status) for status, count in sorted(bad.items())))
         parts.append(text)
-    exa = next((r for r in results if r['provider'] == 'exa'), None)
-    if exa is not None:
-        if exa['ok']:
-            parts.append('exa ok')
-        elif exa['status'] == 'skipped':
-            parts.append('exa: {}'.format(exa['reason']))
-        else:
-            parts.append('exa: {} ({})'.format(exa['status'], exa['reason']))
     return parts
 
 
 def cmd_search(angle, wordings, args):
     clock = Clock(args.time_limit)
-    engines = {'google': ['google'], 'bing': ['bing'], 'both': ['google', 'bing']}[args.engine]
     opts = {'country': args.country, 'language': args.language}
+    off = {'exa'} if args.no_exa else set()
+    chosen = [p for p in PROVIDERS
+              if (p['per'] == 'angle' and p['name'] not in off)
+              or (p['per'] == 'wording' and p['name'] in ENGINES[args.engine])]
+    # Per-angle providers first: Exa answers in about two seconds and must not
+    # queue behind Google calls that take thirteen to sixty.
+    chosen.sort(key=lambda p: p['per'] != 'angle')
     jobs, skipped = [], []
-    if bright_data_installed():
-        for engine in engines:
-            for number, wording in enumerate(wordings, 1):
-                jobs.append(('{}{}'.format(_LETTER[engine], number),
-                             (lambda e=engine, w=wording, n=number: search_bd(e, w, n, opts, clock)),
-                             provider_result(engine, wording, number, 'deadline')))
-    else:
-        skipped += [provider_result(engine, '', None, 'skipped', 'not installed') for engine in engines]
-    if args.no_exa:
-        skipped.append(provider_result('exa', angle, status='skipped', reason='off'))
-    else:
-        key = exa_key()
-        if key:
-            jobs.append(('exa', lambda: search_exa(angle, key, clock), provider_result('exa', angle, status='deadline')))
-        else:
-            skipped.append(provider_result('exa', angle, status='skipped', reason='no key'))
+    for provider in chosen:
+        ok, detail = provider['available']()
+        queries = [(angle, None)] if provider['per'] == 'angle' else [(w, n) for n, w in enumerate(wordings, 1)]
+        if not ok:
+            skipped.append(provider_result(provider['name'], angle if provider['per'] == 'angle' else '', None,
+                                           'skipped', detail))
+            continue
+        for query, number in queries:
+            jobs.append(('{}:{}'.format(provider['name'], number),
+                         (lambda p=provider, q=query, n=number, d=detail: p['run'](q, n, d, opts, clock)),
+                         provider_result(provider['name'], query, number, 'deadline')))
+    for name in sorted(off):
+        skipped.append(provider_result(name, angle, status='skipped', reason='off'))
 
     results = run_jobs(jobs, clock) + skipped
     leads = merge(results)
     jev, jev_status = jev_scores(angle, leads, clock)
+    network_seconds = round(clock.elapsed(), 2)  # every network call has ended or been abandoned
     leads = rank(leads, jev)
     exa = next((r for r in results if r['provider'] == 'exa'), {})
     answer = ' '.join(str(exa.get('answer') or '').split())
@@ -1980,7 +2270,7 @@ def cmd_search(angle, wordings, args):
         'engine': args.engine, 'country': args.country, 'language': args.language,
         'providers': results, 'jev': jev_status, 'leads': leads,
         'exa_answer': exa.get('answer') or '', 'exa_cost': exa.get('cost'),
-        'seconds': round(clock.elapsed(), 1)})
+        'network_seconds': network_seconds, 'seconds': round(clock.elapsed(), 1)})
 
     shown = min(args.show, len(leads))
     count = '{} lead{}'.format(len(leads), '' if len(leads) == 1 else 's')
@@ -2009,7 +2299,10 @@ def cmd_more(path, start, show):
     except (OSError, ValueError) as exc:
         print('search: cannot read {}: {}'.format(path, exc), file=sys.stderr)
         return 2
-    leads = record.get('leads') or []
+    leads = record.get('leads') if isinstance(record, dict) else None
+    if not isinstance(leads, list) or not all(isinstance(lead, dict) and lead.get('url') for lead in leads):
+        print('search: cannot read {}: not a search record'.format(path), file=sys.stderr)
+        return 2
     if start > len(leads):
         print('search: no leads from {}; the record has {}'.format(start, len(leads)))
         return 0
@@ -2026,11 +2319,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog='search.py', description=__doc__.split('\n')[1].strip())
     parser.add_argument('--angle', help='the angle, verbatim from Frame; this is what Exa is asked')
     parser.add_argument('--wording', action='append', default=[], help='repeatable; 1 to 12, 6 to 10 expected')
-    parser.add_argument('--tsv', help="the run's fetch log; the search record goes beside it")
-    parser.add_argument('--out-dir', dest='out_dir', help='where the search record goes when there is no --tsv')
-    parser.add_argument('--country', default='gb')
-    parser.add_argument('--language', default='en')
-    parser.add_argument('--engine', choices=['google', 'bing', 'both'], default='google')
+    where = parser.add_mutually_exclusive_group()
+    where.add_argument('--tsv', help="the run's fetch log; the search record goes beside it")
+    where.add_argument('--out-dir', dest='out_dir', help='where the search record goes when there is no --tsv')
+    parser.add_argument('--country', default=None,
+                        help='passed to Bright Data when given; Bing defaults to gb in bd_search.py')
+    parser.add_argument('--language', default=None,
+                        help='passed to Bright Data when given; Bing defaults to en in bd_search.py')
+    parser.add_argument('--engine', choices=sorted(ENGINES), default='google')
     parser.add_argument('--no-exa', dest='no_exa', action='store_true')
     parser.add_argument('--show', type=int, default=40, help='leads to print; the rest are in the record')
     parser.add_argument('--time-limit', dest='time_limit', type=float, default=150.0,
@@ -2048,6 +2344,8 @@ def main(argv=None):
         parser.error('--angle is required')
     if not 1 <= len(wordings) <= 12:
         parser.error('give 1 to 12 --wording values')
+    if args.time_limit <= RESERVE + 1:
+        parser.error('--time-limit must be more than {:.0f} seconds'.format(RESERVE + 1))
     return cmd_search(angle, wordings, args)
 
 
@@ -2058,25 +2356,38 @@ if __name__ == '__main__':
 - [ ] **Step 4: Run the tests**
 
 Run: `cd skills/legwork && python3 -m pytest tests/test_search.py -q`
-Expected: all PASS. If `test_output_has_a_status_line...` fails on the lead count, print `out` and check the arithmetic: six wordings each return three distinct URLs (18) plus Exa's one (19).
+Expected: 64 passed, in about twenty seconds.
 
-- [ ] **Step 5: Run the whole suite and the stdlib-import check, then commit**
+- [ ] **Step 5: Lint, the whole suite and the standard-library check, then commit**
 
-Run: `cd skills/legwork && python3 -m pytest tests/ -q && cd ../.. && python3 - <<'PY'
+Run from the repository root:
+
+```bash
+cd skills/legwork && ruff check --select E9,F scripts tests && python3 -m pytest tests/ -q && cd ../.. && python3 - <<'PY'
+# The same check CI runs (.github/workflows/validate.yml). Needs Python 3.10+
+# for sys.stdlib_module_names; the scripts themselves still run on 3.9.
 import ast, pathlib, sys
 STDLIB = set(sys.stdlib_module_names)
 LOCAL = {p.stem for p in pathlib.Path("skills/legwork/scripts").glob("*.py")}
-tree = ast.parse(pathlib.Path("skills/legwork/scripts/search.py").read_text())
-bad = [n.names[0].name if isinstance(n, ast.Import) else n.module for n in ast.walk(tree)
-       if isinstance(n, (ast.Import, ast.ImportFrom)) and n.module != "__future__"
-       and (n.names[0].name if isinstance(n, ast.Import) else n.module).split(".")[0] not in STDLIB | LOCAL]
-print("non-stdlib imports:", bad); sys.exit(1 if bad else 0)
-PY`
-Expected: suite PASS; `non-stdlib imports: []`.
+bad = []
+for node in ast.walk(ast.parse(pathlib.Path("skills/legwork/scripts/search.py").read_text())):
+    if isinstance(node, ast.Import):
+        names = [alias.name for alias in node.names]
+    elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+        names = [node.module]
+    else:
+        continue
+    bad += [n for n in names if n.split(".")[0] not in STDLIB | LOCAL | {"__future__"}]
+print("non-stdlib imports:", bad)
+sys.exit(1 if bad else 0)
+PY
+```
+
+Expected: `All checks passed!`; suite PASS; `non-stdlib imports: []`.
 
 ```bash
 git add skills/legwork/scripts/search.py skills/legwork/tests/test_search.py
-git commit -m "feat(search): merge, rank (RRF, Jev averaged in), search record, compact output and --more
+git commit -m "feat(search): provider table, merge, rank (RRF, Jev averaged in), search record, compact output and --more
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
 ```
@@ -2153,6 +2464,24 @@ def test_a_skill_md_without_the_rule_markers_is_refused(tmp_path):
     fake.write_text('no markers here', encoding='utf-8')
     with pytest.raises(brief.TemplateChanged):
         brief.read_wordings_rule(str(fake))
+```
+
+The new `search.py` command carries the angle, so it now appears three times in a brief, not two. Replace the two tests that count it:
+
+```python
+def test_the_angle_appears_verbatim_in_the_question_the_search_command_and_the_return_shape():
+    out = render('--angle', ANGLE, '--effort', 'narrow').stdout
+    assert out.count(ANGLE) == 3, out
+    assert '## Your angle\n\n' + ANGLE in out
+    assert 'search.py --angle "{}"'.format(ANGLE) in out
+    assert '"angle": "{}"'.format(ANGLE) in out
+```
+
+(this replaces `test_the_angle_appears_verbatim_in_the_question_and_the_return_shape`), and in `test_a_multi_line_angle_is_collapsed_to_one_line` replace the assertion with:
+
+```python
+    assert out.count('What does Acme charge?') == 3  # the question, the search command, the return shape
+    assert 'What does\n' not in out
 ```
 
 Change the last line of `test_a_template_missing_a_placeholder_is_refused` to pass the new arguments explicitly:
@@ -2609,3 +2938,34 @@ Checked against the spec, section by section:
 | Live check, eval | 9, 10 |
 
 Placeholders: none ("RUN.tsv" in the brief is a literal the subagent replaces, as the spec says). Names are consistent across tasks: `full_name`, `site_key`, `site_belongs`, `entity_sites`, `parse_entity_sites`, `check_rows_on_own_site`, `provider_result`, `search_bd`, `search_exa`, `run_jobs`, `merge`, `rank`, `jev_scores`, `record_path`, `lead_lines`, `main`. The five Review Focus items each have a test: 1 in Task 5, 2 and 4 and 5 in Task 6, 3 in Task 3.
+
+## Plan review
+
+Before any task was built, the plan was reviewed twice, blind to each other: by an Opus subagent on Tasks 4 to 6, which also ran the plan's code and tests in a throwaway copy (99 tests, all passing; 2 failures in about 300 loaded runs), and by gpt-6-astra on the whole plan (run `20261017T123523Z-e6361c`). Every finding was then fixed in throwaway copies and the result run before this version was written: Tasks 2 to 7 applied together give 600 passing tests and a clean ruff `E9,F`; `search.py`'s tests pass on Python 3.12 and 3.9.
+
+| Finding | From | What was done |
+|---|---|---|
+| A deadline test could miss its launch under load and fail | Opus | Tests wait on a `started` event and allow the limit plus 1 second |
+| Fake process ids could let a stray `os.killpg` reach a real process group | Opus | Fake pids start at `10**9`, the fake `killpg` asserts it, and teardown frees every blocked thread before patches are undone |
+| No provider table, so a new provider touched five places | Opus | `PROVIDERS` table, with a test that a provider added only to the table runs and reports |
+| No test drove the whole command with everything hanging | Opus | `test_the_whole_command_keeps_its_limit_with_everything_hanging` |
+| Timeout floors could exceed the time left | Opus | Floors removed; tests pin Exa's timeout and Jev's |
+| A process launched as the deadline falls could be missed | Opus, Astra | `_CLOSED`, set under the registration lock; a launch after it raises `Cancelled`; two deterministic tests |
+| Google was always sent `gb`/`en` | Opus | `--country` and `--language` default to unset; Bing's default stays in `bd_search.py` |
+| Exa queued behind slow Google calls | Opus | Per-angle providers run first; tested |
+| Record writing could race | Opus, Astra | Exclusive create (`'x'`) with a retry; a concurrent test |
+| `--more` tracebacks on malformed records | Opus | Validated; exits 2 with a message; tested |
+| An unquoted path in the `--more` line | Opus | `shlex.quote` |
+| `--time-limit` at or below the reserve gave a misleading exit 4 | Opus | `parser.error`; `--tsv` and `--out-dir` mutually exclusive |
+| A non-numeric rank raised out of `search_bd` | Opus | Parsed defensively; tested |
+| Locale encoding for the child process | Opus | UTF-8 both ways |
+| Two weak record tests | Opus | Replaced with a same-path test and a folder-creation test |
+| Three own-site tests from the spec missing | Opus | Added to Task 4 |
+| The fixture command's `cd` only worked from the root | Opus | Uses `git rev-parse --show-toplevel` |
+| A `-k` expression missed a test; two test files shared a name | Opus | Fixed |
+| Two existing brief tests count the angle twice and would fail | Astra | Task 7 updates both to three |
+| The import check crashed and needed 3.10+ | Astra | Rewritten from CI's own check; noted as 3.10+ |
+| Task 5 imported names only Task 6 uses, failing lint at Task 5 | Astra | Task 5 imports only what it uses; Task 6 adds the rest; a lint failure now stops the step |
+| Brief tests launch a real `python3` subprocess | Astra | **Not changed.** The existing brief tests already work this way, and it runs only `brief.py` locally with no network. `AGENTS.md`'s rule is no network; the plan's stricter wording was the reviewer's constraint, not the repository's |
+| Plain-text key files conflict with a credential rule | Astra | **Not changed.** A key alone in `~/.dbhq/legwork/<name>`, mode 600, is the DBHQ convention for skill credentials and is how the existing TypeSafe key already works |
+

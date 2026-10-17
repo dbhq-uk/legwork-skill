@@ -238,12 +238,14 @@ deadline.
   ranks what it has, writes the record and prints. Jev's own budget is counted
   against the same point.
 
-Tests patch `subprocess.Popen` and `os.killpg` for these calls. One drives a
-`bd_search.py` that never returns and asserts the command, output
-excluded, finishes its network phase within the limit, and the whole
-command within the limit plus 1 second on the test machine, with `killpg`
-called for its process group; another does the same for an Exa call that never returns, and a third
-for a Jev batch that never returns.
+Tests patch `subprocess.Popen` and `os.killpg` for these calls. They drive a
+`bd_search.py`, an Exa call and a Jev batch that never return, together and
+apart, and assert that the network phase - the record's `network_seconds` -
+ends within the limit (plus one 0.25-second polling interval), and that
+`killpg` was called for the hanging process group. The whole command gets a
+loose bound only: on 17 Oct 2026 a run with the CPU three times oversubscribed
+took 2.6 seconds over the limit doing local work, which this section does not
+promise to bound.
 
 Exit codes: 0 when at least one provider call succeeded, even with no results
 (the status line then says `0 leads`); 4 when every provider call failed, was
@@ -282,7 +284,8 @@ One JSON file per call: `<tsv without .tsv>.searches/<UTC stamp>-<angle slug>.js
 beside the run, or under `--out-dir`. It holds the date, the angle, every
 wording, every provider result in full (including failures with their reason
 and seconds), the merged leads with their scores, Exa's answer and its reported
-cost, and whether Jev ran. It is the record of what was searched, for checking
+cost, whether Jev ran, `network_seconds` (when every network call had ended or
+been abandoned) and `seconds` (the whole call). It is the record of what was searched, for checking
 a run and for the evals, and the source `--more` reads.
 
 ### G. What is logged

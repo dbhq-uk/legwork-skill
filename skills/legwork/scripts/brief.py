@@ -27,8 +27,10 @@ Stdlib only. Runs on any python3 >= 3.9.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import shlex
 import sys
 from datetime import datetime, timezone
 
@@ -49,9 +51,11 @@ EFFORT = ('{"This is one narrow fact - stop once you have it, from two\n'
 
 KNOWN = '{what earlier rounds on this angle found}'
 WORDINGS_RULE = '{WORDINGS_RULE}'
-TSV = '{TSV}'
+TSV_ARG = '{TSV_ARG}'
+ANGLE_ARG = '{ANGLE_ARG}'
 
-PLACEHOLDERS = (DATE, ANGLE, RETURN_ANGLE, BUDGET, SKILL, EFFORT, KNOWN, WORDINGS_RULE, TSV)
+PLACEHOLDERS = (DATE, ANGLE, RETURN_ANGLE, BUDGET, SKILL, EFFORT, KNOWN, WORDINGS_RULE,
+                TSV_ARG, ANGLE_ARG)
 
 FIRST_ROUND = 'Nothing yet - this is the first round on this angle.'
 LATER_ROUND = ('Earlier rounds on this angle found these. Look for the ones they missed - other\n'
@@ -113,9 +117,16 @@ def fill(template, angle, effort, date, wordings, known=(), rule=None, tsv=None)
     out = template.replace(EFFORT, EFFORT_TEXT[effort])
     out = out.replace(BUDGET, '{} to {} wordings.'.format(low, high))
     out = out.replace(WORDINGS_RULE, read_wordings_rule() if rule is None else rule)
-    out = out.replace(TSV, tsv or 'RUN.tsv')
+    # The two values that reach a shell are quoted for it, so an angle such as
+    # 'Does Acme cost $20 per user?' or one holding a quote, $(...) or a
+    # backtick arrives as one argument and runs nothing. The angle in the JSON
+    # return shape sits inside the template's own quotes, so it is escaped for
+    # JSON instead. Everywhere else it is prose and stays as written.
+    out = out.replace(TSV_ARG, shlex.quote(tsv or 'RUN.tsv'))
+    out = out.replace(ANGLE_ARG, shlex.quote(angle))
     out = out.replace(DATE, date)
-    out = out.replace(ANGLE, angle).replace(RETURN_ANGLE, angle)
+    out = out.replace(RETURN_ANGLE, json.dumps(angle)[1:-1])
+    out = out.replace(ANGLE, angle)
     out = out.replace(SKILL, SKILL_DIR)
     out = out.replace(KNOWN, known_text(known))
     left = [marker for marker in PLACEHOLDERS if marker in out]

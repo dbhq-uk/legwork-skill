@@ -10,6 +10,7 @@ command with a real path, and that nothing is left for a reader to fill in.
 
 import os
 import re
+import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -54,7 +55,7 @@ def test_the_angle_appears_verbatim_in_the_question_the_search_command_and_the_r
     out = render('--angle', ANGLE, '--effort', 'narrow').stdout
     assert out.count(ANGLE) == 3, out
     assert '## Your angle\n\n' + ANGLE in out
-    assert 'search.py --angle "{}"'.format(ANGLE) in out
+    assert 'search.py --angle {}'.format(shlex.quote(ANGLE)) in out
     assert '"angle": "{}"'.format(ANGLE) in out
 
 
@@ -106,12 +107,12 @@ def test_the_brief_carries_the_search_command_with_a_real_path_and_the_tsv(tmp_p
     out = render('--angle', ANGLE, '--effort', 'narrow', '--tsv', tsv).stdout
     match = re.search(r'python3 (\S+/scripts/search\.py) --angle', out)
     assert match and os.path.exists(match.group(1)), out
-    assert '--tsv "{}"'.format(tsv) in out
+    assert '--tsv {}'.format(shlex.quote(tsv)) in out
 
 
 def test_without_a_tsv_the_search_command_names_a_placeholder_log():
     out = render('--angle', ANGLE, '--effort', 'narrow').stdout
-    assert '--tsv "RUN.tsv"' in out
+    assert ' --tsv RUN.tsv' in out
 
 
 def test_the_return_shape_offers_serp_and_entity_sites():
@@ -159,3 +160,34 @@ def test_a_template_missing_a_placeholder_is_refused():
     template = brief.read_template().replace('{SKILL_DIR}', '/somewhere')
     with pytest.raises(brief.TemplateChanged):
         brief.fill(template, ANGLE, 'narrow', '2026-09-24', None, rule='rule text')
+
+
+def _search_argv(out):
+    """The search.py command line in a rendered brief, split as a shell would."""
+    line = next(l for l in out.splitlines() if l.startswith('`python3 ') and 'search.py --angle' in l)
+    return shlex.split(line.strip('`'))
+
+
+@pytest.mark.parametrize('angle', [
+    'Does Acme cost $20 per user?',
+    'the "pro" plan',
+    '$(touch /tmp/x)',
+    '`id`',
+    "what's Acme's price",
+])
+def test_a_hostile_angle_reaches_search_py_as_one_argument(angle):
+    argv = _search_argv(render('--angle', angle, '--effort', 'narrow').stdout)
+    assert argv[argv.index('--angle') + 1] == angle
+
+
+def test_a_tsv_path_with_a_space_round_trips(tmp_path):
+    tsv = str(tmp_path / 'my run' / 'Run $1.tsv')
+    argv = _search_argv(render('--angle', ANGLE, '--effort', 'narrow', '--tsv', tsv).stdout)
+    assert argv[argv.index('--tsv') + 1] == tsv
+
+
+def test_the_angle_in_the_return_shape_is_json_escaped():
+    import json
+    angle = 'the "pro" plan, $20'
+    out = render('--angle', angle, '--effort', 'narrow').stdout
+    assert '"angle": ' + json.dumps(angle) in out

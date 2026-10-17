@@ -76,7 +76,7 @@ across the options rather than going deep on the first one."}
 
 The command, with your wordings:
 
-`python3 {SKILL_DIR}/scripts/search.py --angle "{the angle above, unchanged}" --wording "<wording 1>" --wording "<wording 2>" --tsv "{TSV}"`
+`python3 {SKILL_DIR}/scripts/search.py --angle {ANGLE_ARG} --wording "<wording 1>" --wording "<wording 2>" --tsv {TSV_ARG}`
 
 and, for the next leads, the `--more` line it prints, such as
 `python3 {SKILL_DIR}/scripts/search.py --more "<record path>" --from 41`.

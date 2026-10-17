@@ -1,7 +1,7 @@
 # Wide search: many wordings across Google and Exa in one call, subagents still read the pages
 
 **Date:** 2026-10-17
-**Status:** design, approved section by section by Dan on 17 Oct 2026. Not built.
+**Status:** built on `feat/wide-search-design` (PR #39). The eval on 17 Oct 2026 did not meet the merge bar: fewer core banks and more scope errors than `main`, Postgres inconclusive (`evals/runs/2026-10-17-wide-search-against-answer-keys.md`). Not merged.
 **Scope:** a new `skills/legwork/scripts/search.py`; two fixes in `bd_search.py`;
 an optional timeout on `fetch.py`'s Jev request;
 the gather step in `SKILL.md`; the subagent brief and `brief.py`; entity sites in

@@ -137,7 +137,9 @@ e-money firms, a flat-pack question meets fitted conversions:
 
 An entity whose own site you opened a page on may be written as an object:
 {"name": "Acme", "site": "acme.example"}. The site is the entity's own domain,
-never an aggregator's, a directory's or a review site's.
+never an aggregator's, a directory's or a review site's. If its pages sit on
+more than one of its own domains (a group site and a developer portal), give
+each: {"name": "Acme", "site": ["acme.example", "acmebank.example"]}.
 
 Then one final object recording what you could NOT establish:
 

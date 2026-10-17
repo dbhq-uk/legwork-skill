@@ -188,7 +188,8 @@ failure logged by hand defaults to `ok`, which records a page nobody read.
    `bd_search.py "<url>" -m scrape --find "<term>" --max-chars 8000`. Prefer
    `--find` to a blind cap: the first eight thousand characters of a long page
    are usually the navigation.
-3. A client-rendered shell: `bd_search.py "<url>" -m render`.
+3. A client-rendered shell: `bd_search.py "<url>" -m render`. With Bright Data installed, the gate fails a
+   matrix row whose entity's own page is logged blocked or a shell and was never rendered.
 4. **Refused by every transport: change the address.** Every step above asks
    the same host for the same URL, so a publisher refusing by policy refuses all
    of them. Search the document's own title (add `filetype:pdf` for a PDF) and

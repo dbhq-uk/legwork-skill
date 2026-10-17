@@ -854,8 +854,8 @@ def parse_entities(text):
 
 def parse_entity_sites(text):
     """(angle or '', name, site) for every entity a reply gave as an object with
-    its own site, {"name": "Acme", "site": "acme.example"}. Strings carry no
-    site. Kept apart from parse_entities so its callers keep their pairs."""
+    its own site, {"name": "Acme", "site": "acme.example"}; "site" may be a list of
+    strings when the entity has several own domains. Strings carry no site. Kept apart from parse_entities so its callers keep their pairs."""
     decoder = json.JSONDecoder()
     found, at = [], 0
     text = text or ''
@@ -875,9 +875,11 @@ def parse_entity_sites(text):
                 for entry in item['entities']:
                     if isinstance(entry, dict):
                         name = str(entry.get('name') or '').strip()
-                        site = str(entry.get('site') or '').strip()
-                        if name and site:
-                            found.append((angle, name, site))
+                        given = entry.get('site')
+                        for site in (given if isinstance(given, list) else [given]):
+                            site = site.strip() if isinstance(site, str) else ''
+                            if name and site:
+                                found.append((angle, name, site))
     return found
 
 

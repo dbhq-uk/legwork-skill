@@ -614,3 +614,30 @@ def test_a_home_page_canonical_on_a_deep_page_is_ignored():
         'https://a.example/blog/post'
     assert sources.logged_url({'url': 'https://a.example/p?x=1', 'canonical': 'https://a.example/p'}) == \
         'https://a.example/p'
+
+
+def test_parse_entity_sites_accepts_a_list_of_sites():
+    reply = json.dumps({'angle': 'q', 'entities': [
+        {'name': 'NatWest Group', 'site': ['natwestgroup.com', 'natwest.com']}]})
+    assert sources.parse_entity_sites(reply) == [('q', 'NatWest Group', 'natwestgroup.com'),
+                                                 ('q', 'NatWest Group', 'natwest.com')]
+
+
+def test_parse_entity_sites_skips_a_non_string_in_a_list_and_blank_strings():
+    reply = json.dumps({'angle': 'q', 'entities': [
+        {'name': 'Acme', 'site': ['acme.example', 7, None, ['x.example'], '  ', 'acme.test']},
+        {'name': 'Globex', 'site': 5}]})
+    assert sources.parse_entity_sites(reply) == [('q', 'Acme', 'acme.example'), ('q', 'Acme', 'acme.test')]
+
+
+def test_log_returns_records_every_site_of_an_entity(tmp_path, capsys):
+    import ledger
+    tsv = str(tmp_path / 'run.tsv')
+    reply = '\n'.join([
+        json.dumps({'url': 'https://natwest.com/x', 'angle': 'q', 'via': 'direct', 'status': 'ok'}),
+        json.dumps({'entities': [{'name': 'NatWest Group', 'site': ['natwestgroup.com', 'natwest.com']}]}),
+        json.dumps({'entities': [{'name': 'NatWest Group', 'site': 'natwest.com'}]}),
+        json.dumps({'gaps': ['none']}),
+    ])
+    sources.main_with_args(['log-returns', '--tsv', tsv, '--returns', _returns(tmp_path, reply), '--angle', 'q'])
+    assert ledger.entity_sites(tsv) == {'natwest group': {'natwestgroup.com', 'natwest.com'}}

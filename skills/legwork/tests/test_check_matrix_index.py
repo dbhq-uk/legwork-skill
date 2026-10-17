@@ -347,3 +347,104 @@ def test_registration_is_a_warning_not_an_error_even_at_deep(tmp_path):
     problems, _ = check.run(str(report), str(log), 'report', 'deep')
     assert any('index' in w for w in problems.warnings)
     assert problems.errors == []
+
+
+# ---------------------------------------------------------------------------
+# A blocked own page is rendered before it is given up, and an entity may have
+# several own sites (spec L, 17 Oct 2026). Graded against the banks key, the
+# branch lost cores whose own pages came back blocked or as shells and were
+# never rendered; main rendered the same pages and got them.
+# ---------------------------------------------------------------------------
+
+ALL_UNKNOWN_ACME = COMPLETE_MATRIX.replace('| Acme | 30 USD/seat [1] | No [2] |', '| Acme | [unknown] | [unknown] |')
+
+
+def add_log_row(log, url, status, via='webfetch'):
+    """Append a fetch-log row, as fetch.py or log-returns would."""
+    with open(log, 'a', encoding='utf-8') as handle:
+        handle.write('\t'.join([url, 'vendor_pricing', 'incumbent pricing', via, '2026-07-28T09:05:00+00:00',
+                                status, '2026-07-01', '', 'Page', 'A line.']) + '\n')
+
+
+def render_errors(problems, entity):
+    return [e for e in problems.errors if e.startswith(entity + ':') and 'never rendered' in e]
+
+
+def run_with_bright_data(report, log, installed=True):
+    original = check.bright_data_installed
+    check.bright_data_installed = lambda: installed
+    try:
+        return check.run(report, log, 'report', 'standard')[0]
+    finally:
+        check.bright_data_installed = original
+
+
+def test_an_all_unknown_row_with_a_blocked_own_page_never_rendered_fails(tmp_path):
+    report, log = report_with(tmp_path, ALL_UNKNOWN_ACME)
+    with_sites(log, {'acme': ['acme.example']})
+    add_log_row(log, 'https://acme.example/pricing', 'blocked')
+    problems = run_with_bright_data(report, log)
+    errors = render_errors(problems, 'Acme')
+    assert len(errors) == 1, messages_of(problems)
+    assert 'https://acme.example/pricing came back blocked and was never rendered' in errors[0]
+    assert 'bd_search.py "https://acme.example/pricing" -m render' in errors[0]
+    assert '--via brightdata' in errors[0] and '[unknown]' in errors[0]
+
+
+def test_a_shell_own_page_never_rendered_fails_the_same_way(tmp_path):
+    report, log = report_with(tmp_path, ALL_UNKNOWN_ACME)
+    with_sites(log, {'acme': ['acme.example']})
+    add_log_row(log, 'https://acme.example/pricing', 'SHELL')
+    problems = run_with_bright_data(report, log)
+    errors = render_errors(problems, 'Acme')
+    assert errors and 'came back SHELL' not in errors[0] and 'came back shell' in errors[0], messages_of(problems)
+
+
+def test_without_bright_data_a_blocked_own_page_is_not_an_error(tmp_path):
+    report, log = report_with(tmp_path, ALL_UNKNOWN_ACME)
+    with_sites(log, {'acme': ['acme.example']})
+    add_log_row(log, 'https://acme.example/pricing', 'blocked')
+    problems = run_with_bright_data(report, log, installed=False)
+    assert not render_errors(problems, 'Acme') and not own_site_errors(problems, 'Acme'), problems.errors
+
+
+def test_a_failed_render_logged_brightdata_counts_as_tried(tmp_path):
+    report, log = report_with(tmp_path, ALL_UNKNOWN_ACME)
+    with_sites(log, {'acme': ['acme.example']})
+    add_log_row(log, 'https://acme.example/pricing', 'blocked')
+    add_log_row(log, 'https://acme.example/pricing', 'blocked', via='brightdata')
+    problems = run_with_bright_data(report, log)
+    assert not render_errors(problems, 'Acme'), problems.errors
+
+
+def test_an_aggregator_row_with_a_blocked_own_page_gets_the_render_message_only(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    with_sites(log, {'acme': ['acme.example']})  # Acme cites acme-software.example, opened
+    add_log_row(log, 'https://acme.example/pricing', 'blocked')
+    problems = run_with_bright_data(report, log)
+    assert render_errors(problems, 'Acme'), messages_of(problems)
+    assert not own_site_errors(problems, 'Acme'), messages_of(problems)
+
+
+def test_a_row_citing_an_opened_own_page_passes_though_another_own_page_is_blocked(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    with_sites(log, {'acme': ['acme-software.example']})  # [1] is opened on it
+    add_log_row(log, 'https://acme-software.example/enterprise', 'blocked')
+    problems = run_with_bright_data(report, log)
+    assert not render_errors(problems, 'Acme') and not own_site_errors(problems, 'Acme'), problems.errors
+
+
+def test_an_aggregator_row_with_no_blocked_own_page_keeps_the_own_site_message_and_hint(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    with_sites(log, {'acme': ['acme.example']})
+    problems = run_with_bright_data(report, log)
+    errors = own_site_errors(problems, 'Acme')
+    assert len(errors) == 1 and not render_errors(problems, 'Acme'), messages_of(problems)
+    assert errors[0].endswith('If the page you opened is its own on another domain, record that domain too.')
+
+
+def test_an_entity_with_two_sites_passes_on_an_opened_page_on_the_second(tmp_path):
+    report, log = report_with(tmp_path, COMPLETE_MATRIX)
+    with_sites(log, {'acme': ['acme.example', 'acme-software.example']})
+    problems = run_with_bright_data(report, log)
+    assert not own_site_errors(problems, 'Acme') and not render_errors(problems, 'Acme'), problems.errors

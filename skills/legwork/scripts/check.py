@@ -45,6 +45,7 @@ from independence import canonicalize, corroboration, portfolio  # noqa: E402
 from index import read_index  # noqa: E402
 import ledger  # noqa: E402
 from matrix import check_matrix, parse_matrix  # noqa: E402
+from search import bright_data_installed  # noqa: E402
 from sources import SNIPPET_VIA, read_rows, retrieval_receipt  # noqa: E402
 
 LEVELS = ('quick', 'standard', 'deep')
@@ -595,23 +596,44 @@ def check_rows_on_own_site(parsed, entries, rows, tsv_path, problems):
     if not sites or not parsed:
         return
     opened = opened_urls(rows or [])
+    render_possible = bright_data_installed()
     for row in parsed['rows']:
         keys = sites.get(ledger.full_name(row['entity']))
         if not keys:
             continue
-        values = [value.strip().lower() for value in row['cells'].values()]
-        if values and all(value == '[unknown]' for value in values):
-            continue
         cited = sorted({int(n) for n in re.findall(r'\[(\d+)\]', ' '.join(row['cells'].values()))})
         urls = [entries[n]['url'] for n in cited if n in (entries or {}) and entries[n]['url']]
-        if not urls:
-            continue
         if any(canonicalize(url) in opened and any(ledger.site_belongs(url, key) for key in keys) for url in urls):
+            continue
+        unrendered = unrendered_own_page(rows or [], keys) if render_possible else None
+        if unrendered:
+            problems.structural(
+                '{}: its own page {} came back {} and was never rendered - run bd_search.py "{}" -m render, '
+                'log it --via brightdata and cite it; mark the cells [unknown] only if the render fails '
+                'too'.format(row['entity'], unrendered[0], unrendered[1], unrendered[0]))
+            continue
+        values = [value.strip().lower() for value in row['cells'].values()]
+        if (values and all(value == '[unknown]' for value in values)) or not urls:
             continue
         problems.structural(
             '{}: no citation in this row is a page you opened on its own site ({}) - an aggregator or a '
             'review found it, but only its own page settles what it offers and costs. Cite a page you '
-            'opened on its own site, or mark the cells [unknown]'.format(row['entity'], ', '.join(sorted(keys))))
+            'opened on its own site, or mark the cells [unknown]. If the page you opened is its own on '
+            'another domain, record that domain too.'.format(row['entity'], ', '.join(sorted(keys))))
+
+
+def unrendered_own_page(rows, keys):
+    """(url, status) of the first logged row on one of the entity's sites that came
+    back blocked or as a shell, when no row on any of those sites went through
+    Bright Data (a failed render counts as tried). None otherwise."""
+    on_site = [row for row in rows if any(ledger.site_belongs(row.get('url', ''), key) for key in keys)]
+    if any((row.get('via') or '').strip().lower() == 'brightdata' for row in on_site):
+        return None
+    for row in on_site:
+        status = (row.get('status') or '').strip().lower()
+        if status in ('blocked', 'shell'):
+            return row.get('url', ''), status
+    return None
 
 
 def check_breadth(tsv_path, content, problems):

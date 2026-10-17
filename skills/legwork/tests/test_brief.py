@@ -120,6 +120,11 @@ def test_the_return_shape_offers_serp_and_entity_sites():
     assert '"serp"' in out and '{"name": "Acme", "site": "acme.example"}' in out
 
 
+def test_the_return_shape_offers_a_list_of_sites_for_an_entity():
+    out = render('--angle', ANGLE, '--effort', 'narrow').stdout
+    assert '{"name": "Acme", "site": ["acme.example", "acmebank.example"]}' in out
+
+
 def test_a_skill_md_without_the_rule_markers_is_refused(tmp_path):
     fake = tmp_path / 'SKILL.md'
     fake.write_text('no markers here', encoding='utf-8')

@@ -114,7 +114,8 @@ def fill(template, angle, effort, date, wordings, known=(), rule=None, tsv=None)
             'the template in subagent-brief.md no longer has {} - update brief.py to match '
             'rather than hand-writing the brief'.format(', '.join(repr(m) for m in missing)))
     low, high = wordings or DEFAULT_WORDINGS[effort]
-    # Two values reach a shell, so they are quoted for it: an angle such as
+    # Three values reach a shell, so they are quoted for it (the skill's own
+    # directory too, which may hold a space): an angle such as
     # 'Does Acme cost $20 per user?', or one holding a quote, $(...) or a
     # backtick, arrives as one argument and runs nothing. The angle in the JSON
     # return shape sits inside the template's own quotes, so it is escaped for
@@ -126,9 +127,9 @@ def fill(template, angle, effort, date, wordings, known=(), rule=None, tsv=None)
         TSV_ARG: shlex.quote(tsv or 'RUN.tsv'),
         ANGLE_ARG: shlex.quote(angle),
         DATE: date,
-        RETURN_ANGLE: json.dumps(angle)[1:-1],
+        RETURN_ANGLE: json.dumps(angle, ensure_ascii=False)[1:-1],
         ANGLE: angle,
-        SKILL: SKILL_DIR,
+        SKILL: shlex.quote(SKILL_DIR),
         KNOWN: known_text(known),
     }
     # One pass over the template, so a value is never read again: an angle, a

@@ -764,3 +764,42 @@ def test_jev_request_passes_its_timeout_to_urlopen(monkeypatch):
     assert seen['timeout'] == 7.5
     fetch._jev_request({}, {}, 'key')
     assert seen['timeout'] == 60
+
+
+def _key_home(monkeypatch, tmp_path, text):
+    home = tmp_path / 'home'
+    (home / '.dbhq' / 'legwork').mkdir(parents=True)
+    (home / '.dbhq' / 'legwork' / 'typesafe-api-key').write_text(text, encoding='utf-8')
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
+
+
+def test_a_key_file_with_a_second_line_gives_the_first_line_only(monkeypatch, tmp_path):
+    _key_home(monkeypatch, tmp_path, 'ts_live_A\nB\n')
+    assert fetch.typesafe_key() == 'ts_live_A'
+
+
+def test_a_key_with_an_embedded_space_is_no_key(monkeypatch, tmp_path):
+    _key_home(monkeypatch, tmp_path, 'ts_live A\n')
+    assert fetch.typesafe_key() == ''
+
+
+def test_the_environment_key_with_a_newline_in_the_middle_gives_the_first_line(monkeypatch, tmp_path):
+    monkeypatch.setenv('HOME', str(tmp_path / 'empty-home'))
+    monkeypatch.setenv('TYPESAFE_API_KEY', 'ts_live_X\nY')
+    assert fetch.typesafe_key() == 'ts_live_X'
+
+
+def test_clean_key_skips_blank_lines_and_rejects_control_characters():
+    assert fetch.clean_key('\n\n  k1  \nk2') == 'k1'
+    assert fetch.clean_key('a\x00b') == ''
+    assert fetch.clean_key(None) == ''
+
+
+def test_an_unreadable_key_file_is_no_key(monkeypatch, tmp_path):
+    home = tmp_path / 'home'
+    (home / '.dbhq' / 'legwork').mkdir(parents=True)
+    (home / '.dbhq' / 'legwork' / 'typesafe-api-key').write_bytes(b'\xff\xfe\x00bad')
+    monkeypatch.setenv('HOME', str(home))
+    monkeypatch.delenv('TYPESAFE_API_KEY', raising=False)
+    assert fetch.typesafe_key() == ''

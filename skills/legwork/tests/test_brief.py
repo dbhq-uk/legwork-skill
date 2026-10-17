@@ -214,3 +214,17 @@ def test_a_known_item_holding_a_marker_stays_literal():
     out = brief.fill(template, ANGLE, 'narrow', '2026-10-17', None, known=['Acme {ANGLE} {DATE}'],
                      rule='rule text')
     assert '- Acme {ANGLE} {DATE}' in out
+
+
+def test_a_skill_directory_with_a_space_reaches_every_command_as_one_argument(monkeypatch):
+    monkeypatch.setattr(brief, 'SKILL_DIR', '/tmp/my skills/legwork')
+    out = brief.fill(brief.read_template(), ANGLE, 'narrow', '2026-09-24', None, rule='rule text')
+    argv = _search_argv(out)
+    assert argv[1] == '/tmp/my skills/legwork/scripts/search.py'
+    fetch_line = next(l for l in out.splitlines() if 'scripts/fetch.py "<url>"' in l)
+    assert shlex.split(fetch_line.strip().strip('.').strip('`'))[1] == '/tmp/my skills/legwork/scripts/fetch.py'
+
+
+def test_a_non_ascii_angle_shows_as_written_in_the_return_shape():
+    out = render('--angle', 'Does Acme cost £20 a month?', '--effort', 'narrow').stdout
+    assert '"angle": "Does Acme cost £20 a month?"' in out and '\\u00a3' not in out

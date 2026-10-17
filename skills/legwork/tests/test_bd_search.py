@@ -70,6 +70,14 @@ def test_engine_language_page_and_device_reach_the_cli(monkeypatch, capsys):
         assert cmd[cmd.index(flag) + 1] == value
 
 
+def test_a_query_starting_with_a_dash_reaches_the_cli_as_the_query(monkeypatch, capsys):
+    recorder = _Recorder(SERP_BODY)
+    run(monkeypatch, capsys, ['--engine', 'google', '--', '-crypto bank sandbox UK'], recorder)
+    cmd = recorder.calls[0]
+    assert cmd[-2:] == ['--', '-crypto bank sandbox UK']
+    assert cmd.index('--type') < cmd.index('--')
+
+
 def test_a_shopping_search_asks_for_the_shopping_vertical(monkeypatch, capsys):
     recorder = _Recorder(SHOPPING_BODY)
     payload = run(monkeypatch, capsys, ['widget', '-m', 'shopping'], recorder)

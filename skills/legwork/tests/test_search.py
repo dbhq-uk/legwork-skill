@@ -52,7 +52,7 @@ class FakePopen:
         self.returncode = None
         FakePopen.instances.append(self)
         FakePopen.started.set()
-        self.outcome = FakePopen.script.get(cmd[2], (0, serp(cmd[2]), ''))
+        self.outcome = FakePopen.script.get(cmd[-1], (0, serp(cmd[-1]), ''))
         if FakePopen.on_launch:
             FakePopen.on_launch(self)
 
@@ -145,7 +145,7 @@ def clock(limit=150):
 def test_a_wording_becomes_one_bd_search_call_with_engine_country_and_language(env):
     result = search.search_bd('google', 'acme pricing', 1, {'country': 'gb', 'language': 'en'}, clock())
     cmd = FakePopen.instances[0].cmd
-    assert cmd[1] == search.BD_SEARCH and cmd[2] == 'acme pricing'
+    assert cmd[1] == search.BD_SEARCH and cmd[-1] == 'acme pricing'
     for flag, value in (('-m', 'general'), ('--engine', 'google'), ('-c', '10'),
                         ('--country', 'gb'), ('--language', 'en')):
         assert cmd[cmd.index(flag) + 1] == value
@@ -156,7 +156,7 @@ def test_a_wording_becomes_one_bd_search_call_with_engine_country_and_language(e
 def test_a_wording_with_quotes_and_symbols_reaches_bd_search_as_one_argument(env):
     wording = '"per user per month" site:acme.example £30'
     search.search_bd('google', wording, 1, {}, clock())
-    assert FakePopen.instances[0].cmd[2] == wording
+    assert FakePopen.instances[0].cmd[-1] == wording
 
 
 def test_the_subprocess_starts_its_own_group_and_speaks_utf8(env):
@@ -488,7 +488,7 @@ def test_the_whole_command_keeps_its_limit_with_everything_hanging(env, capsys):
     record = json.load(open(next(env.tmp.glob('*.json'))))
     assert record['network_seconds'] <= 5 + 0.5, record['network_seconds']  # one poll interval of slack
     assert elapsed < 5 + 5, elapsed
-    hung = [p for p in FakePopen.instances if p.cmd[2] == 'w-hang']
+    hung = [p for p in FakePopen.instances if p.cmd[-1] == 'w-hang']
     assert hung and all(p.pid in env.killed for p in hung)
     out = capsys.readouterr().out
     assert 'exa: deadline' in out and 'jev: skipped (time)' in out
@@ -706,7 +706,7 @@ def test_exa_is_queued_ahead_of_the_wordings(env, capsys):
         order.append('exa')
         return FakeResponse(EXA_PAYLOAD)
 
-    FakePopen.on_launch = lambda proc: order.append(proc.cmd[2])
+    FakePopen.on_launch = lambda proc: order.append(proc.cmd[-1])
     env.monkeypatch.setattr(search, 'urlopen', fake_urlopen)
     env.monkeypatch.setattr(search, 'MAX_WORKERS', 1)  # one at a time, so order is the queue's
     search.main(['--angle', 'q', '--wording', 'w1', '--wording', 'w2', '--out-dir', str(env.tmp)])
@@ -900,3 +900,82 @@ def test_a_time_limit_that_is_not_a_finite_number_exits_2(env, limit):
     with pytest.raises(SystemExit) as exc:
         search.main(['--angle', 'q', '--wording', 'w1', '--time-limit', limit, '--out-dir', str(env.tmp)])
     assert exc.value.code == 2
+
+
+# --- final review fixes ----------------------------------------------------
+
+def test_the_default_time_limit_finishes_inside_a_hosts_default_shell_timeout(env, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(search, 'cmd_search', lambda angle, wordings, args: seen.setdefault('t', args.time_limit) and 0)
+    search.main(['--angle', 'q', '--wording', 'w1'])
+    assert seen['t'] == 110.0
+
+
+def test_a_wording_starting_with_a_dash_goes_after_a_double_dash(env):
+    search.search_bd('google', '-crypto bank sandbox UK', 1, {'country': 'gb'}, clock())
+    cmd = FakePopen.instances[0].cmd
+    assert cmd[-2:] == ['--', '-crypto bank sandbox UK']
+    assert cmd[1] == search.BD_SEARCH and cmd.index('--country') < cmd.index('--')
+
+
+def test_a_failed_record_write_prints_every_lead(env, capsys):
+    many = json.dumps({'results': [{'rank': i + 1, 'title': 'T{}'.format(i), 'snippet': 's',
+                                    'url': 'https://site{}.example/p'.format(i)} for i in range(45)]})
+    FakePopen.script['w1'] = (0, many, '')
+
+    def boom(path, record):
+        raise OSError('disk full')
+
+    env.monkeypatch.setattr(search, '_write_record', boom)
+    assert search.main(['--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)]) == 0
+    out = capsys.readouterr().out
+    for i in range(45):
+        assert 'https://site{}.example/p'.format(i) in out
+    assert 'record not written (disk full) - printing all 45 leads' in out
+    assert '+5 more' not in out and 'top 40 shown' not in out
+
+
+def test_without_process_groups_a_timed_out_google_call_says_the_cli_may_still_run(env, capsys):
+    env.monkeypatch.setattr(search, '_GROUPS', False)
+    env.monkeypatch.setattr(search, 'GOOGLE_TIMEOUT', 0.2)
+    FakePopen.script['w-hang'] = 'hang'
+    search.main(['--angle', 'q', '--wording', 'w-ok', '--wording', 'w-hang', '--out-dir', str(env.tmp)])
+    first = capsys.readouterr().out.splitlines()[0]
+    assert 'google 1/2 ok (1 timeout) (the Bright Data CLI may still be running)' in first
+
+
+def test_without_process_groups_a_deadline_cut_says_it_too_and_with_them_it_stays_quiet(env):
+    cut = [search.provider_result('google', 'w', 1, 'deadline', 'x')]
+    env.monkeypatch.setattr(search, '_GROUPS', False)
+    assert any('may still be running' in part for part in search._provider_status(cut))
+    ok = [search.provider_result('google', 'w', 1, 'ok')]
+    assert not any('may still be running' in part for part in search._provider_status(ok))
+    env.monkeypatch.setattr(search, '_GROUPS', True)
+    assert not any('may still be running' in part for part in search._provider_status(cut))
+
+
+def test_bright_data_rows_with_odd_field_types_are_kept_only_when_the_url_is_a_string(env, capsys):
+    FakePopen.script['q'] = (0, json.dumps({'results': [
+        {'url': 123, 'title': 'numeric url'},
+        {'url': ['https://l.example'], 'title': 'list url'},
+        {'url': '', 'title': 'empty url'},
+        {'url': 'https://ok.example/a', 'title': {'x': 1}, 'snippet': 5, 'date': ['d']}]}), '')
+    result = search.search_bd('google', 'q', 1, {}, clock())
+    assert [r['url'] for r in result['results']] == ['https://ok.example/a']
+    assert result['results'][0]['title'] == '' and result['results'][0]['snippet'] == ''
+    assert result['results'][0]['date'] == ''
+    # and the whole call survives them
+    assert search.main(['--angle', 'a', '--wording', 'q', '--out-dir', str(env.tmp)]) == 0
+    assert 'https://ok.example/a' in capsys.readouterr().out
+    json.load(open(next(env.tmp.glob('*.json'))))
+
+
+def test_exa_citations_with_odd_field_types_are_cleaned_or_dropped(env):
+    payload = {'answer': 'a', 'citations': [
+        {'url': 123, 'title': 'n'}, {'url': {'u': 1}}, {'url': 'https://e.example/x', 'title': ['t'],
+                                                       'text': {'k': 'v'}, 'publishedDate': 20260701}]}
+    env.monkeypatch.setattr(search, 'urlopen', lambda request, timeout=None: FakeResponse(payload))
+    result = search.search_exa('q', 'k', clock())
+    assert result['ok'] and [r['url'] for r in result['results']] == ['https://e.example/x']
+    row = result['results'][0]
+    assert row['title'] == '' and row['snippet'] == '' and row['date'] == ''

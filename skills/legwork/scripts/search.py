@@ -5,7 +5,7 @@ search.py - ask one angle many ways, across Google and Exa, in one call.
     search.py --angle "what does the incumbent charge" \\
       --wording "..." --wording "..." [--wording ...]    # 1 to 12; 6 to 10 expected
       [--tsv RUN.tsv | --out-dir DIR] [--country CC] [--language LL]
-      [--engine google|bing|both] [--no-exa] [--show 40] [--time-limit 150]
+      [--engine google|bing|both] [--no-exa] [--show 40] [--time-limit 110]
     search.py --more RECORD.json [--from 41] [--show 40]
 
 Every wording goes to Bright Data (through bd_search.py) in parallel, and the
@@ -89,27 +89,14 @@ class Cancelled(Exception):
     """The deadline passed before or while a process was being launched."""
 
 
-def _clean_key(text):
-    """The first non-blank line, or '' when what is left holds any whitespace or
-    control character: such a key can never be a valid header value, and a
-    rejected header would put the key into an error message."""
-    for line in (text or '').splitlines():
-        line = line.strip()
-        if line:
-            if any(c.isspace() or not c.isprintable() for c in line):
-                return ''
-            return line
-    return ''
-
-
 def exa_key():
     """EXA_API_KEY from the environment, else ~/.dbhq/legwork/exa-api-key."""
-    key = _clean_key(os.environ.get('EXA_API_KEY', ''))
+    key = fetch.clean_key(os.environ.get('EXA_API_KEY', ''))
     if key:
         return key
     try:
         with open(os.path.expanduser(EXA_KEY_FILE), encoding='utf-8') as handle:
-            return _clean_key(handle.read())
+            return fetch.clean_key(handle.read())
     except (OSError, ValueError):
         return ''
 
@@ -204,6 +191,11 @@ def _reason(stderr):
     return ' '.join(str(text).split())[:120]
 
 
+def _text(value):
+    """A provider's text field, or '' when it is not a string."""
+    return value if isinstance(value, str) else ''
+
+
 def _rank(value, fallback):
     try:
         rank = int(value)
@@ -217,11 +209,14 @@ def search_bd(engine, wording, number, opts, clock):
     deadline allows; a refusal (exit 2, auth or quota) is not. Country and
     language are passed only when given: Google is left alone, and bd_search.py
     gives Bing its own gb/en default."""
-    cmd = [sys.executable, BD_SEARCH, wording, '-m', 'general', '--engine', engine, '-c', '10']
+    cmd = [sys.executable, BD_SEARCH, '-m', 'general', '--engine', engine, '-c', '10']
     if opts.get('country'):
         cmd += ['--country', opts['country']]
     if opts.get('language'):
         cmd += ['--language', opts['language']]
+    # The wording goes last, after "--", so one that starts with "-" (an
+    # exclusion such as -crypto) is read as a query and not as an option.
+    cmd += ['--', wording]
     started = time.monotonic()
     attempt = 0
     while True:
@@ -243,9 +238,10 @@ def search_bd(engine, wording, number, opts, clock):
             except (ValueError, AttributeError):
                 status, reason = 'failed', 'stdout was not JSON'
             else:
-                results = [{'url': row['url'], 'title': row.get('title') or '', 'snippet': row.get('snippet') or '',
-                            'rank': _rank(row.get('rank'), index + 1), 'date': row.get('date') or ''}
-                           for index, row in enumerate(rows) if isinstance(row, dict) and row.get('url')]
+                results = [{'url': row['url'], 'title': _text(row.get('title')), 'snippet': _text(row.get('snippet')),
+                            'rank': _rank(row.get('rank'), index + 1), 'date': _text(row.get('date'))}
+                           for index, row in enumerate(rows)
+                           if isinstance(row, dict) and isinstance(row.get('url'), str) and row['url']]
                 return provider_result(engine, wording, number, 'ok', '' if results else 'zero results',
                                        time.monotonic() - started, results)
         elif ZERO_RESULTS in (err or ''):
@@ -274,7 +270,7 @@ def search_exa(angle, key, clock):
     # A key that exa_key would not hand back unchanged never reaches a header:
     # every key that does is printable with no whitespace, so it appears in any
     # message literally and the replacement above catches it.
-    if key != _clean_key(key):
+    if key != fetch.clean_key(key):
         return failure('failed', 'the Exa key holds whitespace or a control character')
     left = clock.remaining()
     if left <= 0:
@@ -296,10 +292,10 @@ def search_exa(angle, key, clock):
         return failure('failed', 'response was not a JSON object')
     results = []
     for index, cite in enumerate(payload.get('citations') or []):
-        if isinstance(cite, dict) and cite.get('url'):
-            results.append({'url': cite['url'], 'title': cite.get('title') or '',
-                            'snippet': ' '.join(str(cite.get('text') or '').split())[:SNIPPET_KEEP],
-                            'rank': index + 1, 'date': str(cite.get('publishedDate') or '')[:10]})
+        if isinstance(cite, dict) and isinstance(cite.get('url'), str) and cite['url']:
+            results.append({'url': cite['url'], 'title': _text(cite.get('title')),
+                            'snippet': ' '.join(_text(cite.get('text')).split())[:SNIPPET_KEEP],
+                            'rank': index + 1, 'date': _text(cite.get('publishedDate'))[:10]})
     cost = payload.get('costDollars')
     cost = cost.get('total') if isinstance(cost, dict) else None
     return provider_result('exa', angle, status='ok', reason='' if results else 'zero results',
@@ -584,6 +580,10 @@ def _provider_status(results):
                 bad[r['status']] = bad.get(r['status'], 0) + 1
         if bad:
             text += ' ({})'.format(', '.join('{} {}'.format(count, status) for status, count in sorted(bad.items())))
+        # Without process groups only bd_search.py is killed; the Bright Data
+        # CLI it started may outlive it, and the status line does not hide that.
+        if not _GROUPS and provider['name'] in ('google', 'bing') and (bad.get('timeout') or bad.get('deadline')):
+            text += ' (the Bright Data CLI may still be running)'
         parts.append(text)
     return parts
 
@@ -633,7 +633,8 @@ def cmd_search(angle, wordings, args):
     except OSError as exc:  # the leads are still worth printing
         write_error = ' '.join(str(exc).split()) or type(exc).__name__
 
-    shown = min(args.show, len(leads))
+    # Without a record, --more has nothing to read, so every lead is printed.
+    shown = len(leads) if write_error else min(args.show, len(leads))
     count = '{} lead{}'.format(len(leads), '' if len(leads) == 1 else 's')
     if len(leads) > shown:
         count += ' (top {} shown)'.format(shown)
@@ -644,7 +645,8 @@ def cmd_search(angle, wordings, args):
     lines = [' · '.join(status)]
     lines += lead_lines(leads, 1, shown)
     if write_error:
-        lines.append('search: record not written ({})'.format(write_error))
+        lines.append('search: record not written ({}) - printing all {} lead{}'.format(
+            write_error, len(leads), '' if len(leads) == 1 else 's'))
     elif len(leads) > shown:
         lines.append(_more_line(path, len(leads) - shown, shown + 1))
     if not any(r['ok'] for r in results):
@@ -705,8 +707,8 @@ def main(argv=None):
     parser.add_argument('--engine', choices=sorted(ENGINES), default='google')
     parser.add_argument('--no-exa', dest='no_exa', action='store_true')
     parser.add_argument('--show', type=int, default=40, help='leads to print; the rest are in the record')
-    parser.add_argument('--time-limit', dest='time_limit', type=float, default=150.0,
-                        help='seconds for every network call together (default 150)')
+    parser.add_argument('--time-limit', dest='time_limit', type=float, default=110.0,
+                        help='seconds for every network call together (default 110)')
     parser.add_argument('--more', help='print further leads from a saved search record; no network')
     parser.add_argument('--from', dest='start', type=int, default=41, help='with --more, the first lead to print')
     args = parser.parse_args(argv)

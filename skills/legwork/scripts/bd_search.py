@@ -167,7 +167,6 @@ def run_serp(args) -> None:
     cmd = [
         cli,
         "search",
-        args.query,
         "--type",
         _TYPE_FOR_MODE.get(args.mode, "web"),
         "--json",
@@ -191,6 +190,9 @@ def run_serp(args) -> None:
         cmd.extend(["--country", country])
     if args.zone:
         cmd.extend(["--zone", args.zone])
+    # The query goes last, after "--", so a wording that starts with "-"
+    # (an exclusion such as -crypto) is a query and not an option.
+    cmd.extend(["--", args.query])
     raw = _run(cmd)
     try:
         parsed = json.loads(raw)

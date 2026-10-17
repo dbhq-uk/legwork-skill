@@ -122,16 +122,23 @@ def site_key(site):
 
 
 def site_belongs(url, key):
-    """Is the page at `url` on the site recorded as `key`? Its host is the site's
-    host or a subdomain of it, and where the key has a path, the page's path
-    starts with every segment of it."""
+    """Is the page at `url` on the site recorded as `key`? A key with no path is
+    a whole site: the page's host is that host or a subdomain of it. A key with a
+    path is a tenant of a shared host (a PyPI project, a GitHub account), so the
+    page's host must be that host exactly, and its path must start with every
+    segment of the key's path: test.pypi.org is not pypi.org."""
     if not key:
         return False
     site_host, _, site_path = key.partition('/')
-    host, path = _host_and_path(url)
-    if not host or not (host == site_host or host.endswith('.' + site_host)):
-        return False
     want = [part for part in site_path.split('/') if part]
+    host, path = _host_and_path(url)
+    if not host:
+        return False
+    if want:
+        if host != site_host:
+            return False
+    elif not (host == site_host or host.endswith('.' + site_host)):
+        return False
     return path[:len(want)] == want
 
 

@@ -255,16 +255,29 @@ def _expected_score(answer):
 KEY_FILE = os.path.join('~', '.dbhq', 'legwork', 'typesafe-api-key')
 
 
+def clean_key(text):
+    """The first non-blank line, or '' when what is left holds any whitespace or
+    control character: such a key can never be a valid header value, and a
+    rejected header would put the key into an error message."""
+    for line in (text or '').splitlines():
+        line = line.strip()
+        if line:
+            if any(c.isspace() or not c.isprintable() for c in line):
+                return ''
+            return line
+    return ''
+
+
 def typesafe_key():
     """TYPESAFE_API_KEY from the environment, else from ~/.dbhq/legwork/, where
     every DBHQ skill keeps its credentials. Empty when neither has one."""
-    key = os.environ.get('TYPESAFE_API_KEY', '').strip()
+    key = clean_key(os.environ.get('TYPESAFE_API_KEY', ''))
     if key:
         return key
     try:
         with open(os.path.expanduser(KEY_FILE), encoding='utf-8') as handle:
-            return handle.read().strip()
-    except OSError:
+            return clean_key(handle.read())
+    except (OSError, ValueError):
         return ''
 
 

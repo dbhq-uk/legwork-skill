@@ -174,7 +174,9 @@ It reuses `fetch.py`'s `typesafe_key`, `_jev_request`, `_expected_score` and
 Each provider is one function, `search_<name>(query, options) -> ProviderResult`,
 where a result is `{'provider', 'query', 'ok', 'reason', 'seconds', 'results':
 [{'url', 'title', 'snippet', 'rank', 'date'}]}`. Adding a provider later is a
-new function and an entry in one table; nothing else changes.
+new function and an entry in one table; nothing else changes, except that a
+search engine asked once per wording also needs its name in `ENGINES`, because
+`--engine` chooses among those engines.
 
 | Provider | How | Key |
 |---|---|---|

@@ -148,6 +148,8 @@ def test_full_name_strips_presentation_and_keeps_words(raw, expected):
     ('github.com', ''),
     ('', ''),
     ('not a site', ''),
+    ('https://[bad', ''),
+    ('not a.site', ''),
 ])
 def test_site_key(site, key):
     assert ledger.site_key(site) == key
@@ -165,6 +167,7 @@ def test_site_key(site, key):
     ('https://pypi.org/project/alpha/1.2/', 'pypi.org/project/alpha', True),
     ('https://www.npmjs.com/package/beta', 'npmjs.com/package/alpha', False),
     ('https://acme.example/', '', False),
+    ('https://[bad', 'acme.example', False),
 ])
 def test_site_belongs(url, key, belongs):
     assert ledger.site_belongs(url, key) is belongs
@@ -214,4 +217,10 @@ def test_a_ledger_without_sites_still_loads(tmp_path):
 def test_a_site_with_no_usable_key_is_not_stored(tmp_path):
     tsv = str(tmp_path / 'run.tsv')
     ledger.record_round(tsv, 'q', ['Acme'], [], sites=[('Acme', 'github.com'), ('Acme', '')])
+    assert ledger.entity_sites(tsv) == {}
+
+
+def test_a_malformed_site_never_interrupts_a_round(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    ledger.record_round(tsv, 'q', ['Acme'], [], sites=[('Acme', 'https://[bad')])
     assert ledger.entity_sites(tsv) == {}

@@ -88,13 +88,17 @@ def _host_and_path(raw):
         return '', []
     if '://' not in raw:
         raw = 'https://' + raw.lstrip('/')
-    parsed = urlparse(raw)
-    host = (parsed.hostname or '').lower().strip('.')
+    try:
+        parsed = urlparse(raw)
+        host = (parsed.hostname or '').lower().strip('.')
+        path = parsed.path or ''
+    except ValueError:
+        return '', []
     if host.startswith('www.'):
         host = host[4:]
-    if '.' not in host:
+    if '.' not in host or not re.fullmatch(r'[a-z0-9.-]+', host):
         return '', []
-    return host, [part for part in (parsed.path or '').lower().split('/') if part]
+    return host, [part for part in path.lower().split('/') if part]
 
 
 def site_key(site):

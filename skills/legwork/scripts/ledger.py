@@ -36,6 +36,7 @@ import argparse
 import json
 import os
 import re
+from urllib.parse import urlparse
 
 ROUND_CAP = {'quick': 1, 'standard': 3, 'deep': None}
 
@@ -65,6 +66,91 @@ def named_in(name, text):
     return bool(word) and re.search(r'\b{}\b'.format(re.escape(word)), text) is not None
 
 
+_MD_LINK = re.compile(r'\[([^\]]*)\]\([^)]*\)')
+_CITATION = re.compile(r'\[\d+\]')
+_EMPHASIS = re.compile(r'(?<![\w])[*_]+|[*_]+(?![\w])')
+
+
+def full_name(name):
+    """An entity's whole name, as the own-site check compares it: Markdown
+    presentation and citation markers removed, lowercased, whitespace collapsed.
+    Words and parentheses are kept, so "Acme (UK)" and "Acme (US)" stay apart -
+    unlike distinctive(), which would call both of them "acme"."""
+    text = _MD_LINK.sub(r'\1', name or '')
+    text = _CITATION.sub(' ', text).replace('`', '')
+    text = _EMPHASIS.sub('', text)
+    return ' '.join(text.lower().split())
+
+
+def _host_and_path(raw):
+    raw = (raw or '').strip()
+    if not raw:
+        return '', []
+    if '://' not in raw:
+        raw = 'https://' + raw.lstrip('/')
+    try:
+        parsed = urlparse(raw)
+        host = (parsed.hostname or '').lower().strip('.')
+        path = parsed.path or ''
+    except ValueError:
+        return '', []
+    if host.startswith('www.'):
+        host = host[4:]
+    try:
+        host = host.encode('idna').decode('ascii')
+    except UnicodeError:
+        return '', []
+    if '.' not in host or not re.fullmatch(r'[a-z0-9.-]+', host):
+        return '', []
+    return host, [part for part in path.lower().split('/') if part]
+
+
+def site_key(site):
+    """What an entity's own site is recorded as. Not party_of: party_of reduces
+    analytics.example.com and hosting.example.com to one party, which is right
+    for counting independent voices and wrong for "is this its own site", and it
+    keeps one path segment on code hosts and registries, so every PyPI project
+    would be pypi.org/project. On those hosts the whole path is kept."""
+    from independence import PATH_TENANT_HOSTS, registrable_domain
+
+    host, path = _host_and_path(site)
+    if not host:
+        return ''
+    if registrable_domain(host) in PATH_TENANT_HOSTS:
+        return host + '/' + '/'.join(path) if path else ''
+    return host
+
+
+def site_belongs(url, key):
+    """Is the page at `url` on the site recorded as `key`? A key with no path is
+    a whole site: the page's host is that host or a subdomain of it. A key with a
+    path is a tenant of a shared host (a PyPI project, a GitHub account), so the
+    page's host must be that host exactly, and its path must start with every
+    segment of the key's path: test.pypi.org is not pypi.org."""
+    if not key:
+        return False
+    site_host, _, site_path = key.partition('/')
+    want = [part for part in site_path.split('/') if part]
+    host, path = _host_and_path(url)
+    if not host:
+        return False
+    if want:
+        if host != site_host:
+            return False
+    elif not (host == site_host or host.endswith('.' + site_host)):
+        return False
+    return path[:len(want)] == want
+
+
+def entity_sites(tsv):
+    """{full name: {site key}} across every angle in the run's ledger."""
+    out = {}
+    for entry in load(tsv).values():
+        for name, keys in (entry.get('sites') or {}).items():
+            out.setdefault(name, set()).update(keys)
+    return out
+
+
 def path(tsv):
     return os.path.splitext(tsv)[0] + '.entities.json'
 
@@ -77,9 +163,9 @@ def load(tsv):
         return {}
 
 
-def record_round(tsv, angle, entities, parties, out_of_scope=()):
-    """Add one round for `angle`: the entities its subagent named, the ones it
-    set aside as not what the angle asks about (with reasons), and the parties
+def record_round(tsv, angle, entities, parties, out_of_scope=(), sites=()):
+    """Add one round for `angle`: the entities its subagent named, the own sites
+    it recorded for them, the ones it set aside as not what the angle asks about (with reasons), and the parties
     it logged. Returns what was new in this round. Set-aside names never count
     as new: a bank question's tail of e-money firms is not breadth, and counted
     it would keep the angle open for ever."""
@@ -103,6 +189,12 @@ def record_round(tsv, angle, entities, parties, out_of_scope=()):
     entry['parties'] += new_parties
     entry['rounds'].append({'entities': len(entities or []), 'new_entities': new_entities,
                             'new_parties': new_parties})
+    for name, site in sites or ():
+        full, key = full_name(name), site_key(site)
+        if full and key:
+            known = entry.setdefault('sites', {}).setdefault(full, [])
+            if key not in known:
+                known.append(key)
     with open(path(tsv), 'w', encoding='utf-8') as handle:
         json.dump(ledger, handle, ensure_ascii=False, indent=1)
     return new_entities, new_parties

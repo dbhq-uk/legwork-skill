@@ -1,0 +1,27 @@
+{
+ "fixture angle": {
+  "rounds": [
+   {
+    "entities": 0,
+    "new_entities": [],
+    "new_parties": [
+     "fixture.example"
+    ]
+   },
+   {
+    "entities": 0,
+    "new_entities": [],
+    "new_parties": []
+   }
+  ],
+  "entities": {},
+  "parties": [
+   "fixture.example"
+  ],
+  "sites": {
+   "acme": [
+    "acme.example"
+   ]
+  }
+ }
+}

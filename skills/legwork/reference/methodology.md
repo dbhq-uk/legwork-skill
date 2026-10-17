@@ -50,11 +50,15 @@ happened, what the incumbent would do in response, what the adjacent market says
 
 ### Queries
 
-The three variants, for the angle "what does Acme charge":
+The wordings, for the angle "what does Acme charge" (the rule is in `SKILL.md`
+step 3; these are examples of it):
 
 - plain: `acme pricing 2026`
-- targeted: `site:acme.example pricing`, or `"per user per month" acme`, or
-  `acme price list filetype:pdf`
+- the party's own site: `site:acme.example pricing`, or `"per user per month" acme`,
+  or `acme price list filetype:pdf`
+- a buyer's: `how much does acme cost for a team of ten`
+- a practitioner's: `acme seat licence true-up annual billing`
+- a critic's: `acme too expensive alternatives`
 - negative: `acme price increase 2026`, `why we left acme`
 
 **Year-pin dated material only.** A query that silently searches the wrong year
@@ -78,7 +82,7 @@ platform's own numbers attached.
 
 ### Thin
 
-Thin means fewer than two independent parties after three variants. Still thin
+Thin means fewer than two independent parties after the wordings in `SKILL.md` step 3. Still thin
 after the paid search rungs is a finding in its own right: say what was searched.
 
 ### A copy on another host

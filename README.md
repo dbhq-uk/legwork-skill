@@ -26,7 +26,7 @@ Research that settles a decision. Ask a real question, get a memo where every fa
 
 **It can tell you it could not answer.** If nothing clears the evidence floor, the run says so and names the closest thing it found, rather than producing four thousand hedged words. An honest empty answer is a result.
 
-**Free by default, paid only when needed.** Retrieval runs on the host's built-in `WebSearch` and `WebFetch`. The Bright Data CLI is a *fallback*, used only where the built-ins genuinely cannot do the job - bot-blocked or paywalled pages, Reddit threads, geo-specific SERP. A run against ordinary sources makes **zero** paid calls.
+**Free to run, paid to widen.** With no Bright Data CLI and no Exa key, a run uses only the host's built-in `WebSearch` and `WebFetch` and the free `fetch.py` and `platforms.py`, and makes **zero** paid calls. With them, `search.py` asks Bright Data Google once for every wording and Exa Answer once for the angle, on every angle, and both are paid. Opening pages stays free first: the Bright Data CLI is used there only where the free routes cannot do the job - bot-blocked or paywalled pages, Reddit threads.
 
 **It does not ask permission to begin.** It infers a level, says which one it picked, and goes. Redirect it mid-run if it guessed wrong; that costs far less than a blocking question on every research request.
 
@@ -72,8 +72,10 @@ whole skill directory is symlinked untouched, while Codex does not, so its
 **Python 3.9 or newer**, standard library only. CI runs the suite across
 3.9 to 3.13.
 
-**The Bright Data CLI is optional.** It is the retrieval fallback for pages
-that block a plain fetch; setup succeeds without it and says so.
+**The Bright Data CLI is optional.** It is paid. `search.py` uses it for every
+angle when it is installed, and it is the fallback for pages that block a plain
+fetch; setup succeeds without it and says so. With neither it nor an Exa key,
+the run uses the free built-in search.
 
 **A TypeSafe API key is optional.** With `TYPESAFE_API_KEY` set, or the key
 alone in `~/.dbhq/legwork/typesafe-api-key` (mode 600), when a page
@@ -106,15 +108,17 @@ Set a different default with `export LEGWORK_DEFAULT_MODE=deep`.
 
 ## Search backend
 
-Two ladders, free rungs first.
+Two ladders. To search, `search.py` comes first and is paid (Bright Data and Exa, each optional), with the free built-in search beside it and as the whole of the ladder when neither is available. To open a page, the free rungs come first.
 
 **To search:**
 
 | Situation | Provider |
 |-----------|----------|
-| Every angle, three query variants | `WebSearch` (free) |
+| Every angle, the wordings `SKILL.md` step 3 asks for, in one call | `search.py`: every wording to Bright Data Google in parallel, and the angle to Exa Answer once. Leads are ranked, never filtered, and every one is reachable with `--more` |
+| Every angle, the wordings `SKILL.md` step 3 also sends to it | `WebSearch` (free), which finds pages Bright Data does not |
+| No search provider available (`search.py` exits 4) | `WebSearch` for every wording |
 | The answer is a record a platform holds - a thread, a package, a repository, a dated news item, a vendor's changelog | `platforms.py` (free, keyless) |
-| Thin after three variants, or geo-specific | Bright Data SERP on a second engine, with `--country` and `--language` |
+| Thin after the wordings, or geo-specific | Bright Data SERP on a second engine, with `--country` and `--language` |
 | Two engines still thin | Bright Data `-m discover`, intent-ranked |
 
 **To open a page:**
@@ -135,6 +139,12 @@ country and language control, any site's own RSS or Atom feed, and the Wayback
 Machine. Every row carries the platform's own numbers - points, weekly
 downloads, stars, answer counts - which is the evidence a search snippet cannot
 give you.
+
+**Optional keys.** `search.py` runs on whatever is available. Bright Data uses
+the CLI's own login. Exa reads `EXA_API_KEY`, or a file holding only the key at
+`~/.dbhq/legwork/exa-api-key` (mode 600); without it, `search.py` runs on
+Google alone and says `exa: no key`. Exa's written answer is shown, marked as
+unverified and not a source; only its cited pages, once opened, can be cited.
 
 On any failure the wrapper emits JSON to stderr and exits non-zero, and the skill falls back to the built-ins. Auth and quota failures map to exit code `2`, so you are told to re-authenticate rather than left silently degraded.
 
@@ -175,6 +185,7 @@ All standard library only, Python 3.9+.
 |--------|---------|
 | `fetch.py "<url>" --find TERM [--relevant Q]` | Open a page directly and keep its text; reads the publication date; exits 3 on a block or a client-rendered shell. On a miss it prints the page's headings, and with a TypeSafe key the passages Jev ranks most relevant. `--saved FILE` searches a page already fetched |
 | `platforms.py list \| search --on X` | Ten free platform-native sources, returning records rather than pages about them |
+| `search.py --angle "..." --wording "..." [...] --tsv F` | Many wordings in one call: Bright Data Google for each, Exa Answer for the angle. Leads are ranked, never dropped, and written to a search record; exits 4 when no provider is available |
 | `brief.py --angle "..." --effort narrow\|comparison` | The retrieval subagent's brief, filled from the template with the date, the angle and real script paths, so it is passed rather than retyped |
 | `sources.py kinds \| log \| log-returns \| receipt \| score \| stale \| resume` | The source-kind vocabulary, the fetch log, logging a subagent's whole reply with its page text, the retrieval receipt, fitness scoring per claim kind, staleness, resume |
 | `independence.py groups \| check \| portfolio` | Collapse sources into independent voices; angle-aware corroboration; run-wide concentration |

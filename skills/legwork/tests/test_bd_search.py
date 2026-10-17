@@ -70,6 +70,14 @@ def test_engine_language_page_and_device_reach_the_cli(monkeypatch, capsys):
         assert cmd[cmd.index(flag) + 1] == value
 
 
+def test_a_query_starting_with_a_dash_reaches_the_cli_as_the_query(monkeypatch, capsys):
+    recorder = _Recorder(SERP_BODY)
+    run(monkeypatch, capsys, ['--engine', 'google', '--', '-crypto bank sandbox UK'], recorder)
+    cmd = recorder.calls[0]
+    assert cmd[-2:] == ['--', '-crypto bank sandbox UK']
+    assert cmd.index('--type') < cmd.index('--')
+
+
 def test_a_shopping_search_asks_for_the_shopping_vertical(monkeypatch, capsys):
     recorder = _Recorder(SHOPPING_BODY)
     payload = run(monkeypatch, capsys, ['widget', '-m', 'shopping'], recorder)
@@ -292,3 +300,42 @@ def test_render_lets_a_single_page_app_settle_before_reading_it(monkeypatch, cap
          '--out', str(tmp_path / 'p.txt')],
         _Recorder('', '<p>' + 'Rendered body text. ' * 40 + '</p>', ''))
     assert waited == [2.0]
+
+
+# ---------------------------------------------------------------------------
+# Engine fixes, 17 Oct 2026: Yandex never returned JSON through the CLI, and
+# Bing without a country came back in a Spanish locale.
+# ---------------------------------------------------------------------------
+
+def test_yandex_is_refused(monkeypatch, capsys):
+    monkeypatch.setattr('sys.argv', ['bd_search.py', 'q', '-m', 'general', '--engine', 'yandex'])
+    with pytest.raises(SystemExit) as exc:
+        bd_search.main()
+    assert exc.value.code == 2  # argparse rejects an invalid choice
+
+
+def test_bing_with_no_country_gets_gb_and_en(monkeypatch, capsys):
+    monkeypatch.delenv('BD_COUNTRY', raising=False)
+    monkeypatch.delenv('BD_LANGUAGE', raising=False)
+    recorder = _Recorder(SERP_BODY)
+    run(monkeypatch, capsys, ['acme pricing', '-m', 'general', '--engine', 'bing'], recorder)
+    cmd = recorder.calls[0]
+    assert cmd[cmd.index('--country') + 1] == 'gb'
+    assert cmd[cmd.index('--language') + 1] == 'en'
+
+
+def test_bing_keeps_a_country_it_was_given(monkeypatch, capsys):
+    recorder = _Recorder(SERP_BODY)
+    run(monkeypatch, capsys, ['acme pricing', '-m', 'general', '--engine', 'bing',
+                              '--country', 'us', '--language', 'fr'], recorder)
+    cmd = recorder.calls[0]
+    assert cmd[cmd.index('--country') + 1] == 'us'
+    assert cmd[cmd.index('--language') + 1] == 'fr'
+
+
+def test_google_with_no_country_sends_none(monkeypatch, capsys):
+    monkeypatch.delenv('BD_COUNTRY', raising=False)
+    monkeypatch.delenv('BD_LANGUAGE', raising=False)
+    recorder = _Recorder(SERP_BODY)
+    run(monkeypatch, capsys, ['acme pricing', '-m', 'general', '--engine', 'google'], recorder)
+    assert '--country' not in recorder.calls[0]

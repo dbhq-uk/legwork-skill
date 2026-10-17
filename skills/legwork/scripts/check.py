@@ -38,6 +38,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -539,7 +540,7 @@ def opened_urls(rows):
     }
 
 
-def check_matrix_section(content, problems, entries=None, rows=None):
+def check_matrix_section(content, problems, entries=None, rows=None, tsv_path=None):
     """A comparison matrix, if the report carries one.
 
     Table cells are not sentences, so none of the sentence-level checks above can
@@ -567,7 +568,10 @@ def check_matrix_section(content, problems, entries=None, rows=None):
     if problems.level not in ('standard', 'deep') or not entries or not rows:
         return
     opened = opened_urls(rows)
-    for row in parsed['rows']:
+    unrendered = unrendered_rows(parsed, entries, rows, tsv_path)
+    for index, row in enumerate(parsed['rows']):
+        if index in unrendered:
+            continue  # the render message below says what to do; this one would send the run the other way
         cited = sorted({int(n) for n in re.findall(r'\[(\d+)\]', ' '.join(row['cells'].values()))})
         urls = [entries[n]['url'] for n in cited if n in entries and entries[n]['url']]
         if urls and not any(canonicalize(url) in opened for url in urls):
@@ -575,6 +579,114 @@ def check_matrix_section(content, problems, entries=None, rows=None):
                 '{}: every citation in this row is a search result or a page nobody opened ({}) - '
                 'open one of them, or mark the cells [unknown]'.format(
                     row['entity'], ', '.join('[{}]'.format(n) for n in cited)))
+    check_rows_on_own_site(parsed, entries, rows, tsv_path, problems)
+
+
+def _bright_data_installed():
+    return bool(shutil.which('brightdata') or shutil.which('bdata'))
+
+
+def _row_urls(row, entries):
+    cited = sorted({int(n) for n in re.findall(r'\[(\d+)\]', ' '.join(row['cells'].values()))})
+    return [entries[n]['url'] for n in cited if n in (entries or {}) and entries[n]['url']]
+
+
+def _opened_on_own_site(urls, keys, opened):
+    return any(canonicalize(url) in opened and any(ledger.site_belongs(url, key) for key in keys) for url in urls)
+
+
+def unrendered_rows(parsed, entries, rows, tsv_path):
+    """{row index: (url, status)} for each matrix row that fails the render rule:
+    no cited page opened on its entity's own sites, and on one of them a logged
+    page that came back blocked or as a shell but was never rendered. Empty
+    without a ledger, without Bright Data, or without recorded sites."""
+    if not tsv_path or not parsed or not _bright_data_installed():
+        return {}
+    sites = ledger.entity_sites(tsv_path)
+    if not sites:
+        return {}
+    opened = opened_urls(rows or [])
+    out = {}
+    for index, row in enumerate(parsed['rows']):
+        keys = sites.get(ledger.full_name(row['entity']))
+        if keys and not _opened_on_own_site(_row_urls(row, entries), keys, opened):
+            found = unrendered_own_page(rows or [], keys)
+            if found:
+                out[index] = found
+    return out
+
+
+def check_rows_on_own_site(parsed, entries, rows, tsv_path, problems):
+    """A matrix row about an entity cites a page opened on that entity's own site.
+
+    Graded against answer keys on 2026-09-27, wide runs covered more of the right
+    entities than main and got more of them wrong: a pre-built supplier sold as
+    flat-pack, a bank's sandbox as open when its own page limits it, a free tier
+    out of date. Each came from an aggregator or a review. Those find entities;
+    only an entity's own page settles what it offers and what it costs. Rebuilt
+    from b8a90a4 for main: the sites come from what subagents recorded in the
+    run's ledger, not from plan files.
+
+    Graded again on 2026-10-17: cores were lost because their own pages came back
+    blocked or as shells and nobody rendered them. A row in that state fails with
+    the render message instead (spec L).
+    """
+    if not tsv_path:
+        return
+    sites = ledger.entity_sites(tsv_path)
+    if not sites or not parsed:
+        return
+    opened = opened_urls(rows or [])
+    unrendered = unrendered_rows(parsed, entries, rows, tsv_path)
+    for index, row in enumerate(parsed['rows']):
+        keys = sites.get(ledger.full_name(row['entity']))
+        if not keys:
+            continue
+        urls = _row_urls(row, entries)
+        if _opened_on_own_site(urls, keys, opened):
+            continue
+        if index in unrendered:
+            url, status = unrendered[index]
+            problems.structural(
+                '{}: its own page {} came back {} and was never rendered - run bd_search.py "{}" -m render, '
+                'log it --via brightdata and cite it, or cite a page you opened on its own site; if the '
+                'render fails or comes back a shell again, mark the cells [unknown] and log it by hand: '
+                'sources.py log --url {} --via brightdata --status blocked'.format(
+                    row['entity'], url, status, url, url))
+            continue
+        values = [value.strip().lower() for value in row['cells'].values()]
+        if (values and all(value == '[unknown]' for value in values)) or not urls:
+            continue
+        problems.structural(
+            '{}: no citation in this row is a page you opened on its own site ({}) - an aggregator or a '
+            'review found it, but only its own page settles what it offers and costs. Cite a page you '
+            'opened on its own site, or mark the cells [unknown]. If the page you opened is its own on '
+            'another domain, record that domain too.'.format(row['entity'], ', '.join(sorted(keys))))
+
+
+def _is_render_attempt(row):
+    """A row that went through Bright Data and is not a shell. A scrape that
+    returns a shell has rendered nothing, and the log does not say which mode
+    produced a row, so a brightdata shell never counts. A render that fails, or
+    comes back a shell again, is logged by hand with --status blocked."""
+    return ((row.get('via') or '').strip().lower() == 'brightdata'
+            and (row.get('status') or '').strip().lower() != 'shell')
+
+
+def unrendered_own_page(rows, keys):
+    """(url, status) of the first logged row, in log order, on one of the entity's
+    sites that came back blocked or as a shell, where that same site has no row
+    through Bright Data that tried to render (a failed render counts as tried).
+    Per site: a render on one domain does not excuse a blocked page on another."""
+    tried = {key for key in keys
+             if any(_is_render_attempt(row) and ledger.site_belongs(row.get('url', ''), key) for row in rows)}
+    for row in rows:
+        status = (row.get('status') or '').strip().lower()
+        if status not in ('blocked', 'shell'):
+            continue
+        if any(key not in tried and ledger.site_belongs(row.get('url', ''), key) for key in keys):
+            return row.get('url', ''), status
+    return None
 
 
 def check_breadth(tsv_path, content, problems):
@@ -708,7 +820,7 @@ def run(report_path, tsv_path, fmt, level):
     # and the body-text equivalent - "no inline [N] citations" - has always been
     # checked at quick. Only the uncited-row problem is an error at quick; blank
     # cells and column counts stay graded.
-    check_matrix_section(content, problems, entries, rows)
+    check_matrix_section(content, problems, entries, rows, tsv_path=tsv_path)
 
     check_breadth(tsv_path, content, problems)
     check_registered(report_path, problems)

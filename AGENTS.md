@@ -14,6 +14,7 @@ skills/legwork/SKILL.md        # the skill (agent-facing instructions)
 skills/legwork/scripts/        # python, standard library only
                               #   fetch.py     free direct page fetch, returns text
                               #   platforms.py ten free platform APIs, no key
+                              #   search.py    many wordings across Google and Exa in one call
 skills/legwork/reference/      # methodology (four phases), quality gates, subagent brief
 skills/legwork/templates/      # brief + report
 skills/legwork/tests/          # offline, no network
@@ -28,8 +29,8 @@ docs/design-notes.md           # why the skill is shaped the way it is
 - **Standard library only.** No `requirements.txt`, no virtualenv. This is load-bearing: it is what lets the same paths work across Claude, Codex and plugin installs. CI asserts it, so an added third-party import fails the build rather than quietly breaking the install story.
 - Python floor is **3.9**. Every script carries `from __future__ import annotations` so PEP 604 syntax parses there.
 - SKILL.md references scripts via `${CLAUDE_SKILL_DIR}` (the skill's own directory), which Claude Code substitutes for personal, project and plugin installs alike. `install.sh` therefore symlinks the whole skill directory into `~/.claude/skills/` with no rewrite. `install-codex.sh` rewrites the variable, since Codex does not substitute it.
-- TypeSafe's Jev is **optional**, like Bright Data: `fetch.py --relevant` does nothing without a key (`TYPESAFE_API_KEY`, or `~/.dbhq/legwork/typesafe-api-key` - the DBHQ convention for skill credentials), a failed call never fails a fetch, and it is called only when `--find` missed - ranking every page would print more text than the whole-page reads it replaces.
-- Bright Data is a **fallback**, never a requirement. Anything that assumes it is installed is a bug: the built-in `WebSearch`/`WebFetch` are the primary providers and a run must complete without a CLI present.
+- TypeSafe's Jev is **optional**, like Bright Data: `fetch.py --relevant` does nothing without a key (`TYPESAFE_API_KEY`, or `~/.dbhq/legwork/typesafe-api-key` - the DBHQ convention for skill credentials), a failed call never fails a fetch, and in `search.py` it only orders leads, all or nothing, and never drops one, and in `fetch.py` it is called only when `--find` missed - ranking every page would print more text than the whole-page reads it replaces.
+- Every search provider is **optional**. `search.py` uses Bright Data and Exa when each is available and says which it skipped and why; with neither it exits 4 and the run searches with the built-in `WebSearch`/`WebFetch`, so a run still completes with no CLI and no keys. Anything that assumes a provider is installed or funded is a bug. Exa's key is `EXA_API_KEY`, or `~/.dbhq/legwork/exa-api-key`.
 - Tests are hermetic - no network, ever. The gate makes no network calls at all. `fetch.py`, `platforms.py` and `bd_search.py` do reach the network in production, so their tests patch `urlopen` and `subprocess.run` and assert the *mapping* - which flag becomes which CLI argument, which field becomes which column. A test that needs a socket is a test that will be skipped, and a skipped test is not a gate.
 - **A retrieval script and the fetch log are one pipeline.** Every source kind `platforms.py` emits must be one `sources.py log --kind` accepts; `_assert_vocabulary_agrees` pins it. A kind only one of them knows fails at the far end of a long run, which is the worst place to find it.
 - **Corroboration must be counted on the layer the pipeline does not amplify.** Gather deliberately fans out to find more sources per finding, so a source count measures our own effort. Independence groups reached from *different search angles* is the real signal. A change that makes corroboration rise with breadth has broken the check, whatever the tests say.
@@ -54,6 +55,7 @@ python3 scripts/check.py --report tests/fixtures/one_origin.md --level deep     
 python3 scripts/check.py --report tests/fixtures/no_evidence.md --level deep         # MUST fail
 python3 scripts/check.py --report tests/fixtures/undated_evidence.md --level deep    # MUST fail
 python3 scripts/check.py --report tests/fixtures/concentrated.md --level deep        # MUST fail
+python3 scripts/check.py --report tests/fixtures/own_site_missing.md --level deep    # MUST fail
 cd ../.. && claude plugin validate .         # manifest + structure
 bash -n install.sh                           # installer parses
 ```
@@ -74,6 +76,7 @@ The fixtures that MUST fail are the important ones - they exist so the gate is p
 | `undated_evidence.md` | a finding whose age cannot be judged |
 | `concentrated.md` | a run resting almost entirely on one party |
 | `snippet_only.md` | a report citing pages it only ever saw in a search result |
+| `own_site_missing.md` | a matrix row about an entity that cites no page opened on its own site |
 
 A change that makes any of them pass has broken the gate, even if every other test is green.
 

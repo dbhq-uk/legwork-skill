@@ -167,7 +167,6 @@ def run_serp(args) -> None:
     cmd = [
         cli,
         "search",
-        args.query,
         "--type",
         _TYPE_FOR_MODE.get(args.mode, "web"),
         "--json",
@@ -177,16 +176,23 @@ def run_serp(args) -> None:
     # US-centric index returns a different web.
     if args.engine:
         cmd.extend(["--engine", args.engine])
-    if args.language:
-        cmd.extend(["--language", args.language])
+    # Bing without a country answered in a Spanish locale on 16 Oct 2026, so a
+    # Bing search always says where it is asking from. Google is left alone.
+    language = args.language or ("en" if args.engine == "bing" else None)
+    country = args.country or ("gb" if args.engine == "bing" else None)
+    if language:
+        cmd.extend(["--language", language])
     if args.page:
         cmd.extend(["--page", str(args.page)])
     if args.device:
         cmd.extend(["--device", args.device])
-    if args.country:
-        cmd.extend(["--country", args.country])
+    if country:
+        cmd.extend(["--country", country])
     if args.zone:
         cmd.extend(["--zone", args.zone])
+    # The query goes last, after "--", so a wording that starts with "-"
+    # (an exclusion such as -crypto) is a query and not an option.
+    cmd.extend(["--", args.query])
     raw = _run(cmd)
     try:
         parsed = json.loads(raw)
@@ -432,7 +438,7 @@ def main() -> None:
     p.add_argument("--country", default=os.environ.get("BD_COUNTRY"))
     p.add_argument("--language", default=os.environ.get("BD_LANGUAGE"),
                    help="two-letter language code for SERP and discover")
-    p.add_argument("--engine", default=None, choices=["google", "bing", "yandex"],
+    p.add_argument("--engine", default=None, choices=["google", "bing"],
                    help="a second engine is the reason to pay for SERP at all")
     p.add_argument("--page", type=int, default=None, help="results page, 0-indexed; how to go deeper")
     p.add_argument("--device", default=None, choices=["desktop", "mobile"])

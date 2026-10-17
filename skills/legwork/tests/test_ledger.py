@@ -4,6 +4,8 @@ import json
 import os
 import shutil
 
+import pytest
+
 import check
 import ledger
 import sources
@@ -112,3 +114,126 @@ def test_an_out_of_scope_entity_is_set_aside_and_never_counted_as_new(tmp_path):
     assert ledger.status(tsv)[0]['state'] == 'saturated'
     assert ledger.all_entities(tsv) == ['Barclays']
     assert ledger.set_aside(tsv) == [('Tide', 'e-money firm'), ('Wise', 'e-money firm')]
+
+
+# ---------------------------------------------------------------------------
+# Entity sites: an entity's own site, recorded by the subagent that opened it,
+# so the gate can ask whether a matrix row cites it. Keyed by the full name,
+# never by distinctive(), which merges "Acme Analytics" and "Acme Hosting".
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('raw, expected', [
+    ('Acme', 'acme'),
+    ('**Acme**', 'acme'),
+    ('__Acme__', 'acme'),
+    ('*Acme*', 'acme'),
+    ('`Acme`', 'acme'),
+    ('[Acme](https://acme.example)', 'acme'),
+    ('Acme [3]', 'acme'),
+    ('Acme [3][4]', 'acme'),
+    ('  Acme   Analytics ', 'acme analytics'),
+    ('Acme (UK)', 'acme (uk)'),
+    ('snake_case_vendor', 'snake_case_vendor'),
+])
+def test_full_name_strips_presentation_and_keeps_words(raw, expected):
+    assert ledger.full_name(raw) == expected
+
+
+@pytest.mark.parametrize('site, key', [
+    ('acme.example', 'acme.example'),
+    ('https://www.Acme.example/pricing', 'acme.example'),
+    ('docs.acme.example', 'docs.acme.example'),
+    ('github.com/Acme', 'github.com/acme'),
+    ('https://pypi.org/project/alpha/', 'pypi.org/project/alpha'),
+    ('github.com', ''),
+    ('', ''),
+    ('not a site', ''),
+    ('https://[bad', ''),
+    ('not a.site', ''),
+    ('bücher.de', 'xn--bcher-kva.de'),
+    ('https://www.Bücher.de/preise', 'xn--bcher-kva.de'),
+])
+def test_site_key(site, key):
+    assert ledger.site_key(site) == key
+
+
+@pytest.mark.parametrize('url, key, belongs', [
+    ('https://acme.example/pricing', 'acme.example', True),
+    ('https://docs.acme.example/a', 'acme.example', True),
+    ('https://www.acme.example/', 'acme.example', True),
+    ('https://notacme.example/', 'acme.example', False),
+    ('https://hosting.example.com/', 'analytics.example.com', False),
+    ('https://github.com/acme/repo', 'github.com/acme', True),
+    ('https://github.com/other/repo', 'github.com/acme', False),
+    ('https://pypi.org/project/beta/', 'pypi.org/project/alpha', False),
+    ('https://pypi.org/project/alpha/1.2/', 'pypi.org/project/alpha', True),
+    ('https://pypi.org/project/alpha/1.0', 'pypi.org/project/alpha', True),
+    ('https://test.pypi.org/project/alpha', 'pypi.org/project/alpha', False),
+    ('https://www.pypi.org/project/alpha', 'pypi.org/project/alpha', True),
+    ('https://www.npmjs.com/package/beta', 'npmjs.com/package/alpha', False),
+    ('https://acme.example/', '', False),
+    ('https://[bad', 'acme.example', False),
+    ('https://bücher.de/x', 'xn--bcher-kva.de', True),
+    ('https://xn--bcher-kva.de/x', 'xn--bcher-kva.de', True),
+])
+def test_site_belongs(url, key, belongs):
+    assert ledger.site_belongs(url, key) is belongs
+
+
+def test_record_round_stores_sites_by_full_name(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    ledger.record_round(tsv, 'q', ['Acme Analytics', 'Acme Hosting'], [],
+                        sites=[('Acme Analytics', 'acme-analytics.example'),
+                               ('Acme Hosting', 'acme-hosting.example')])
+    sites = ledger.entity_sites(tsv)
+    assert sites == {'acme analytics': {'acme-analytics.example'}, 'acme hosting': {'acme-hosting.example'}}
+
+
+def test_a_site_is_stored_once_and_survives_a_later_round(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    ledger.record_round(tsv, 'q', ['Acme'], [], sites=[('Acme', 'acme.example')])
+    ledger.record_round(tsv, 'q', ['Acme'], [], sites=[('Acme', 'https://www.acme.example/x')])
+    ledger.record_round(tsv, 'q', ['Acme'], [])
+    data = json.load(open(ledger.path(tsv)))
+    assert data['q']['sites'] == {'acme': ['acme.example']}
+
+
+def test_a_site_never_makes_an_entity_new(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    ledger.record_round(tsv, 'q', ['Acme'], [])
+    new, _ = ledger.record_round(tsv, 'q', ['Acme'], [], sites=[('Acme', 'acme.example')])
+    assert new == []
+
+
+def test_sites_combine_across_angles(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    ledger.record_round(tsv, 'a', ['Acme'], [], sites=[('Acme', 'acme.example')])
+    ledger.record_round(tsv, 'b', ['Acme'], [], sites=[('Acme', 'github.com/acme')])
+    assert ledger.entity_sites(tsv) == {'acme': {'acme.example', 'github.com/acme'}}
+
+
+def test_a_ledger_without_sites_still_loads(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    open(ledger.path(tsv), 'w').write(json.dumps(
+        {'q': {'rounds': [], 'entities': {'acme': 'Acme'}, 'parties': []}}))
+    assert ledger.entity_sites(tsv) == {}
+    ledger.record_round(tsv, 'q', ['Acme'], [])  # no sites argument: no 'sites' key written
+    assert 'sites' not in json.load(open(ledger.path(tsv)))['q']
+
+
+def test_a_site_with_no_usable_key_is_not_stored(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    ledger.record_round(tsv, 'q', ['Acme'], [], sites=[('Acme', 'github.com'), ('Acme', '')])
+    assert ledger.entity_sites(tsv) == {}
+
+
+def test_a_malformed_site_never_interrupts_a_round(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    ledger.record_round(tsv, 'q', ['Acme'], [], sites=[('Acme', 'https://[bad')])
+    assert ledger.entity_sites(tsv) == {}
+
+
+def test_an_international_site_is_stored_in_its_ascii_form(tmp_path):
+    tsv = str(tmp_path / 'run.tsv')
+    ledger.record_round(tsv, 'q', ['Bücher'], [], sites=[('Bücher', 'bücher.de')])
+    assert ledger.entity_sites(tsv) == {'bücher': {'xn--bcher-kva.de'}}

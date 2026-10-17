@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import queue
 import re
@@ -306,12 +307,13 @@ def search_exa(angle, key, clock):
                            answer=str(payload.get('answer') or ''), cost=cost)
 
 
-def run_jobs(jobs, clock, workers=MAX_WORKERS):
+def run_jobs(jobs, clock, workers=None):
     """Run (label, fn, placeholder) jobs on daemon threads and return their
     results in job order. Python cannot kill a thread, so the main thread never
     joins one: it waits on a queue until the clock runs out, then kills every
     subprocess still running and returns each unfinished job's placeholder,
     marked 'deadline'. A worker that raises becomes a failed result."""
+    workers = MAX_WORKERS if workers is None else workers
     _CLOSED.clear()
     tasks, done = queue.Queue(), queue.Queue()
     for index, job in enumerate(jobs):
@@ -355,7 +357,8 @@ def run_jobs(jobs, clock, workers=MAX_WORKERS):
 
 
 # ---------------------------------------------------------------------------
-# Providers: one table. Adding a provider is a function and an entry here.
+# Providers: one table. A per-angle provider is a function and an entry here;
+# a per-wording search engine also needs its name in ENGINES.
 # ---------------------------------------------------------------------------
 
 def _bright_data_available():
@@ -446,11 +449,11 @@ def jev_scores(angle, leads, clock):
     """(scores or None, status). All or nothing: if any batch fails or runs out
     of time, no lead is Jev-scored, so no lead is ranked on a different basis
     from another. Ranking only - nothing is ever dropped on Jev's say."""
-    if not leads:
-        return None, 'off'
     key = fetch.typesafe_key()
     if not key:
         return None, 'off'
+    if not leads:
+        return None, 'skipped (no leads)'
     timeout = clock.remaining() - JEV_MARGIN
     if clock.remaining() < JEV_MIN or timeout <= 0:
         return None, 'skipped (time)'
@@ -465,10 +468,17 @@ def jev_scores(angle, leads, clock):
             'instructions': 'How well does search result `passages.p{}` help answer `question`?'.format(i)}
             for i in range(len(batch))}
         try:
-            answers = (fetch._jev_request(state, questions, key, timeout=timeout) or {}).get('answers') or {}
+            answers = (fetch._jev_request(state, questions, key, timeout=timeout) or {}).get('answers')
+            missing = len(batch) if not isinstance(answers, dict) else sum(
+                1 for i in range(len(batch)) if 'p{}'.format(i) not in answers)
+            if missing:
+                raise ValueError('Jev left {} unanswered'.format(missing))
             out[number] = [fetch._expected_score(answers.get('p{}'.format(i))) for i in range(len(batch))]
         except Exception as exc:  # noqa: BLE001 - a ranking aid never fails the search
-            errors.append(' '.join(str(exc).split())[:80] or type(exc).__name__)
+            reason = ' '.join(str(exc).split()) or type(exc).__name__
+            if key:
+                reason = reason.replace(key, '[key]')
+            errors.append(reason[:80])
 
     threads = [threading.Thread(target=work, args=(n, b), daemon=True) for n, b in enumerate(batches)]
     for thread in threads:
@@ -611,12 +621,17 @@ def cmd_search(angle, wordings, args):
     exa = next((r for r in results if r['provider'] == 'exa'), {})
     answer = ' '.join(str(exa.get('answer') or '').split())
 
-    path = _write_record(record_path(angle, args.tsv, args.out_dir), {
+    record = {
         'date': datetime.now(timezone.utc).strftime('%Y-%m-%d'), 'angle': angle, 'wordings': wordings,
         'engine': args.engine, 'country': args.country, 'language': args.language,
         'providers': results, 'jev': jev_status, 'leads': leads,
         'exa_answer': exa.get('answer') or '', 'exa_cost': exa.get('cost'),
-        'network_seconds': network_seconds, 'seconds': round(clock.elapsed(), 1)})
+        'network_seconds': network_seconds, 'seconds': round(clock.elapsed(), 1)}
+    path, write_error = None, ''
+    try:
+        path = _write_record(record_path(angle, args.tsv, args.out_dir), record)
+    except OSError as exc:  # the leads are still worth printing
+        write_error = ' '.join(str(exc).split()) or type(exc).__name__
 
     shown = min(args.show, len(leads))
     count = '{} lead{}'.format(len(leads), '' if len(leads) == 1 else 's')
@@ -628,7 +643,9 @@ def cmd_search(angle, wordings, args):
                '{:.0f}s'.format(clock.elapsed())]
     lines = [' · '.join(status)]
     lines += lead_lines(leads, 1, shown)
-    if len(leads) > shown:
+    if write_error:
+        lines.append('search: record not written ({})'.format(write_error))
+    elif len(leads) > shown:
         lines.append(_more_line(path, len(leads) - shown, shown + 1))
     if not any(r['ok'] for r in results):
         lines.append('search: no search provider available - use WebSearch')
@@ -636,6 +653,19 @@ def cmd_search(angle, wordings, args):
         lines += ['', ANSWER_HEADING, '    ' + answer[:SHOW_ANSWER]]
     print('\n'.join(lines))
     return 0 if any(r['ok'] for r in results) else EXIT_NO_PROVIDER
+
+
+def _valid_lead(lead):
+    """A lead a hand-edited record can still print: a string url, optional string
+    title, snippet and date, and ranks that map string labels to integers."""
+    if not isinstance(lead, dict) or not isinstance(lead.get('url'), str) or not lead['url']:
+        return False
+    if not all(isinstance(lead.get(key) or '', str) for key in ('title', 'snippet', 'date')):
+        return False
+    ranks = lead.get('ranks') or {}
+    return isinstance(ranks, dict) and all(
+        isinstance(label, str) and isinstance(rank, int) and not isinstance(rank, bool)
+        for label, rank in ranks.items())
 
 
 def cmd_more(path, start, show):
@@ -646,7 +676,7 @@ def cmd_more(path, start, show):
         print('search: cannot read {}: {}'.format(path, exc), file=sys.stderr)
         return 2
     leads = record.get('leads') if isinstance(record, dict) else None
-    if not isinstance(leads, list) or not all(isinstance(lead, dict) and lead.get('url') for lead in leads):
+    if not isinstance(leads, list) or not all(_valid_lead(lead) for lead in leads):
         print('search: cannot read {}: not a search record'.format(path), file=sys.stderr)
         return 2
     if start > len(leads):
@@ -690,7 +720,7 @@ def main(argv=None):
         parser.error('--angle is required')
     if not 1 <= len(wordings) <= 12:
         parser.error('give 1 to 12 --wording values')
-    if args.time_limit <= RESERVE + 1:
+    if not math.isfinite(args.time_limit) or args.time_limit <= RESERVE + 1:
         parser.error('--time-limit must be more than {:.0f} seconds'.format(RESERVE + 1))
     return cmd_search(angle, wordings, args)
 

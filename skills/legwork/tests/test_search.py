@@ -124,6 +124,7 @@ def env(monkeypatch, tmp_path):
     monkeypatch.setattr(search, 'exa_key', lambda: '')
     monkeypatch.setattr(search, 'urlopen', no_network)
     monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: '')
+    monkeypatch.setattr(search.fetch, 'urlopen', no_network)
     search._CLOSED.clear()
     yield SimpleNamespace(tmp=tmp_path, killed=killed, release=release, monkeypatch=monkeypatch)
     # Free every thread a test left blocked before monkeypatch restores the
@@ -802,3 +803,100 @@ def test_more_on_a_missing_or_malformed_record_exits_2_without_a_traceback(env, 
         path.write_text(content)
     assert search.main(['--more', str(path)]) == 2
     assert 'search: cannot read' in capsys.readouterr().err
+
+
+# --- fix round 1 -------------------------------------------------------------
+
+def _jev_env(env, fake):
+    env.monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: 'k')
+    env.monkeypatch.setattr(search.fetch, '_jev_request', fake)
+
+
+def _answers_missing_one(state, questions, key, timeout=60):
+    names = sorted(questions)[1:]
+    return {'answers': {name: {'probabilities': {'3': 1.0}} for name in names}}
+
+
+def test_a_jev_answer_left_out_fails_jev_rather_than_scoring_zero(env):
+    _jev_env(env, _answers_missing_one)
+    leads = [{'title': 't{}'.format(i), 'snippet': 's'} for i in range(3)]
+    scores, status = search.jev_scores('q', leads, clock())
+    assert scores is None and status.startswith('failed') and '1 unanswered' in status
+
+
+def test_a_jev_response_with_no_answers_fails_jev(env):
+    _jev_env(env, lambda *a, **k: {})
+    scores, status = search.jev_scores('q', [{'title': 't', 'snippet': 's'}], clock())
+    assert scores is None and status.startswith('failed')
+
+
+def test_main_shows_jev_failed_and_ranks_on_rrf_alone(env, capsys):
+    _jev_env(env, _answers_missing_one)
+    assert search.main(['--angle', 'q', '--wording', 'w1', '--out-dir', str(env.tmp)]) == 0
+    out = capsys.readouterr().out
+    assert 'jev: failed' in out.splitlines()[0]
+    record = json.load(open(next(env.tmp.glob('*.json'))))
+    assert all(lead['jev'] is None for lead in record['leads'])
+
+
+def test_a_jev_failure_reason_does_not_carry_the_key(env):
+    def boom(*a, **k):
+        raise RuntimeError('rejected key sk-secret-123 here')
+
+    env.monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: 'sk-secret-123')
+    env.monkeypatch.setattr(search.fetch, '_jev_request', boom)
+    scores, status = search.jev_scores('q', [{'title': 't', 'snippet': 's'}], clock())
+    assert scores is None and 'sk-secret-123' not in status and '[key]' in status
+
+
+def test_a_key_with_no_leads_is_skipped_not_off(env):
+    env.monkeypatch.setattr(search.fetch, 'typesafe_key', lambda: 'k')
+    assert search.jev_scores('q', [], clock()) == (None, 'skipped (no leads)')
+
+
+def test_the_workers_constant_is_read_when_run_jobs_starts(env):
+    env.monkeypatch.setattr(search, 'MAX_WORKERS', 1)
+    active, peak, lock = [0], [0], threading.Lock()
+
+    def job():
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        time.sleep(0.05)
+        with lock:
+            active[0] -= 1
+        return {'ok': True}
+
+    search.run_jobs([('j', job, {}) for _ in range(4)], clock())
+    assert peak[0] == 1
+
+
+@pytest.mark.parametrize('lead', [
+    {'url': 123},
+    {'url': 'https://a.example', 'title': 5},
+    {'url': 'https://a.example', 'snippet': ['x']},
+    {'url': 'https://a.example', 'date': 20260101},
+    {'url': 'https://a.example', 'ranks': {'g1': 'x'}},
+    {'url': 'https://a.example', 'ranks': [1]},
+])
+def test_more_on_a_lead_of_the_wrong_type_exits_2_without_a_traceback(env, capsys, lead):
+    path = env.tmp / 'typed.json'
+    path.write_text(json.dumps({'leads': [lead]}))
+    assert search.main(['--more', str(path), '--from', '1']) == 2
+    assert 'search: cannot read' in capsys.readouterr().err
+
+
+def test_an_unwritable_record_still_prints_the_leads_and_keeps_the_exit_code(env, capsys):
+    blocker = env.tmp / 'afile'
+    blocker.write_text('x')
+    args = ['--angle', 'q', '--wording', 'w1', '--show', '1', '--out-dir', str(blocker / 'sub')]
+    assert search.main(args) == 0
+    out = capsys.readouterr().out
+    assert ' 1. ' in out and 'search: record not written (' in out and '+2 more' not in out
+
+
+@pytest.mark.parametrize('limit', ['inf', 'nan', '-inf'])
+def test_a_time_limit_that_is_not_a_finite_number_exits_2(env, limit):
+    with pytest.raises(SystemExit) as exc:
+        search.main(['--angle', 'q', '--wording', 'w1', '--time-limit', limit, '--out-dir', str(env.tmp)])
+    assert exc.value.code == 2

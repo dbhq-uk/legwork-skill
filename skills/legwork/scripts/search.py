@@ -82,15 +82,28 @@ class Cancelled(Exception):
     """The deadline passed before or while a process was being launched."""
 
 
+def _clean_key(text):
+    """The first non-blank line, or '' when what is left holds any whitespace or
+    control character: such a key can never be a valid header value, and a
+    rejected header would put the key into an error message."""
+    for line in (text or '').splitlines():
+        line = line.strip()
+        if line:
+            if any(c.isspace() or not c.isprintable() for c in line):
+                return ''
+            return line
+    return ''
+
+
 def exa_key():
     """EXA_API_KEY from the environment, else ~/.dbhq/legwork/exa-api-key."""
-    key = os.environ.get('EXA_API_KEY', '').strip()
+    key = _clean_key(os.environ.get('EXA_API_KEY', ''))
     if key:
         return key
     try:
         with open(os.path.expanduser(EXA_KEY_FILE), encoding='utf-8') as handle:
-            return handle.read().strip()
-    except OSError:
+            return _clean_key(handle.read())
+    except (OSError, ValueError):
         return ''
 
 
@@ -125,7 +138,7 @@ def _kill(proc):
             os.killpg(proc.pid, signal.SIGKILL)
         else:
             proc.kill()
-    except (OSError, ProcessLookupError):
+    except OSError:
         pass
 
 
@@ -136,7 +149,8 @@ def kill_all():
         _CLOSED.set()
         procs = list(_PROCS)
     for proc in procs:
-        _kill(proc)
+        if proc.returncode is None:  # a reaped process may have freed its pgid
+            _kill(proc)
 
 
 def run_process(cmd, timeout):
@@ -241,9 +255,18 @@ def search_exa(angle, key, clock):
     """The angle to Exa Answer once. Its citations become results in the order
     Exa gave them; its written answer is kept apart, unverified."""
     started = time.monotonic()
+
+    def failure(status, reason):
+        # The key never appears in a recorded reason, whatever raised it.
+        if key:
+            reason = reason.replace(key, '[key]')
+        reason = ' '.join(reason.split())[:120]
+        return provider_result('exa', angle, status=status, reason=reason,
+                               seconds=time.monotonic() - started, answer='', cost=None)
+
     left = clock.remaining()
     if left <= 0:
-        return provider_result('exa', angle, status='deadline', reason='no time left')
+        return failure('deadline', 'no time left')
     request = Request(EXA_API, data=json.dumps({'query': angle, 'text': True}).encode('utf-8'),
                       headers={'x-api-key': key, 'Content-Type': 'application/json', 'User-Agent': USER_AGENT})
     try:
@@ -254,14 +277,11 @@ def search_exa(angle, key, clock):
             body = exc.read().decode('utf-8', 'replace')
         except Exception:  # noqa: BLE001 - the status code is enough without a body
             body = ''
-        return provider_result('exa', angle, status='failed', seconds=time.monotonic() - started,
-                               reason='HTTP {}: {}'.format(exc.code, ' '.join(body.split())[:120]).strip())
+        return failure('failed', 'HTTP {}: {}'.format(exc.code, ' '.join(body.split())[:120]).strip())
     except Exception as exc:  # noqa: BLE001 - any failure skips Exa, never the call
-        return provider_result('exa', angle, status='failed', seconds=time.monotonic() - started,
-                               reason=' '.join(str(exc).split())[:120] or type(exc).__name__)
+        return failure('failed', ' '.join(str(exc).split()) or type(exc).__name__)
     if not isinstance(payload, dict):
-        return provider_result('exa', angle, status='failed', seconds=time.monotonic() - started,
-                               reason='response was not a JSON object')
+        return failure('failed', 'response was not a JSON object')
     results = []
     for index, cite in enumerate(payload.get('citations') or []):
         if isinstance(cite, dict) and cite.get('url'):
@@ -318,6 +338,6 @@ def run_jobs(jobs, clock, workers=MAX_WORKERS):
                 tasks.get_nowait()
             except queue.Empty:
                 break
-    return [results.get(index) or dict(jobs[index][2] or {}, ok=False, status='deadline',
-                                       reason='not finished by the time limit')
+    return [results[index] if index in results
+            else dict(jobs[index][2] or {}, ok=False, status='deadline', reason='not finished by the time limit')
             for index in range(len(jobs))]

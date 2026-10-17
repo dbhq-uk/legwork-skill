@@ -256,6 +256,7 @@ def test_exa_http_error_is_recorded_with_its_status_and_body(env):
     env.monkeypatch.setattr(search, 'urlopen', refuse)
     result = search.search_exa('q', 'k', clock())
     assert result['status'] == 'failed' and result['reason'].startswith('HTTP 402') and 'out of credits' in result['reason']
+    assert result['answer'] == '' and result['cost'] is None
 
 
 def test_exa_with_no_citations_is_a_success_with_no_results(env):
@@ -338,3 +339,81 @@ def test_where_killpg_does_not_exist_the_process_alone_is_killed(env):
     search.search_bd('google', 'q', 1, {}, search.Clock(1.5))
     proc = FakePopen.instances[0]
     assert 'start_new_session' not in proc.kwargs and proc.killed.is_set()
+
+
+# --- fix round 1 -----------------------------------------------------------
+
+def test_a_key_file_with_a_second_line_gives_the_first_line_only(monkeypatch, tmp_path):
+    monkeypatch.delenv('EXA_API_KEY', raising=False)
+    monkeypatch.setattr(search, 'EXA_KEY_FILE', str(tmp_path / 'exa-api-key'))
+    (tmp_path / 'exa-api-key').write_text('\n  k1  \nx2\n')
+    assert search.exa_key() == 'k1'
+
+
+def test_a_key_with_whitespace_or_control_characters_inside_is_no_key(monkeypatch, tmp_path):
+    monkeypatch.delenv('EXA_API_KEY', raising=False)
+    monkeypatch.setattr(search, 'EXA_KEY_FILE', str(tmp_path / 'exa-api-key'))
+    (tmp_path / 'exa-api-key').write_text('two words\n')
+    assert search.exa_key() == ''
+    monkeypatch.setenv('EXA_API_KEY', 'bad\x07key')
+    assert search.exa_key() == ''
+
+
+def test_a_key_file_that_is_not_utf8_gives_no_key(monkeypatch, tmp_path):
+    monkeypatch.delenv('EXA_API_KEY', raising=False)
+    monkeypatch.setattr(search, 'EXA_KEY_FILE', str(tmp_path / 'exa-api-key'))
+    (tmp_path / 'exa-api-key').write_bytes(b'\xff\xfe')
+    assert search.exa_key() == ''
+
+
+def test_an_empty_key_file_and_no_variable_gives_no_key(monkeypatch, tmp_path):
+    monkeypatch.delenv('EXA_API_KEY', raising=False)
+    monkeypatch.setattr(search, 'EXA_KEY_FILE', str(tmp_path / 'exa-api-key'))
+    (tmp_path / 'exa-api-key').write_text('')
+    assert search.exa_key() == ''
+
+
+def test_the_key_never_appears_in_a_recorded_reason(env):
+    def refuse(request, timeout=None):
+        raise ValueError('bad header SECRET key')
+
+    env.monkeypatch.setattr(search, 'urlopen', refuse)
+    result = search.search_exa('q', 'SECRET key', clock())
+    assert result['status'] == 'failed' and 'SECRET key' not in result['reason'] and '[key]' in result['reason']
+
+
+def test_every_exa_failure_still_carries_answer_and_cost(env):
+    cases = [lambda r, timeout=None: FakeResponse(['a list']),
+             lambda r, timeout=None: (_ for _ in ()).throw(OSError('down'))]
+    for fake in cases:
+        env.monkeypatch.setattr(search, 'urlopen', fake)
+        result = search.search_exa('q', 'k', clock())
+        assert result['status'] == 'failed' and result['answer'] == '' and result['cost'] is None
+    env.monkeypatch.setattr(search, 'RESERVE', 10_000)
+    result = search.search_exa('q', 'k', clock())
+    assert result['status'] == 'deadline' and result['answer'] == '' and result['cost'] is None
+
+
+def test_search_bd_with_no_options_sends_neither_country_nor_language(env):
+    search.search_bd('google', 'q', 1, {}, clock())
+    cmd = FakePopen.instances[0].cmd
+    assert '--country' not in cmd and '--language' not in cmd
+
+
+def test_kill_all_skips_a_process_that_has_already_been_reaped(env):
+    reaped = FakePopen(['x', 'y', 'reaped'])
+    reaped.returncode = 0
+    live = FakePopen(['x', 'y', 'live'])
+    with search._PROCS_LOCK:
+        search._PROCS.update({reaped, live})
+    try:
+        search.kill_all()
+    finally:
+        with search._PROCS_LOCK:
+            search._PROCS.difference_update({reaped, live})
+    assert live.pid in env.killed and reaped.pid not in env.killed
+
+
+def test_a_falsy_worker_result_is_kept_not_mistaken_for_a_missed_deadline(env):
+    jobs = [('a', lambda: {}, search.provider_result('google', 'a', 1, 'deadline'))]
+    assert search.run_jobs(jobs, clock()) == [{}]

@@ -30,20 +30,26 @@ Stdlib only. Runs on any python3 >= 3.9.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import queue
+import re
+import shlex
 import shutil
 import signal
 import subprocess
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import fetch  # noqa: E402
+from independence import canonicalize  # noqa: E402
 
 BD_SEARCH = os.path.join(HERE, 'bd_search.py')
 EXA_API = 'https://api.exa.ai/answer'
@@ -346,3 +352,348 @@ def run_jobs(jobs, clock, workers=MAX_WORKERS):
     return [results[index] if index in results
             else dict(jobs[index][2] or {}, ok=False, status='deadline', reason='not finished by the time limit')
             for index in range(len(jobs))]
+
+
+# ---------------------------------------------------------------------------
+# Providers: one table. Adding a provider is a function and an entry here.
+# ---------------------------------------------------------------------------
+
+def _bright_data_available():
+    return (True, '') if bright_data_installed() else (False, 'not installed')
+
+
+def _exa_available():
+    key = exa_key()
+    return (True, key) if key else (False, 'no key')
+
+
+# name: the provider's name in results, the status line and the record.
+# label: the prefix of its lists in a lead's provenance (g3, b3) or, for a
+#   provider asked once per angle, the whole label (exa).
+# per: 'wording' (one call per wording, chosen by --engine) or 'angle' (one
+#   call with the angle, always run unless switched off).
+# available: () -> (ok, detail); detail is the reason when not ok, otherwise
+#   whatever the provider needs (Exa's key).
+# run: (query, number, detail, opts, clock) -> provider_result.
+PROVIDERS = [
+    {'name': 'exa', 'label': 'exa', 'per': 'angle', 'available': _exa_available,
+     'run': lambda query, number, detail, opts, clock: search_exa(query, detail, clock)},
+    {'name': 'google', 'label': 'g', 'per': 'wording', 'available': _bright_data_available,
+     'run': lambda query, number, detail, opts, clock: search_bd('google', query, number, opts, clock)},
+    {'name': 'bing', 'label': 'b', 'per': 'wording', 'available': _bright_data_available,
+     'run': lambda query, number, detail, opts, clock: search_bd('bing', query, number, opts, clock)},
+]
+ENGINES = {'google': ['google'], 'bing': ['bing'], 'both': ['google', 'bing']}
+
+
+def _provider(name):
+    return next((p for p in PROVIDERS if p['name'] == name), None)
+
+
+# ---------------------------------------------------------------------------
+# Merge, rank, record and print
+# ---------------------------------------------------------------------------
+
+RRF_K = 60
+SHOW_TITLE = 100
+SHOW_SNIPPET = 160
+SHOW_ANSWER = 1500
+ANSWER_HEADING = ("Exa's written answer - UNVERIFIED, NOT A SOURCE. "
+                  "Open the cited pages before using anything in it:")
+
+
+def list_label(result):
+    """One ranked list per provider per wording: g3 and b3 are two lists."""
+    provider = _provider(result['provider'])
+    label = provider['label'] if provider else result['provider']
+    if provider is None or provider['per'] == 'wording':
+        return '{}{}'.format(label, result['wording'])
+    return label
+
+
+def merge(results):
+    """Leads keyed on the canonical URL. Each keeps every list that found it with
+    its best rank there, the longest snippet and the first title."""
+    leads = {}
+    for result in results:
+        if not result.get('ok'):
+            continue
+        label = list_label(result)
+        for row in result.get('results') or []:
+            key = canonicalize(row.get('url') or '')
+            if not key:
+                continue
+            lead = leads.get(key)
+            if lead is None:
+                lead = leads[key] = {'url': row['url'], 'title': row.get('title') or '',
+                                     'snippet': row.get('snippet') or '', 'date': row.get('date') or '', 'ranks': {}}
+            if len(row.get('snippet') or '') > len(lead['snippet']):
+                lead['snippet'] = row['snippet']
+            if not lead['title'] and row.get('title'):
+                lead['title'] = row['title']
+            if not lead['date'] and row.get('date'):
+                lead['date'] = row['date']
+            rank = _rank(row.get('rank'), 1)
+            lead['ranks'][label] = min(rank, lead['ranks'].get(label, rank))
+    return list(leads.values())
+
+
+def rrf(lead):
+    return sum(1.0 / (RRF_K + rank) for rank in lead['ranks'].values())
+
+
+def jev_scores(angle, leads, clock):
+    """(scores or None, status). All or nothing: if any batch fails or runs out
+    of time, no lead is Jev-scored, so no lead is ranked on a different basis
+    from another. Ranking only - nothing is ever dropped on Jev's say."""
+    if not leads:
+        return None, 'off'
+    key = fetch.typesafe_key()
+    if not key:
+        return None, 'off'
+    timeout = clock.remaining() - JEV_MARGIN
+    if clock.remaining() < JEV_MIN or timeout <= 0:
+        return None, 'skipped (time)'
+    texts = ['{}\n{}'.format(lead.get('title') or '', lead.get('snippet') or '') for lead in leads]
+    batches = [texts[i:i + fetch.JEV_BATCH] for i in range(0, len(texts), fetch.JEV_BATCH)]
+    out, errors = [None] * len(batches), []
+
+    def work(number, batch):
+        state = {'question': angle, 'passages': {'p{}'.format(i): text for i, text in enumerate(batch)}}
+        questions = {'p{}'.format(i): {
+            'type': 'score', 'criteria': fetch.JEV_LEVELS,
+            'instructions': 'How well does search result `passages.p{}` help answer `question`?'.format(i)}
+            for i in range(len(batch))}
+        try:
+            answers = (fetch._jev_request(state, questions, key, timeout=timeout) or {}).get('answers') or {}
+            out[number] = [fetch._expected_score(answers.get('p{}'.format(i))) for i in range(len(batch))]
+        except Exception as exc:  # noqa: BLE001 - a ranking aid never fails the search
+            errors.append(' '.join(str(exc).split())[:80] or type(exc).__name__)
+
+    threads = [threading.Thread(target=work, args=(n, b), daemon=True) for n, b in enumerate(batches)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(max(0.0, clock.remaining()))
+    if errors:
+        return None, 'failed ({})'.format(errors[0])
+    if any(scores is None for scores in out):
+        return None, 'skipped (time)'
+    return [score for scores in out for score in scores], 'on'
+
+
+def rank(leads, jev=None):
+    """RRF scaled to the top lead, averaged with Jev's score when there is one
+    (the mean of a lexical and a Jev score ranked best offline on 27 Sep 2026)."""
+    raw = [rrf(lead) for lead in leads]
+    top = max(raw) if raw else 0.0
+    for index, lead in enumerate(leads):
+        scaled = raw[index] / top if top else 0.0
+        lead['rrf'] = round(raw[index], 6)
+        lead['jev'] = None if jev is None else round(jev[index], 3)
+        lead['score'] = round(scaled if jev is None else (scaled + jev[index]) / 2, 6)
+    return sorted(leads, key=lambda lead: (-lead['score'], lead['url']))
+
+
+def _slug(text, limit=60):
+    return '-'.join(re.findall(r'[a-z0-9]+', (text or '').lower()))[:limit].strip('-') or 'angle'
+
+
+def record_path(angle, tsv=None, out_dir=None, now=None):
+    if tsv:
+        folder = os.path.splitext(tsv)[0] + '.searches'
+    else:
+        folder = out_dir or os.path.join('/tmp', 'legwork', 'searches')
+    stamp = (now or datetime.now(timezone.utc)).strftime('%Y%m%dT%H%M%SZ')
+    return os.path.join(folder, '{}-{}.json'.format(stamp, _slug(angle)))
+
+
+def _write_record(path, record):
+    """Write the record, never over another: each candidate name is created
+    exclusively, so two calls in the same second each get their own file."""
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    base, ext = os.path.splitext(path)
+    n = 1
+    while True:
+        candidate = path if n == 1 else '{}-{}{}'.format(base, n, ext)
+        try:
+            with open(candidate, 'x', encoding='utf-8') as handle:
+                json.dump(record, handle, ensure_ascii=False, indent=1)
+            return candidate
+        except FileExistsError:
+            n += 1
+
+
+def _label_order(label):
+    for position, provider in enumerate(PROVIDERS):
+        prefix = provider['label']
+        if provider['per'] == 'angle' and label == prefix:
+            return (1, position, 0)
+        if provider['per'] == 'wording' and label.startswith(prefix) and label[len(prefix):].isdigit():
+            return (0, position, int(label[len(prefix):]))
+    return (2, 0, 0)
+
+
+def lead_lines(leads, start, show):
+    lines = []
+    for number, lead in enumerate(leads[start - 1:start - 1 + show], start):
+        title = ' '.join((lead.get('title') or lead['url']).split())[:SHOW_TITLE]
+        snippet = ' '.join((lead.get('snippet') or '').split())
+        if len(snippet) > SHOW_SNIPPET:
+            snippet = snippet[:SHOW_SNIPPET] + '...'
+        labels = ' '.join(sorted(lead.get('ranks') or {}, key=_label_order))
+        lines.append('{:>2}. {}'.format(number, title))
+        lines.append('    {}'.format(lead['url']))
+        lines.append('    "{}"   [{}]'.format(snippet, labels) if snippet else '    [{}]'.format(labels))
+    return lines
+
+
+def _more_line(path, remaining, start):
+    return '+{} more: search.py --more {} --from {}'.format(remaining, shlex.quote(path), start)
+
+
+def _provider_status(results):
+    parts = []
+    for provider in sorted(PROVIDERS, key=lambda p: p['per'] == 'angle'):
+        mine = [r for r in results if r['provider'] == provider['name']]
+        if not mine:
+            continue
+        skipped = [r for r in mine if r['status'] == 'skipped']
+        if skipped:
+            parts.append('{}: {}'.format(provider['name'], skipped[0]['reason']))
+            continue
+        if provider['per'] == 'angle':
+            result = mine[0]
+            parts.append('{} ok'.format(provider['name']) if result['ok']
+                         else '{}: {} ({})'.format(provider['name'], result['status'], result['reason']))
+            continue
+        text = '{} {}/{} ok'.format(provider['name'], sum(r['ok'] for r in mine), len(mine))
+        bad = {}
+        for r in mine:
+            if not r['ok']:
+                bad[r['status']] = bad.get(r['status'], 0) + 1
+        if bad:
+            text += ' ({})'.format(', '.join('{} {}'.format(count, status) for status, count in sorted(bad.items())))
+        parts.append(text)
+    return parts
+
+
+def cmd_search(angle, wordings, args):
+    clock = Clock(args.time_limit)
+    opts = {'country': args.country, 'language': args.language}
+    off = {'exa'} if args.no_exa else set()
+    chosen = [p for p in PROVIDERS
+              if (p['per'] == 'angle' and p['name'] not in off)
+              or (p['per'] == 'wording' and p['name'] in ENGINES[args.engine])]
+    # Per-angle providers first: Exa answers in about two seconds and must not
+    # queue behind Google calls that take thirteen to sixty.
+    chosen.sort(key=lambda p: p['per'] != 'angle')
+    jobs, skipped = [], []
+    for provider in chosen:
+        ok, detail = provider['available']()
+        queries = [(angle, None)] if provider['per'] == 'angle' else [(w, n) for n, w in enumerate(wordings, 1)]
+        if not ok:
+            skipped.append(provider_result(provider['name'], angle if provider['per'] == 'angle' else '', None,
+                                           'skipped', detail))
+            continue
+        for query, number in queries:
+            jobs.append(('{}:{}'.format(provider['name'], number),
+                         (lambda p=provider, q=query, n=number, d=detail: p['run'](q, n, d, opts, clock)),
+                         provider_result(provider['name'], query, number, 'deadline')))
+    for name in sorted(off):
+        skipped.append(provider_result(name, angle, status='skipped', reason='off'))
+
+    results = run_jobs(jobs, clock) + skipped
+    leads = merge(results)
+    jev, jev_status = jev_scores(angle, leads, clock)
+    network_seconds = round(clock.elapsed(), 2)  # every network call has ended or been abandoned
+    leads = rank(leads, jev)
+    exa = next((r for r in results if r['provider'] == 'exa'), {})
+    answer = ' '.join(str(exa.get('answer') or '').split())
+
+    path = _write_record(record_path(angle, args.tsv, args.out_dir), {
+        'date': datetime.now(timezone.utc).strftime('%Y-%m-%d'), 'angle': angle, 'wordings': wordings,
+        'engine': args.engine, 'country': args.country, 'language': args.language,
+        'providers': results, 'jev': jev_status, 'leads': leads,
+        'exa_answer': exa.get('answer') or '', 'exa_cost': exa.get('cost'),
+        'network_seconds': network_seconds, 'seconds': round(clock.elapsed(), 1)})
+
+    shown = min(args.show, len(leads))
+    count = '{} lead{}'.format(len(leads), '' if len(leads) == 1 else 's')
+    if len(leads) > shown:
+        count += ' (top {} shown)'.format(shown)
+    status = ['search: {} wording{}'.format(len(wordings), '' if len(wordings) == 1 else 's')]
+    status += _provider_status(results)
+    status += ['jev on' if jev_status == 'on' else 'jev: {}'.format(jev_status), count,
+               '{:.0f}s'.format(clock.elapsed())]
+    lines = [' · '.join(status)]
+    lines += lead_lines(leads, 1, shown)
+    if len(leads) > shown:
+        lines.append(_more_line(path, len(leads) - shown, shown + 1))
+    if not any(r['ok'] for r in results):
+        lines.append('search: no search provider available - use WebSearch')
+    if answer:
+        lines += ['', ANSWER_HEADING, '    ' + answer[:SHOW_ANSWER]]
+    print('\n'.join(lines))
+    return 0 if any(r['ok'] for r in results) else EXIT_NO_PROVIDER
+
+
+def cmd_more(path, start, show):
+    try:
+        with open(path, encoding='utf-8') as handle:
+            record = json.load(handle)
+    except (OSError, ValueError) as exc:
+        print('search: cannot read {}: {}'.format(path, exc), file=sys.stderr)
+        return 2
+    leads = record.get('leads') if isinstance(record, dict) else None
+    if not isinstance(leads, list) or not all(isinstance(lead, dict) and lead.get('url') for lead in leads):
+        print('search: cannot read {}: not a search record'.format(path), file=sys.stderr)
+        return 2
+    if start > len(leads):
+        print('search: no leads from {}; the record has {}'.format(start, len(leads)))
+        return 0
+    end = min(len(leads), start - 1 + show)
+    lines = ['search: leads {} to {} of {} from {}'.format(start, end, len(leads), path)]
+    lines += lead_lines(leads, start, show)
+    if end < len(leads):
+        lines.append(_more_line(path, len(leads) - end, end + 1))
+    print('\n'.join(lines))
+    return 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog='search.py', description=__doc__.split('\n')[1].strip())
+    parser.add_argument('--angle', help='the angle, verbatim from Frame; this is what Exa is asked')
+    parser.add_argument('--wording', action='append', default=[], help='repeatable; 1 to 12, 6 to 10 expected')
+    where = parser.add_mutually_exclusive_group()
+    where.add_argument('--tsv', help="the run's fetch log; the search record goes beside it")
+    where.add_argument('--out-dir', dest='out_dir', help='where the search record goes when there is no --tsv')
+    parser.add_argument('--country', default=None,
+                        help='passed to Bright Data when given; Bing defaults to gb in bd_search.py')
+    parser.add_argument('--language', default=None,
+                        help='passed to Bright Data when given; Bing defaults to en in bd_search.py')
+    parser.add_argument('--engine', choices=sorted(ENGINES), default='google')
+    parser.add_argument('--no-exa', dest='no_exa', action='store_true')
+    parser.add_argument('--show', type=int, default=40, help='leads to print; the rest are in the record')
+    parser.add_argument('--time-limit', dest='time_limit', type=float, default=150.0,
+                        help='seconds for every network call together (default 150)')
+    parser.add_argument('--more', help='print further leads from a saved search record; no network')
+    parser.add_argument('--from', dest='start', type=int, default=41, help='with --more, the first lead to print')
+    args = parser.parse_args(argv)
+    if args.show < 1:
+        parser.error('--show must be at least 1')
+    if args.more:
+        return cmd_more(args.more, max(1, args.start), args.show)
+    angle = ' '.join((args.angle or '').split())
+    wordings = [' '.join(w.split()) for w in args.wording if w.strip()]
+    if not angle:
+        parser.error('--angle is required')
+    if not 1 <= len(wordings) <= 12:
+        parser.error('give 1 to 12 --wording values')
+    if args.time_limit <= RESERVE + 1:
+        parser.error('--time-limit must be more than {:.0f} seconds'.format(RESERVE + 1))
+    return cmd_search(angle, wordings, args)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

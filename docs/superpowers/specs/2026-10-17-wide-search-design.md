@@ -7,9 +7,10 @@ an optional timeout on `fetch.py`'s Jev request;
 the gather step in `SKILL.md`; the subagent brief and `brief.py`; entity sites in
 `sources.py` and `ledger.py`; one gate check in `check.py`; `SECURITY.md`,
 `README.md`, `AGENTS.md`, `setup.sh`; tests; one eval.
-**Verified by:** gpt-6-astra, blind, in four passes (runs
+**Verified by:** gpt-6-astra, blind, in five passes (runs
 `20261017T105734Z-17046b`, `20261017T111043Z-915654`,
-`20261017T111655Z-481cad` and `20261017T112324Z-4420fb`); every finding is resolved in this version (see
+`20261017T111655Z-481cad`, `20261017T112324Z-4420fb` and
+`20261017T113100Z-bf0d16`); every finding is resolved in this version (see
 [Review](#review)).
 **Evidence:** the DBHQ research run `Wide_Search_Service_Research_20261016` in
 `dbhq-uk/dbhq` (`docs/research/`), and this repo's `evals/runs/2026-09-2*`.
@@ -227,14 +228,17 @@ deadline.
   seconds. If any batch fails or times out, all Jev scores are discarded and
   ranking is RRF alone, so no lead is scored on a different basis from another;
   the status line says `jev: failed` or `jev: skipped (time)`.
-- **At the deadline** the main thread records each unfinished wording or
-  provider as `deadline`, kills the remaining process groups, ranks what it
-  has, writes the record and prints.
+- **Searching stops 3 seconds before the limit.** At `--time-limit` minus 3
+  seconds the main thread stops waiting, records each unfinished wording,
+  provider or Jev batch as `deadline`, kills the remaining process groups,
+  ranks what it has, writes the record and prints. Jev's own budget is counted
+  against the same point.
 
 Tests patch `subprocess.Popen` and `os.killpg` for these calls. One drives a
-`bd_search.py` that never returns and asserts the command returns within the
-limit plus 2 seconds, with `killpg` called for its process group; another does
-the same for an Exa call that never returns.
+`bd_search.py` that never returns and asserts the whole command, output
+included, finishes within the limit, with `killpg` called for its process
+group; another does the same for an Exa call that never returns, and a third
+for a Jev batch that never returns.
 
 Exit codes: 0 when at least one provider call succeeded, even with no results
 (the status line then says `0 leads`); 4 when every provider call failed, was
@@ -372,13 +376,20 @@ object entity it takes `name`. A new `sources.parse_entity_sites(text)` returns
 passes those to `ledger.record_round`, which gains an optional `sites=()`
 argument of `(name, site)` pairs. The ledger keeps them under
 `entry['sites'][full]`, where `full` is `ledger.full_name(name)`, a new
-function: the whole name, lowercased, whitespace collapsed, nothing removed.
+function: Markdown presentation removed first (`**`, `__`, single `*` and `_`
+used as emphasis, backticks, and `[text](url)` reduced to `text`), then
+lowercased with whitespace collapsed. Words and parentheses are kept.
 It is **not** the `distinctive()` key, which can merge different entities
 ("Acme Analytics", "Acme Hosting"), and it keeps parentheses, so "Acme (UK)"
 and "Acme (US)" stay apart. Each value is a list of distinct
-`party_of` results, computed on the site with `https://` prefixed when it has
-no scheme (`party_of("acme.example")` returns an empty string; a site that
-still gives an empty party is not stored); a later round can add a site but never removes one. Ledger
+`ledger.site_key(site)` results, a new function and **not** `party_of`:
+`party_of` reduces `analytics.example.com` and `hosting.example.com` to one
+party, which is right for counting independent voices and wrong for "is this
+the entity's own site". `site_key` prefixes `https://` when the site has no
+scheme, then returns the host lowercased without `www.`; for a host
+`party_of` treats as a path tenant (a code host such as `github.com/acme`), it
+returns `party_of`'s value, which keeps the tenant. A site that gives an empty
+key is not stored. `party_of` itself is unchanged; a later round can add a site but never removes one. Ledger
 files without `sites` load as before. Nothing about saturation changes: a site
 never makes an entity new, and `entities` is still keyed by `distinctive()`.
 
@@ -406,8 +417,12 @@ come from `matrix.parse_matrix`, whose `cells` maps each field to its text;
 - it cites at least one bibliography entry.
 
 A checked row fails as a structural error unless at least one of its cited
-URLs both resolves by `party_of` to one of that entity's recorded sites **and**
-is in `opened_urls(rows)`, the existing set of pages actually read. An
+URLs both **belongs to** one of that entity's recorded sites **and** is in
+`opened_urls(rows)`, the existing set of pages actually read. A URL belongs to
+a host site when its host, lowercased without `www.`, equals the site or ends
+with `.` plus the site (so `docs.acme.example` belongs to `acme.example`, and
+`hosting.example.com` does not belong to `analytics.example.com`); it belongs
+to a tenant site when its `party_of` equals the site. An
 own-site URL seen only in search results does not count. The message is worded
 as in `b8a90a4`: cite a page you opened on its own site, or mark the cells
 `[unknown]`. An entity with no recorded
@@ -462,8 +477,12 @@ Hermetic, as `AGENTS.md` requires: `subprocess.run`, `subprocess.Popen`,
   Hosting" is not checked against a recorded "Acme"; "Acme (UK)" and "Acme
   (US)" keep separate sites; a row whose only own-site citation was never
   opened fails; an entity with no site is not checked; no ledger, or a call
-  without `tsv_path`, means no check; a bare-domain site and a cited page on
-  it resolve to the same party; and the check runs end to end through
+  without `tsv_path`, means no check; a bare-domain site matches a cited page
+  on it and on its subdomains; `analytics.example.com` and
+  `hosting.example.com` stay separate sites and a row for one citing only the
+  other fails; `github.com/acme` and `github.com/other` stay separate; a row
+  labelled `**Acme**` or `[Acme](https://acme.example)` is checked against a
+  recorded "Acme"; and the check runs end to end through
   `check.run()` on a report, a log and a ledger, at standard, and not at quick. A new must-fail fixture, `own_site_missing.md`, fails for that
   reason only, and joins the `AGENTS.md` table.
 
@@ -578,3 +597,13 @@ more, each resolved:
 | `_jev_request` hard-codes a 60-second timeout | An optional `timeout` argument; all batches in parallel; any failure discards Jev scores ([D](#d-failures)) |
 | Bing's place in the ranking and labels was unspecified | One list per provider per wording; `g` and `b` labels ([B](#b-searchpy), [E](#e-output)) |
 | `party_of` returns nothing for a bare domain, and the check's place among the early returns was unstated | `https://` prefixed before `party_of`; the call sits inside the standard and deep block ([L](#l-an-entitys-own-site-settles-it)) |
+
+The fifth pass (run `20261017T113100Z-bf0d16`, reporting only major and
+blocker findings) confirmed the fourth pass's fixes, ruled C1 to C8 held at
+design level, and found two more in C9, each resolved:
+
+| Finding | Resolution |
+|---|---|
+| `party_of` merges distinct sites under one registrable domain, so one entity's site could pass another's row | A separate `site_key` keeps the host (or tenant); a cited URL belongs to a site by host or subdomain; `party_of` unchanged ([L](#l-an-entitys-own-site-settles-it)) |
+| Markdown in a matrix entity cell (`**Acme**`, a link) stopped the name matching | `full_name` removes Markdown presentation first ([L](#l-an-entitys-own-site-settles-it)) |
+| The deadline test allowed two seconds over the limit | Searching stops 3 seconds early; the test asserts the whole command finishes within the limit ([D](#d-failures)) |

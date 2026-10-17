@@ -382,7 +382,8 @@ passes those to `ledger.record_round`, which gains an optional `sites=()`
 argument of `(name, site)` pairs. The ledger keeps them under
 `entry['sites'][full]`, where `full` is `ledger.full_name(name)`, a new
 function: Markdown presentation removed first (`**`, `__`, single `*` and `_`
-used as emphasis, backticks, and `[text](url)` reduced to `text`), then
+used as emphasis, backticks, `[text](url)` reduced to `text`, and citation
+markers such as `[3]`), then
 lowercased with whitespace collapsed. Words and parentheses are kept.
 It is **not** the `distinctive()` key, which can merge different entities
 ("Acme Analytics", "Acme Hosting"), and it keeps parentheses, so "Acme (UK)"
@@ -492,8 +493,8 @@ Hermetic, as `AGENTS.md` requires: `subprocess.run`, `subprocess.Popen`,
   `hosting.example.com` stay separate sites and a row for one citing only the
   other fails; `github.com/acme` and `github.com/other` stay separate, and so do
 `pypi.org/project/alpha` and `pypi.org/project/beta`, and two npm packages; a row
-  labelled `**Acme**` or `[Acme](https://acme.example)` is checked against a
-  recorded "Acme"; and the check runs end to end through
+  labelled `**Acme**`, `[Acme](https://acme.example)` or `Acme [3]` is checked
+  against a recorded "Acme"; and the check runs end to end through
   `check.run()` on a report, a log and a ledger, at standard, and not at quick. A new must-fail fixture, `own_site_missing.md`, fails for that
   reason only, and joins the `AGENTS.md` table.
 

@@ -26,7 +26,7 @@ Research that settles a decision. Ask a real question, get a memo where every fa
 
 **It can tell you it could not answer.** If nothing clears the evidence floor, the run says so and names the closest thing it found, rather than producing four thousand hedged words. An honest empty answer is a result.
 
-**Free by default, paid only when needed.** Retrieval runs on the host's built-in `WebSearch` and `WebFetch`. The Bright Data CLI is a *fallback*, used only where the built-ins genuinely cannot do the job - bot-blocked or paywalled pages, Reddit threads, geo-specific SERP. A run against ordinary sources makes **zero** paid calls.
+**Free to run, paid to widen.** With no Bright Data CLI and no Exa key, a run uses only the host's built-in `WebSearch` and `WebFetch` and the free `fetch.py` and `platforms.py`, and makes **zero** paid calls. With them, `search.py` asks Bright Data Google once for every wording and Exa Answer once for the angle, on every angle, and both are paid. Opening pages stays free first: the Bright Data CLI is used there only where the free routes cannot do the job - bot-blocked or paywalled pages, Reddit threads.
 
 **It does not ask permission to begin.** It infers a level, says which one it picked, and goes. Redirect it mid-run if it guessed wrong; that costs far less than a blocking question on every research request.
 
@@ -72,8 +72,10 @@ whole skill directory is symlinked untouched, while Codex does not, so its
 **Python 3.9 or newer**, standard library only. CI runs the suite across
 3.9 to 3.13.
 
-**The Bright Data CLI is optional.** It is the retrieval fallback for pages
-that block a plain fetch; setup succeeds without it and says so.
+**The Bright Data CLI is optional.** It is paid. `search.py` uses it for every
+angle when it is installed, and it is the fallback for pages that block a plain
+fetch; setup succeeds without it and says so, and the run then uses the free
+built-in search.
 
 **A TypeSafe API key is optional.** With `TYPESAFE_API_KEY` set, or the key
 alone in `~/.dbhq/legwork/typesafe-api-key` (mode 600), when a page
@@ -106,7 +108,7 @@ Set a different default with `export LEGWORK_DEFAULT_MODE=deep`.
 
 ## Search backend
 
-Two ladders, free rungs first.
+Two ladders. To search, `search.py` comes first and is paid (Bright Data and Exa, each optional), with the free built-in search beside it and as the whole of the ladder when neither is available. To open a page, the free rungs come first.
 
 **To search:**
 

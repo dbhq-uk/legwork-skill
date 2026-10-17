@@ -82,7 +82,7 @@ platform's own numbers attached.
 
 ### Thin
 
-Thin means fewer than two independent parties after three variants. Still thin
+Thin means fewer than two independent parties after the wordings in `SKILL.md` step 3. Still thin
 after the paid search rungs is a finding in its own right: say what was searched.
 
 ### A copy on another host

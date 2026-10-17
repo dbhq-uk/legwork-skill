@@ -139,7 +139,7 @@ search.py --angle "what does the incumbent charge" \
   [--tsv RUN.tsv | --out-dir DIR]            # where the search record goes
   [--country gb] [--language en]             # passed to Bright Data
   [--engine google|bing|both]                # default google
-  [--no-exa] [--show 40] [--time-limit 150]
+  [--no-exa] [--show 40] [--time-limit 110]
 
 search.py --more RECORD.json [--from 41] [--show 40]   # the next leads, no network
 ```
@@ -199,7 +199,7 @@ No failure of one provider or one wording stops the call.
 | `bd_search.py` exits 1 with `SERP returned zero organic results` in its stderr | A success with zero results: `bd_search.py` reports an empty SERP that way, and its exit stays as it is because subagents calling it directly rely on it to fall down the ladder. Not retried, not a failure; counts towards exit 0 |
 | Exa returns no citations | A success with zero results, as above |
 | A Google call over 60 seconds | Its subprocess is killed by the wrapper below; recorded as timed out, and retried once only if the deadline allows |
-| The whole call reaches `--time-limit` (default 150 s) | See the deadline contract below |
+| The whole call reaches `--time-limit` (default 110 s) | See the deadline contract below |
 | Every provider call failed, was refused or was unavailable | Prints `search: no search provider available - use WebSearch` and exits 4 |
 | No Jev key, or Jev fails | RRF only; status line says `jev: off` or `jev: failed (<reason>)` |
 | No `--tsv` and no `--out-dir` | Search record written under `/tmp/legwork/searches/` |
@@ -212,7 +212,7 @@ time-bounded, because nothing can bound a write to a terminal that has stopped
 reading; it is measured, and the status line reports the total seconds. Python cannot kill a thread, so
 the guarantee rests on two things: every blocking call has a timeout no longer
 than the time left, and nothing the main thread waits on can outlive the
-deadline.
+deadline. The default is 110 seconds so that a call finishes, and prints, inside a host's default 120-second shell timeout.
 
 - **Workers are daemon threads** (`threading.Thread(daemon=True)`), at most 10
   at a time, pulling from a queue. The main thread waits on a result queue with
@@ -324,6 +324,10 @@ named the party.
   failed on 16 Oct.
 - A Bing search with no `--country` defaults to `gb`, and `--language` to `en`;
   without them Bright Data returned Bing results in a Spanish locale.
+- The query goes last, after `--`, both from `search.py` to `bd_search.py` and from
+  `bd_search.py` to the Bright Data CLI, so a wording that starts with `-` (an
+  exclusion such as `-crypto`) is a query and not an option. Both the argparse
+  here and the CLI's parser honour `--`.
 
 ### J. Changes to the skill's text
 

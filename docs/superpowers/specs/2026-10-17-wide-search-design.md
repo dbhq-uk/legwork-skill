@@ -212,7 +212,8 @@ time-bounded, because nothing can bound a write to a terminal that has stopped
 reading; it is measured, and the status line reports the total seconds. Python cannot kill a thread, so
 the guarantee rests on two things: every blocking call has a timeout no longer
 than the time left, and nothing the main thread waits on can outlive the
-deadline. The default is 110 seconds so that a call finishes, and prints, inside a host's default 120-second shell timeout.
+deadline. The default is 110 seconds so that a call finishes, and prints,
+inside a host's default 120-second shell timeout.
 
 - **Workers are daemon threads** (`threading.Thread(daemon=True)`), at most 10
   at a time, pulling from a queue. The main thread waits on a result queue with

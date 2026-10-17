@@ -74,8 +74,8 @@ whole skill directory is symlinked untouched, while Codex does not, so its
 
 **The Bright Data CLI is optional.** It is paid. `search.py` uses it for every
 angle when it is installed, and it is the fallback for pages that block a plain
-fetch; setup succeeds without it and says so, and the run then uses the free
-built-in search.
+fetch; setup succeeds without it and says so. With neither it nor an Exa key,
+the run uses the free built-in search.
 
 **A TypeSafe API key is optional.** With `TYPESAFE_API_KEY` set, or the key
 alone in `~/.dbhq/legwork/typesafe-api-key` (mode 600), when a page

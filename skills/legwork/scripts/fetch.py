@@ -237,11 +237,11 @@ def split_passages(text, size=PASSAGE_CHARS):
     return passages
 
 
-def _jev_request(state, questions, key):
+def _jev_request(state, questions, key, timeout=60):
     body = json.dumps({'state': state, 'model': JEV_MODEL, 'questions': questions}).encode('utf-8')
     request = Request(JEV_API, data=body, headers={'Authorization': 'Bearer ' + key,
                                                    'Content-Type': 'application/json'})
-    with urlopen(request, timeout=60) as response:  # noqa: S310 - a fixed https endpoint
+    with urlopen(request, timeout=timeout) as response:  # noqa: S310 - a fixed https endpoint
         return json.loads(response.read().decode('utf-8'))
 
 

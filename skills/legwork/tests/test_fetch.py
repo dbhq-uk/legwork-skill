@@ -740,3 +740,27 @@ def test_no_key_anywhere_names_both_places(monkeypatch, capsys, tmp_path):
     fetch.main()
     note = json.loads(capsys.readouterr().out)['relevant_note']
     assert 'TYPESAFE_API_KEY' in note and 'typesafe-api-key' in note
+
+
+def test_jev_request_passes_its_timeout_to_urlopen(monkeypatch):
+    seen = {}
+
+    class Response:
+        def read(self):
+            return b'{"answers": {}}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(request, timeout=None):
+        seen['timeout'] = timeout
+        return Response()
+
+    monkeypatch.setattr(fetch, 'urlopen', fake_urlopen)
+    fetch._jev_request({}, {}, 'key', timeout=7.5)
+    assert seen['timeout'] == 7.5
+    fetch._jev_request({}, {}, 'key')
+    assert seen['timeout'] == 60

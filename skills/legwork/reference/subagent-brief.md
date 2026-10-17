@@ -66,16 +66,24 @@ a neighbouring question because it came up.
 
 ## Effort
 
-{n} to {m} searches. {"This is one narrow fact - stop once you have it, from two
+{n} to {m} wordings. {"This is one narrow fact - stop once you have it, from two
 independent sources." | "This is a multi-option comparison - spread the effort
 across the options rather than going deep on the first one."}
 
+## How to search
+
+{WORDINGS_RULE}
+
+The command, with your wordings:
+
+`python3 {SKILL_DIR}/scripts/search.py --angle "{the angle above, unchanged}" --wording "<wording 1>" --wording "<wording 2>" --tsv "{TSV}"`
+
+and, for the next leads, the `--more` line it prints, such as
+`python3 {SKILL_DIR}/scripts/search.py --more "<record path>" --from 41`.
+
 ## How to work
 
-1. Run at least three query variants: a plain one, one targeting the primary party's own
-   domain (`site:`, an exact phrase, or `filetype:pdf`), and one searching the
-   negative case. Year-pin only queries about prices, releases, regulation or
-   news. Read the results before opening anything.
+1. Search as above. Read the results before opening anything.
 2. Open the sources that would settle the question, with
    `python3 {SKILL_DIR}/scripts/fetch.py "<url>" --find "<term>" --relevant "<your angle>"`.
    It keeps the page text and prints the passages around your terms. If none
@@ -108,14 +116,14 @@ One JSON object per source, and nothing else:
 {"url": "...", "kind": "...", "angle": "{the angle above, unchanged}",
  "date": "YYYY-MM-DD or empty", "title": "...", "quote": "the verbatim sentence",
  "query": "the query that surfaced it", "opened": true,
- "via": "direct | webfetch | websearch | api", "status": "ok | blocked",
+ "via": "direct | webfetch | websearch | serp | api", "status": "ok | blocked",
  "fetch_json": "fetch.py's text_file path with .json in place of .txt, or empty"}
 
 A page that refused you is returned too, as its own object with
 `"opened": false` and `"status": "blocked"`, even when you then found a copy
 elsewhere. Use `"via": "direct"` for fetch.py, `"webfetch"` for WebFetch,
-`"websearch"` for anything you only saw in a search result, and `"api"` for a
-platforms.py record.
+`"serp"` for a search.py lead you did not open, `"websearch"` for a WebSearch
+result you did not open, and `"api"` for a platforms.py record.
 
 If your angle asks for a list - every bank, vendor, supplier, product - one
 object naming every one you came across, in anything you opened or saw,
@@ -126,6 +134,10 @@ e-money firms, a flat-pack question meets fitted conversions:
 
 {"entities": ["Name", "Name"],
  "out_of_scope": [{"name": "Name", "reason": "e-money firm, not a bank"}]}
+
+An entity whose own site you opened a page on may be written as an object:
+{"name": "Acme", "site": "acme.example"}. The site is the entity's own domain,
+never an aggregator's, a directory's or a review site's.
 
 Then one final object recording what you could NOT establish:
 

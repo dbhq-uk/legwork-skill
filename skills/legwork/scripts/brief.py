@@ -3,7 +3,7 @@
 brief.py - write the brief for one retrieval subagent.
 
     brief.py --angle "SUB-QUESTION" --effort narrow|comparison
-             [--searches N-M] [--date YYYY-MM-DD]
+             [--wordings N-M] [--tsv PATH] [--date YYYY-MM-DD]
 
 Prints the filled brief and nothing else. Pass that output to the subagent
 unchanged, as its whole prompt.
@@ -34,19 +34,24 @@ from datetime import datetime, timezone
 
 SKILL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATE_FILE = os.path.join(SKILL_DIR, 'reference', 'subagent-brief.md')
+SKILL_FILE = os.path.join(SKILL_DIR, 'SKILL.md')
+RULE_START = '<!-- wordings-rule -->'
+RULE_END = '<!-- /wordings-rule -->'
 
 DATE = '{YYYY-MM-DD}'
 ANGLE = '{the single sub-question this agent is answering, verbatim from Frame}'
 RETURN_ANGLE = '{the angle above, unchanged}'
-BUDGET = '{n} to {m} searches.'
+BUDGET = '{n} to {m} wordings.'
 SKILL = '{SKILL_DIR}'
 EFFORT = ('{"This is one narrow fact - stop once you have it, from two\n'
           'independent sources." | "This is a multi-option comparison - spread the effort\n'
           'across the options rather than going deep on the first one."}')
 
 KNOWN = '{what earlier rounds on this angle found}'
+WORDINGS_RULE = '{WORDINGS_RULE}'
+TSV = '{TSV}'
 
-PLACEHOLDERS = (DATE, ANGLE, RETURN_ANGLE, BUDGET, SKILL, EFFORT, KNOWN)
+PLACEHOLDERS = (DATE, ANGLE, RETURN_ANGLE, BUDGET, SKILL, EFFORT, KNOWN, WORDINGS_RULE, TSV)
 
 FIRST_ROUND = 'Nothing yet - this is the first round on this angle.'
 LATER_ROUND = ('Earlier rounds on this angle found these. Look for the ones they missed - other\n'
@@ -58,7 +63,7 @@ EFFORT_TEXT = {
     'comparison': ('This is a multi-option comparison - spread the effort\n'
                    'across the options rather than going deep on the first one.'),
 }
-DEFAULT_SEARCHES = {'narrow': (2, 4), 'comparison': (4, 8)}
+DEFAULT_WORDINGS = {'narrow': (6, 8), 'comparison': (8, 10)}
 
 
 class TemplateChanged(Exception):
@@ -86,15 +91,29 @@ def known_text(known):
     return LATER_ROUND + '\n'.join('- ' + name for name in known)
 
 
-def fill(template, angle, effort, date, searches, known=()):
+def read_wordings_rule(path=SKILL_FILE):
+    """The wording rule, from between its markers in SKILL.md. It lives there
+    once; the brief carries a copy, so the orchestrator and the subagent read
+    the same words and there is one place to change them."""
+    with open(path, encoding='utf-8') as handle:
+        text = handle.read()
+    start, end = text.find(RULE_START), text.find(RULE_END)
+    if start < 0 or end < start:
+        raise TemplateChanged('no {} ... {} block in {}'.format(RULE_START, RULE_END, path))
+    return text[start + len(RULE_START):end].strip()
+
+
+def fill(template, angle, effort, date, wordings, known=(), rule=None, tsv=None):
     missing = [marker for marker in PLACEHOLDERS if marker not in template]
     if missing:
         raise TemplateChanged(
             'the template in subagent-brief.md no longer has {} - update brief.py to match '
             'rather than hand-writing the brief'.format(', '.join(repr(m) for m in missing)))
-    low, high = searches or DEFAULT_SEARCHES[effort]
+    low, high = wordings or DEFAULT_WORDINGS[effort]
     out = template.replace(EFFORT, EFFORT_TEXT[effort])
-    out = out.replace(BUDGET, '{} to {} searches.'.format(low, high))
+    out = out.replace(BUDGET, '{} to {} wordings.'.format(low, high))
+    out = out.replace(WORDINGS_RULE, read_wordings_rule() if rule is None else rule)
+    out = out.replace(TSV, tsv or 'RUN.tsv')
     out = out.replace(DATE, date)
     out = out.replace(ANGLE, angle).replace(RETURN_ANGLE, angle)
     out = out.replace(SKILL, SKILL_DIR)
@@ -112,7 +131,7 @@ def _date(value):
         raise argparse.ArgumentTypeError('expected YYYY-MM-DD, got {!r}'.format(value))
 
 
-def _searches(value):
+def _wordings(value):
     match = re.fullmatch(r'\s*(\d+)\s*-\s*(\d+)\s*', value)
     if not match or int(match.group(1)) > int(match.group(2)):
         raise argparse.ArgumentTypeError('expected N-M, got {!r}'.format(value))
@@ -125,12 +144,13 @@ def main():
                         help='The one sub-question this subagent answers, as written in Frame')
     parser.add_argument('--effort', required=True, choices=sorted(EFFORT_TEXT),
                         help='narrow: one fact from one party. comparison: several options')
-    parser.add_argument('--searches', type=_searches, default=None,
-                        help='Search budget as N-M. Default 2-4 for narrow, 4-8 for comparison')
+    parser.add_argument('--wordings', type=_wordings, default=None,
+                        help='Wordings budget as N-M. Default 6-8 for narrow, 8-10 for comparison')
     parser.add_argument('--date', type=_date, default=None,
                         help='Defaults to today in UTC. Pass the run date so every brief agrees')
     parser.add_argument('--tsv', default=None,
-                        help='The run fetch log: the brief lists what earlier rounds on this angle found')
+                        help='The run fetch log: the brief lists what earlier rounds on this angle found, '
+                             'and its search.py command records its searches beside it')
     args = parser.parse_args()
 
     angle = ' '.join(args.angle.split())
@@ -144,7 +164,7 @@ def main():
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             import ledger
             known = sorted(((ledger.load(args.tsv).get(angle) or {}).get('entities') or {}).values())
-        text = fill(read_template(), angle, args.effort, date, args.searches, known)
+        text = fill(read_template(), angle, args.effort, date, args.wordings, known, tsv=args.tsv)
     except (OSError, TemplateChanged) as exc:
         print('brief.py: {}'.format(exc), file=sys.stderr)
         sys.exit(2)

@@ -124,21 +124,36 @@ Write three things down before the first search:
 Work angle by angle. Stop on an angle when another search returns nothing new or
 primary evidence answers it. Do not gather to a quota.
 
-**Search with at least three query variants per angle:** a plain one; a targeted one
-(`site:` the primary party, an exact phrase, or `filetype:pdf`); and a negative
-one built from the falsifier. Year-pin queries about prices, releases,
-regulation and news, and nothing else.
+<!-- wordings-rule -->
+**Ask the angle 6 to 10 ways, then search them all at once.** Write the
+wordings as different people would put the same question: a plain one; one
+aimed at the primary party's own site (`site:`, an exact phrase, or
+`filetype:pdf`); a buyer's; a practitioner's; a critic's; and a negative one
+built from the falsifier. Year-pin only prices, releases, regulation and news.
+Name no organisation, product or site that did not come from "Already found" or
+an earlier round's sources, so a `site:` wording waits until a round has named
+the party.
+
+Run every wording through `search.py` in one call, then search two or three of
+them with WebSearch as well, because WebSearch finds pages Bright Data does
+not. If the first 40 leads do not answer the angle, read the next ones with
+`search.py --more`. Exa's written answer is printed last and is not a source:
+open a cited page before using anything in it. If `search.py` exits 4, no
+search provider is available: search every wording with WebSearch instead.
+<!-- /wordings-rule -->
 
 | Rung | Call | When |
 |---|---|---|
-| 1 | `WebSearch` | Always |
-| 2 | `platforms.py search --on X --query "..."` | The answer is a record a platform holds: a thread, a package, a repository, a dated news item, a changelog. Free, and returns the record rather than a page about it. `platforms.py list` shows the ten |
-| 3 | `bd_search.py "<query>" -m general --engine bing --country XX --language yy` | Thin (fewer than two independent parties) after three variants, or the question is geo-specific |
-| 4 | `bd_search.py -m discover --intent "..."` | Two engines still thin. Still thin after this is a finding: say what was searched |
+| 1 | `search.py --angle "..." --wording "..." [...] --tsv "$OUT/$BASE.tsv"` | Always, as the wording rule above says |
+| 2 | `WebSearch` | As the wording rule above says |
+| 3 | `platforms.py search --on X --query "..."` | The answer is a record a platform holds: a thread, a package, a repository, a dated news item, a changelog. Free, and returns the record rather than a page about it. `platforms.py list` shows the ten |
+| 4 | `bd_search.py "<query>" -m general --engine bing --country XX --language yy` | Thin (fewer than two independent parties) after the wordings, or the question is geo-specific |
+| 5 | `bd_search.py -m discover --intent "..."` | Two engines still thin. Still thin after this is a finding: say what was searched |
 
 **A search result is a lead, not a page you read**, and that includes a paid
 one. Log a `WebSearch` result with `--via websearch`, and a result from
-`bd_search.py -m general` or `-m discover` with `--via serp`. There is no `serp`
+`bd_search.py -m general` or `-m discover` with `--via serp`. A lead from
+`search.py` is logged with `--via serp`. There is no `serp`
 mode: `bd_search.py` prints the value to log as `log_via`, and a page it opened
 with `-m scrape` or `-m render` is logged `--via brightdata`, never `direct`. At standard and deep, open every page you intend
 to cite; the gate treats a citation resting only on search-result rows as
@@ -231,7 +246,7 @@ file path reaches the subagent as those characters, not as the brief.
 
 ```bash
 python3 ${CLAUDE_SKILL_DIR}/scripts/brief.py --angle "what does the incumbent charge" \
-  --effort narrow --date "$TODAY"
+  --effort narrow --date "$TODAY" --tsv "$OUT/$BASE.tsv"
 ```
 
 `--effort comparison` is for an angle that spans several options. The script
@@ -283,8 +298,10 @@ subagent fetches can be checked. Then:
   answer. Subagents set aside what is plainly out of scope
   themselves, with a reason; `ledger.py status` lists those, so read the list
   and research any that is wrongly there.
-- **Subagents use the free rungs only.** A page one returns as blocked is yours
-  to take up the paid rungs, if the finding needs it.
+- **Subagents use the free rungs only, and `search.py`.** `search.py` makes paid
+  search calls and is theirs to run; paid page retrieval (scrape, render,
+  pipelines, Reddit) is not. A page one returns as blocked is yours to take up
+  the paid rungs, if the finding needs it.
 - Framing, challenge and writing are judgement, and stay with you.
 
 **Research is what an outsider could establish.** If the question is about the
@@ -456,6 +473,7 @@ All standard library only, on any `python3` 3.9 or newer.
 | Script | Purpose |
 |---|---|
 | `fetch.py "<url>" --find TERM [--relevant Q]` | Open a page for free and keep its text; exit 3 is a block or a shell. `--saved FILE` searches a page already fetched |
+| `search.py --angle "..." --wording "..." [...] [--tsv PATH] \| --more RECORD` | One angle asked many ways across Google and Exa in one call; leads ranked, never filtered, every one reachable with `--more` |
 | `platforms.py list \| search --on X` | Ten free platforms that return records rather than pages |
 | `brief.py --angle "..." --effort narrow\|comparison [--tsv PATH]` | The brief for one retrieval subagent, filled and ready to pass unchanged; with `--tsv`, it lists what earlier rounds found |
 | `ledger.py status --tsv PATH --level L` | Each angle saturated, open or capped, and every entity found |

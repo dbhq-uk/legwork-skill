@@ -99,3 +99,67 @@ Claude cost for all eight runs: $27.60, against the $45 estimated.
 Grades: `~/legwork-evals/20261017/grading/` (Opus scores as JSON beside the
 reports; Astra's in `astra-*.txt`). The label map is
 `~/legwork-evals/20261017/grading-key.json`.
+
+## Re-run after the render fix
+
+The diagnosis of the banks runs (`~/legwork-evals/20261017/diagnosis.md`)
+found that neither branch run ever rendered a page through Bright Data, while
+both `main` runs did: Barclays and Starling were lost to own pages that came
+back blocked or as shells. The gate now fails a row whose entity's own page
+was logged blocked or a shell and never rendered, when the Bright Data CLI is
+installed (spec L, commits `05d92c2` to `f042b6b`), and an entity may record
+several own sites. The same eight runs were repeated that evening against the
+same `main` and the branch at `f042b6b`, from `~/legwork-evals/20261017b/`,
+graded the same way (Astra runs `20261017T224140Z-d90988` and
+`20261017T224141Z-998edb`).
+
+| Banks, mean of 2 runs | `main` (Opus) | branch (Opus) | `main` (Astra) | branch (Astra) |
+|---|---|---|---|---|
+| Core covered (of 16) | 12.5 | 11.5 | 13 | 12.5 |
+| Extras covered | 1 | 3 | 2.5 | 5.5 |
+| Wrong facts | 3 | 1 | 2.5 | 3.5 |
+| Scope errors | 0.5 | 0.5 | 1 | 0.5 |
+
+| Postgres, mean of 2 runs | `main` (Opus) | branch (Opus) | `main` (Astra) | branch (Astra) |
+|---|---|---|---|---|
+| Core covered (of 9) | 8 | 8.5 | 8 | 8.5 |
+| Extras covered | 1.5 | 1 | 1.5 | 2 |
+| Wrong facts | 0 | 1 | 2 | 2 |
+| Scope errors | 0 | 0 | 0 | 0 |
+| Sound recommendations | 2 of 2 | 2 of 2 | 1 of 2 | 2 of 2 |
+
+Both branch banks runs now covered Barclays, Starling and NatWest, and logged
+4 and 19 Bright Data rows against none before.
+
+**Verdict: no worse, not shown better, so still short of the bar as written.**
+Every difference in core coverage is within one entity: banks 1 lower (Opus)
+and 0.5 lower (Astra), Postgres 0.5 higher for both. Wrong facts are lower on
+banks for Opus by 2, higher for Astra by 1, and within one on Postgres. Scope
+errors are no higher anywhere. The branch found more extras on banks under
+both graders.
+
+**Both arms moved between the two evenings.** On the same code, `main`
+averaged 10 core banks a run in the first eval and 12.5 in the re-run (Opus;
+10.5 and 13 for Astra).
+The run-to-run spread inside one arm (8 to 13 core banks) is wider than any gap
+between the arms, which is why two runs an arm cannot settle a one-entity
+difference.
+
+| Re-run, mean of 2 | `main` banks | branch banks | `main` Postgres | branch Postgres |
+|---|---|---|---|---|
+| Minutes | 17.8 | 16.8 | 15.1 | 15.1 |
+| Claude cost | $5.21 | $4.09 | $3.48 (one estimated) | $5.44 |
+| `search.py` calls (wordings) | - | 9 (85) | - | 15.5 (116) |
+| `--more` used | - | 3 | - | 0.5 |
+| Exa spend | - | $0.05 | - | $0.08 |
+
+Claude cost for the eight re-runs: about $36.40, one of them estimated. One
+`main` Postgres transcript was lost after the run had finished: the runner
+script was edited while that run's shell was still reading it, and the shifted
+read emptied the transcript. Its report, fetch log and ledger were already
+written and were graded; its cost, about $3.95, is estimated from the token
+counts in Claude Code's own session log, using a price model that gave $6.60
+for a run whose recorded cost was $6.37.
+
+Grades: `~/legwork-evals/20261017b/grading/`, label map
+`~/legwork-evals/20261017b/grading-key.json`.

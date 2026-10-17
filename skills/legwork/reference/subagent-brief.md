@@ -135,7 +135,8 @@ e-money firms, a flat-pack question meets fitted conversions:
 {"entities": ["Name", "Name"],
  "out_of_scope": [{"name": "Name", "reason": "e-money firm, not a bank"}]}
 
-An entity whose own site you opened a page on may be written as an object:
+An entity whose own site you opened a page on, or tried to open (it came back
+blocked or as a shell), may be written as an object:
 {"name": "Acme", "site": "acme.example"}. The site is the entity's own domain,
 never an aggregator's, a directory's or a review site's. If its pages sit on
 more than one of its own domains (a group site and a developer portal), give

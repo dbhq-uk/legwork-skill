@@ -188,8 +188,11 @@ failure logged by hand defaults to `ok`, which records a page nobody read.
    `bd_search.py "<url>" -m scrape --find "<term>" --max-chars 8000`. Prefer
    `--find` to a blind cap: the first eight thousand characters of a long page
    are usually the navigation.
-3. A client-rendered shell: `bd_search.py "<url>" -m render`. With Bright Data installed, the gate fails a
-   matrix row whose entity's own page is logged blocked or a shell and was never rendered.
+3. A client-rendered shell: `bd_search.py "<url>" -m render`. With Bright Data
+   installed, the gate fails a matrix row whose entity's own page is logged
+   blocked or a shell and was never rendered. If the render itself fails
+   (`bd_search.py` exits 2), log it by hand with `sources.py log --url <url>
+   --via brightdata --status blocked`.
 4. **Refused by every transport: change the address.** Every step above asks
    the same host for the same URL, so a publisher refusing by policy refuses all
    of them. Search the document's own title (add `filetype:pdf` for a PDF) and
@@ -364,6 +367,8 @@ filling that same field list, is the natural split. Every cell holds a claim or
 rests on at least one page you opened**: if every citation in it is a search
 result, open one of those pages or mark the cells `[unknown]`. The gate fails
 that row at standard and deep, because a cell reads as settled.
+Name each matrix row exactly as its subagent named the entity, because the
+own-site checks match full names exactly.
 `python3 ${CLAUDE_SKILL_DIR}/scripts/matrix.py check --report "$OUT/$BASE.md"`
 checks it. The matrix carries the
 data; the findings still carry the argument.

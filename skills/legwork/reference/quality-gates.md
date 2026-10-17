@@ -28,6 +28,8 @@ Exit status is 0 when there are no errors. Warnings do not fail the run.
 | Evidence | not run | warning | error |
 | Independence | not run | warning | error |
 | Comparison matrix | uncited rows only, as errors | warning, except an uncited or snippet-only row, which is an error | error |
+| Matrix row on its entity's own site | not run | error | error |
+| Blocked own page rendered | not run | error | error |
 | Filing | warning | warning | warning |
 
 Structural problems are always errors because they make a document unusable
@@ -168,6 +170,16 @@ Runs only when the report carries a `## Comparison matrix` section.
   page. Measured on 2026-09-24: a banks run grew its matrix from twelve rows to
   sixteen on search snippets and shipped through the warning. A row that cites
   one opened page alongside a snippet passes.
+- **A row cites a page opened on its entity's own site** (structural, so an error
+  at standard and deep; not asked at quick). An aggregator or a review finds an
+  entity, but only its own page settles what it offers and costs. Checked for
+  entities whose sites the subagents recorded with `sources.py log-returns`;
+  a row with no recorded site is not asked. A row of `[unknown]` is not asked.
+- **A blocked own page is rendered before it is given up** (structural, standard
+  and deep). With Bright Data installed, a row whose entity has an own page
+  logged `blocked` or `shell`, with no cited page opened on that site, fails
+  unless a render was tried on that same site (`bd_search.py "<url>" -m render`,
+  logged `--via brightdata`). A scrape that came back a shell is not a render.
 - **Rows have the table's column count.**
 
 Table cells are not sentences, so figure tracing and the confidence checks cannot

@@ -125,6 +125,11 @@ def test_the_return_shape_offers_a_list_of_sites_for_an_entity():
     assert '{"name": "Acme", "site": ["acme.example", "acmebank.example"]}' in out
 
 
+def test_the_brief_asks_for_sites_tried_as_well_as_opened():
+    out = ' '.join(render('--angle', ANGLE, '--effort', 'narrow').stdout.split())
+    assert 'opened a page on, or tried to open (it came back blocked or as a shell)' in out
+
+
 def test_a_skill_md_without_the_rule_markers_is_refused(tmp_path):
     fake = tmp_path / 'SKILL.md'
     fake.write_text('no markers here', encoding='utf-8')

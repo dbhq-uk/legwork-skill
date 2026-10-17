@@ -2509,7 +2509,7 @@ report_key "TypeSafe Jev (ranking)" TYPESAFE_API_KEY "$HOME/.dbhq/legwork/typesa
 
 - [ ] **Step 6: Check**
 
-Run: `bash -n skills/legwork/setup.sh && (shellcheck -S warning skills/legwork/setup.sh || true) && grep -rn $'—\|–' AGENTS.md README.md SECURITY.md skills/legwork/ ; cd skills/legwork && python3 -m pytest tests/ -q`
+Run: `bash -n skills/legwork/setup.sh && (shellcheck -S warning skills/legwork/setup.sh || true) && python3 -c "import pathlib,sys; bad=[str(p) for p in [pathlib.Path(x) for x in ('AGENTS.md','README.md','SECURITY.md')]+list(pathlib.Path('skills/legwork').rglob('*.md')) if any(c in p.read_text() for c in ('\u2013','\u2014'))]; print(bad); sys.exit(1 if bad else 0)" && cd skills/legwork && python3 -m pytest tests/ -q`
 Expected: `bash -n` silent; no shellcheck warnings on the new block; the dash grep prints nothing; suite PASS.
 
 Run: `grep -rn "three query variants\|at least three query" skills/legwork --include=*.md`

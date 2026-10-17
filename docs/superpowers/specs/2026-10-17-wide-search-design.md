@@ -381,7 +381,8 @@ and snippets and the angle go to TypeSafe.
 
 **Returned.** In a subagent's `entities` object an entity may be a string, as
 today, or `{"name": "Acme", "site": "acme.example"}`. The site is the entity's
-own domain, recorded only when the subagent opened a page on it. Strings keep
+own domain, recorded only when the subagent opened a page on it or tried to
+(it came back blocked or as a shell). Strings keep
 working, so earlier replies and evals parse unchanged.
 
 **Stored.** `sources.parse_entities` is unchanged: it still returns
@@ -463,8 +464,17 @@ structural error naming the render command: `bd_search.py "<url>" -m render`,
 logged `--via brightdata`. This holds whether the row's cells are `[unknown]`
 or cite something else, and it takes precedence over the own-site message
 above. It applies only when the Bright Data CLI is installed; without it,
-`[unknown]` stays the honest answer. A failed render, logged `brightdata`
-with any status, counts as tried.
+`[unknown]` stays the honest answer. Tried means a row on that same site
+with via `brightdata` that is not itself a `shell` from a scrape: a scrape
+that returns a shell has not rendered anything, so `log --from-fetch` records
+the Bright Data mode in the row's `query` column (`bd_search -m render`), and a
+`brightdata` shell counts only when its mode is render. A failed render with no
+page to log (`bd_search.py` exits 2: no credit, not signed in) is logged by
+hand, `sources.py log --url U --via brightdata --status blocked`, and counts
+as tried; the gate's message says so. A row failing this rule does not also get
+the unopened-citation error, which would send the run the other way. Matrix
+rows name each entity exactly as its subagent did, because the check matches
+full names exactly.
 
 **An entity may have several own sites.** A group site and a developer portal
 are often on different domains (`natwestgroup.com`, `natwest.com`), so a

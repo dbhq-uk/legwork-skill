@@ -264,6 +264,11 @@ def search_exa(angle, key, clock):
         return provider_result('exa', angle, status=status, reason=reason,
                                seconds=time.monotonic() - started, answer='', cost=None)
 
+    # A key that exa_key would not hand back unchanged never reaches a header:
+    # every key that does is printable with no whitespace, so it appears in any
+    # message literally and the replacement above catches it.
+    if key != _clean_key(key):
+        return failure('failed', 'the Exa key holds whitespace or a control character')
     left = clock.remaining()
     if left <= 0:
         return failure('deadline', 'no time left')
@@ -277,7 +282,7 @@ def search_exa(angle, key, clock):
             body = exc.read().decode('utf-8', 'replace')
         except Exception:  # noqa: BLE001 - the status code is enough without a body
             body = ''
-        return failure('failed', 'HTTP {}: {}'.format(exc.code, ' '.join(body.split())[:120]).strip())
+        return failure('failed', 'HTTP {}: {}'.format(exc.code, ' '.join(body.split())).strip())
     except Exception as exc:  # noqa: BLE001 - any failure skips Exa, never the call
         return failure('failed', ' '.join(str(exc).split()) or type(exc).__name__)
     if not isinstance(payload, dict):

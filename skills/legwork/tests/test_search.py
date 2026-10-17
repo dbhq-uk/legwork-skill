@@ -375,11 +375,11 @@ def test_an_empty_key_file_and_no_variable_gives_no_key(monkeypatch, tmp_path):
 
 def test_the_key_never_appears_in_a_recorded_reason(env):
     def refuse(request, timeout=None):
-        raise ValueError('bad header SECRET key')
+        raise ValueError('bad header SECRETkey')
 
     env.monkeypatch.setattr(search, 'urlopen', refuse)
-    result = search.search_exa('q', 'SECRET key', clock())
-    assert result['status'] == 'failed' and 'SECRET key' not in result['reason'] and '[key]' in result['reason']
+    result = search.search_exa('q', 'SECRETkey', clock())
+    assert result['status'] == 'failed' and 'SECRETkey' not in result['reason'] and '[key]' in result['reason']
 
 
 def test_every_exa_failure_still_carries_answer_and_cost(env):
@@ -417,3 +417,32 @@ def test_kill_all_skips_a_process_that_has_already_been_reaped(env):
 def test_a_falsy_worker_result_is_kept_not_mistaken_for_a_missed_deadline(env):
     jobs = [('a', lambda: {}, search.provider_result('google', 'a', 1, 'deadline'))]
     assert search.run_jobs(jobs, clock()) == [{}]
+
+
+# --- fix round 2 -----------------------------------------------------------
+
+def test_a_key_with_a_newline_is_refused_before_any_request(env):
+    calls = []
+
+    def fake_urlopen(request, timeout=None):
+        calls.append(request)
+        raise ValueError("Invalid header value b'SECRET\\nkey'")
+
+    env.monkeypatch.setattr(search, 'urlopen', fake_urlopen)
+    result = search.search_exa('q', 'SECRET\nkey', clock())
+    assert result['status'] == 'failed' and calls == []
+    assert 'SECRET' not in result['reason'] and 'key\n' not in result['reason']
+    assert result['answer'] == '' and result['cost'] is None
+
+
+def test_the_key_is_scrubbed_before_a_long_http_body_is_cut(env):
+    key = 'sk-abcdef1234567890zz'
+    body = ('x' * 104 + key + 'y' * 40).encode('utf-8')
+
+    def refuse(request, timeout=None):
+        raise HTTPError(search.EXA_API, 401, 'Unauthorized', {}, _Body(body))
+
+    env.monkeypatch.setattr(search, 'urlopen', refuse)
+    result = search.search_exa('q', key, clock())
+    assert result['status'] == 'failed' and result['reason'].startswith('HTTP 401')
+    assert key[:6] not in result['reason']

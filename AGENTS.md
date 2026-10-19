@@ -18,7 +18,6 @@ skills/legwork/scripts/        # python, standard library only
 skills/legwork/reference/      # methodology (four phases), quality gates, subagent brief
 skills/legwork/templates/      # brief + report
 skills/legwork/tests/          # offline, no network
-hooks/gate_on_stop.py          # Stop hook - gates any report written in a session
 evals/                         # behaviour evals + the baseline protocol
 install.sh / install-codex.sh  # local symlink installers (Claude / Codex)
 docs/design-notes.md           # why the skill is shaped the way it is
@@ -39,7 +38,7 @@ docs/design-notes.md           # why the skill is shaped the way it is
 - **A blank matrix cell is never acceptable.** `[unknown]` records that the question was asked and came back empty; a blank records nothing and reads as a confident "no". Table cells are not sentences, so no other layer of the gate can see inside them.
 - **The platform is not the party.** `party_of` treats multi-tenant hosts as what they are: two orgs on one code host are two voices, three unrelated papers on one preprint server are three, and evidence read from disk is always one. A change that makes tenancy raise corroboration for sources found down a *single* angle has broken the check - `test_party_tenancy.py` pins both directions.
 - **A run that fails its gate is never filed.** `finish.py` gates before it writes to the index, because the index is what a later session trusts instead of searching again. Filing a failed run launders a conclusion the evidence does not support.
-- **Prose is a cost, not a free win.** The measured constraint on this skill is instruction density, not mechanism count: adherence collapses well before the number of rules legwork already carries, and the observed failure mode is an agent reporting compliance it did not achieve. Prefer moving a rule into the gate, a script or the hook over writing it down again. A change that adds standing procedure should say what it is buying and what it displaces.
+- **Prose is a cost, not a free win.** The measured constraint on this skill is instruction density, not mechanism count: adherence collapses well before the number of rules legwork already carries, and the observed failure mode is an agent reporting compliance it did not achieve. Prefer moving a rule into the gate or a script over writing it down again. A change that adds standing procedure should say what it is buying and what it displaces.
 - **Each rule is stated once.** `SKILL.md` holds the rule, in the order a run meets it; `reference/methodology.md` holds only the detail behind it and does not restate it; the templates and the subagent brief point at `SKILL.md` rather than paraphrasing it. A rule written in several places drifts: by September 2026 the answer-in-chat rule said three different things in four files, and a fix to the blocked-page ladder had reached two of the four places it was written. A change to a rule changes that one place, and a grep for the rule's key phrase should find it once.
 - House style: British English, plain hyphens (no em or en dashes).
 
@@ -60,10 +59,9 @@ cd ../.. && claude plugin validate .         # manifest + structure
 bash -n install.sh                           # installer parses
 ```
 
-The suite covers the hook and the eval set as well as the scripts. The hook
-tests are the ones to watch: they assert that a *brief* is gated as a brief, and
-that a hook which cannot reach `check.py` stays silent. A hook that cries wolf
-gets removed, and a removed hook is the gate going back to being optional.
+The suite covers the eval set as well as the scripts. There is no Stop hook: it
+was removed because it could not tell which session wrote a report, so it
+blocked turns on other sessions' work. The gate runs when `finish.py` is run.
 
 The fixtures that MUST fail are the important ones - they exist so the gate is proved to bite. Each covers a different failure mode, and each fails for that reason **only**, which is what makes it evidence about that check rather than about the gate in general:
 

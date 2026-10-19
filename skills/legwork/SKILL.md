@@ -441,10 +441,6 @@ submission route exists; install is by URL or not at all", not "Notes on the
 plugin gallery". A could-not-answer run is filed too, because "we looked and
 nothing held" is what stops the next session searching again.
 
-When the Stop hook is installed (`install.sh --with-hook`), any report written
-in the session is gated at the level its receipt line claims, so skipping this
-step is loud rather than silent.
-
 ### 7. Answer in the chat
 
 **A file path is not an answer.** Once the gate passes, answer in the

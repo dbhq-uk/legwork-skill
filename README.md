@@ -131,7 +131,8 @@ Two ladders. To search, `search.py` comes first and is paid (Bright Data and Exa
 | A client-rendered shell | Bright Data `-m render`, a real browser |
 | Refused by every route above | Search the document's own title for a copy on another host, and cite the host that served it |
 | A page that has moved or gone | The Wayback Machine, through `platforms.py` |
-| A platform that blocks everything above | Bright Data `-m pipeline`, billed per record. Reddit is the one where this is the only route |
+| A platform that blocks everything above | Bright Data `-m pipeline`, billed per record |
+| A Reddit thread | Bright Data `-m reddit`: the Unlocker scrape first, the pipeline if the page is empty, blocked or short of comments. A subreddit listing goes straight to the pipeline. `--route scrape\|pipeline` forces one |
 
 **The ten free platforms** (`platforms.py list`): Hacker News, Stack Exchange,
 GitHub repositories and issues, npm, PyPI, Wikipedia, Google News with real
@@ -217,7 +218,7 @@ Each case runs twice - once with the skill and once without. The baseline arm is
 
 - **Publish dates are often missing** from SERP results. legwork reports an unknown date rather than assuming one, but the recency signal is weaker for those sources. Backfill from page meta tags where you have the page anyway.
 - **Source kinds are inferred conservatively** when you do not pass `--kind`: an unrecognised URL is logged as `unknown` and scored below commentary, because a confident wrong guess silently moves a source between tiers.
-- **The Reddit pipeline is slow** (10-60s typical, occasionally minutes) and billed per record. Prefer top-relevance threads.
+- **The Reddit pipeline is slow** (an asynchronous dataset job, 8 to 12 minutes in testing) and billed per record. `-m reddit` tries the scrape first for a single thread (about 5 to 30 seconds, about a cent) and uses the pipeline only for listings, a URL with no slug, or a page that comes back empty, blocked or short of comments. Force either with `--route`.
 - **Trustpilot cannot be scraped** - the Unlocker zone blocks it and there is no pipeline equivalent. Use SERP snippets and quote only what the snippet shows.
 
 ## Development

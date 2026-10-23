@@ -11,6 +11,8 @@ Shells out to the official Bright Data CLI (`brightdata` / `bdata`, package
     bd_search.py "<url>"  -m render                 # client-rendered pages
     bd_search.py "query"  -m discover --intent "..." # intent-ranked search
     bd_search.py "<url>"  -m pipeline --pipeline linkedin_job_listings
+    bd_search.py "<thread url>" -m reddit            # scrape first, pipeline if incomplete
+    bd_search.py "<thread url>" -m reddit --route pipeline   # force the dataset job
 
 | Mode | CLI call | When |
 |---|---|---|
@@ -18,7 +20,15 @@ Shells out to the official Bright Data CLI (`brightdata` / `bdata`, package
 | discover | `brightdata discover --intent` | Two engines came back thin |
 | scrape | `brightdata scrape -f markdown` | fetch.py and WebFetch were both blocked |
 | render | `brightdata browser open/get/close` | The page is a client-rendered shell |
-| pipeline, reddit | `brightdata pipelines <name>` | A platform that blocks everything above; billed per record |
+| pipeline | `brightdata pipelines <name>` | A platform that blocks everything above; billed per record |
+| reddit | `brightdata scrape -f html`, then `brightdata pipelines reddit_posts` | A single thread tries the scrape first (about 5 to 30 s, about a cent) and falls back to the pipeline (8 to 12 min, per record) when the page is empty, blocked or holds fewer comments than it reports. A subreddit listing always uses the pipeline |
+
+`--route auto|scrape|pipeline` (reddit mode only, default `auto`) forces a route.
+`scrape` never falls back and reads single threads only. `pipeline` skips the
+scrape, for a listing or a complete comment tree. The JSON says which route
+produced the data (`route`), how many comments were recovered against how many
+the post reports (`recovered`, `reported`), and why a fallback happened
+(`fallback_reason`).
 
 Scraped and rendered pages come back cleaned, optionally windowed around
 `--find` terms, and written beside a sidecar JSON in the same shape `fetch.py`
@@ -43,6 +53,7 @@ import shutil
 import subprocess
 import sys
 import time
+from html.parser import HTMLParser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -61,6 +72,7 @@ PIPELINE_MODES = {"reddit", "pipeline"}
 RETIRED_MODES = {"scholar", "academic", "patents", "people"}
 TIMEOUT_FAST = 90  # search + scrape
 TIMEOUT_RENDER = 120  # a browser session: open, get, close
+TIMEOUT_REDDIT_SCRAPE = 120  # measured 5 to 30 s for a thread; headroom for a slow unlock
 TIMEOUT_PIPELINE = 700  # `brightdata pipelines` polls (CLI default 600s + headroom)
 SETUP_HINT = "Run `brightdata login` (or set BRIGHTDATA_API_KEY) to authenticate."
 # Bright Data CLI exits 1 for every error. Map known auth/quota messages onto
@@ -111,8 +123,13 @@ def _classify_exit(stderr: str) -> int:
     return EXIT_AUTH if any(sub.lower() in s for sub in AUTH_ERROR_SUBSTRINGS) else 1
 
 
-def _run(cmd: list[str], timeout: int = TIMEOUT_FAST) -> str:
-    """Run the CLI and return stdout. On failure, _fail() with a useful code."""
+def _run_raw(cmd: list[str], timeout: int = TIMEOUT_FAST) -> tuple[str, str, int]:
+    """Run the CLI. Return (stdout, error message, exit class); the message is empty on success.
+
+    The exit class is 0 for success, 1 for an ordinary failure and EXIT_AUTH for
+    an auth or quota failure. Callers that can fall back use this directly;
+    everything else goes through _run, which fails.
+    """
     try:
         proc = subprocess.run(
             cmd,
@@ -122,15 +139,23 @@ def _run(cmd: list[str], timeout: int = TIMEOUT_FAST) -> str:
             check=False,
         )
     except subprocess.TimeoutExpired:
-        _fail(f"Bright Data CLI timed out after {timeout}s")
+        return "", f"Bright Data CLI timed out after {timeout}s", 1
     except OSError as e:
-        _fail(f"failed to invoke Bright Data CLI: {e}")
+        return "", f"failed to invoke Bright Data CLI: {e}", 1
     if proc.returncode != 0:
         msg = (proc.stderr or proc.stdout or "").strip() or f"exit {proc.returncode}"
         code = _classify_exit(msg)
         hint = f" {SETUP_HINT}" if code == EXIT_AUTH else ""
-        _fail(f"Bright Data CLI failed: {msg[:400]}{hint}", code=code)
-    return proc.stdout
+        return "", f"Bright Data CLI failed: {msg[:400]}{hint}", code
+    return proc.stdout, "", 0
+
+
+def _run(cmd: list[str], timeout: int = TIMEOUT_FAST) -> str:
+    """Run the CLI and return stdout. On failure, _fail() with a useful code."""
+    out, err, code = _run_raw(cmd, timeout)
+    if err:
+        _fail(err, code=code)
+    return out
 
 
 def _normalize_serp(parsed: dict, count: int) -> list[dict]:
@@ -380,15 +405,287 @@ def run_discover(args) -> None:
 #   vendor_pricing    google_shopping, amazon_product_search
 #   press             reuter_news
 #
-# `reddit` stays as its own mode because reddit.com blocks the Unlocker zone
-# under robots.txt, so it is the one platform where the pipeline is not a last
-# resort but the only route.
+# `reddit` is its own mode, and it has two routes. Measured on 2026-10-23:
+#
+#   - The Web Unlocker (`scrape -f html`) works for a single thread given its
+#     full URL with the slug. One test took 27 s and returned 17 of the 17
+#     comments the post reported. Cost was about a cent.
+#   - A subreddit listing (/new/) took 4 s, but the server-rendered HTML holds
+#     only the first few posts, so a listing cannot be read this way.
+#   - A thread URL without the slug returned 149 bytes.
+#   - The pipeline is an asynchronous dataset job that took about 8 to 12
+#     minutes, billed per record. It is for listings and complete comment trees.
+#
+# So a single thread tries the scrape first and falls back to the pipeline when
+# the page is empty, blocked, or holds fewer comments than it reports. A
+# listing, or a thread URL with no slug, goes straight to the pipeline.
+# `--route` forces either route.
 _PIPELINE_FOR_MODE = {
     "reddit": ("reddit_posts", "reddit.com"),
 }
 
+ROUTES = ("auto", "scrape", "pipeline")
+# An empty or blocked Unlocker answer is a few hundred bytes; a real thread
+# page is hundreds of kilobytes.
+MIN_REDDIT_HTML_BYTES = 2048
+# /r/<sub>/comments/<id>/<slug>/ : the slug is the part a thread URL needs.
+_REDDIT_THREAD_RE = re.compile(
+    r"^https?://[^/]*reddit\.com/r/[^/?#]+/comments/([a-z0-9]+)(?:/([^/?#]+))?", re.I)
 
-def run_pipeline(args) -> None:
+
+def _reddit_thread(url: str):
+    """(thread id, slug or None) for a single-thread URL, else None (a listing)."""
+    m = _REDDIT_THREAD_RE.match(url)
+    return (m.group(1), m.group(2)) if m else None
+
+
+def _tidy(text: str) -> str:
+    """Collapse runs of whitespace inside each line and drop blank lines."""
+    lines = (" ".join(line.split()) for line in text.splitlines())
+    return "\n".join(line for line in lines if line)
+
+
+class _RedditThreadParser(HTMLParser):
+    """Pull the post and its comments out of a Reddit thread page.
+
+    Written against the server-rendered page the Unlocker returns:
+    `<shreddit-post>` carries the title, author, score and comment count as
+    attributes, and each `<shreddit-comment>` carries its author, score, depth
+    and parent as attributes, with the comment text in a `div slot="comment"`.
+    Replies sit inside their parent's element, so a stack of open comments says
+    which one a piece of text belongs to.
+    """
+
+    def __init__(self, thread_id: str | None = None):
+        super().__init__(convert_charrefs=True)
+        self.thread_id = thread_id
+        self.post: dict | None = None
+        self.comments: list[dict] = []
+        self.shreddit_comment_tags = 0
+        self._open: list[dict] = []
+        self._capture: list | None = None  # text pieces being collected
+        self._capture_tag = ""
+        self._capture_depth = 0
+        self._skip = 0  # inside script or style
+
+    def _begin(self, tag: str, sink: list) -> None:
+        self._capture, self._capture_tag, self._capture_depth = sink, tag, 1
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag in ("script", "style"):
+            self._skip += 1
+        if self._capture is not None:
+            if tag == self._capture_tag:
+                self._capture_depth += 1
+            elif tag == "br":
+                self._capture.append("\n")
+            return
+        if tag == "shreddit-post":
+            wanted = "t3_" + self.thread_id if self.thread_id else None
+            if self.post is None and (wanted is None or a.get("id") == wanted):
+                self.post = {
+                    "title": a.get("post-title") or "",
+                    "author": a.get("author") or None,
+                    "score": _to_int(a.get("score")),
+                    "created": a.get("created-timestamp") or None,
+                    "subreddit": a.get("subreddit-prefixed-name") or None,
+                    "permalink": a.get("permalink") or None,
+                    "reported_comments": _to_int(a.get("comment-count")),
+                    "text": "",
+                    "_text": [],
+                }
+        elif tag == "shreddit-comment":
+            self.shreddit_comment_tags += 1
+            comment = {
+                "id": a.get("thingid") or None,
+                "parent": a.get("parentid") or None,
+                "author": a.get("author") or None,
+                "score": _to_int(a.get("score")),
+                "depth": _to_int(a.get("depth")) or 0,
+                "created": a.get("created") or None,
+                "permalink": a.get("permalink") or None,
+                "text": "",
+                "_text": [],
+            }
+            self.comments.append(comment)
+            self._open.append(comment)
+        elif tag == "div" and a.get("slot") == "comment" and self._open:
+            self._begin("div", self._open[-1]["_text"])
+        elif tag == "shreddit-post-text-body" and self.post is not None and not self.post["_text"]:
+            self._begin(tag, self.post["_text"])
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style") and self._skip:
+            self._skip -= 1
+        if self._capture is not None:
+            if tag == self._capture_tag:
+                self._capture_depth -= 1
+                if self._capture_depth == 0:
+                    self._capture = None
+            elif tag == "p":
+                self._capture.append("\n")
+            return
+        if tag == "shreddit-comment" and self._open:
+            self._open.pop()
+
+    def handle_data(self, data):
+        if self._capture is not None and not self._skip:
+            self._capture.append(data)
+
+    def result(self) -> tuple[dict | None, list[dict]]:
+        for item in ([self.post] if self.post else []) + self.comments:
+            item["text"] = _tidy("".join(item.pop("_text")))
+        return self.post, self.comments
+
+
+def _to_int(value):
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _render_thread(url: str, post: dict, comments: list[dict], reported) -> str:
+    """The thread as plain text, replies indented under their parent."""
+    head = [
+        f"Title: {post['title']}",
+        f"Author: {post['author']}  Score: {post['score']}  Posted: {post['created']}",
+        f"URL: {url}",
+        f"Comments: recovered {len(comments)} of reported {reported}",
+    ]
+    if post["text"]:
+        head += ["", post["text"]]
+    body = []
+    for c in comments:
+        pad = "  " * (c["depth"] or 0)
+        body.append(f"{pad}[depth {c['depth']}] {c['author']} (score {c['score']}) id={c['id']} parent={c['parent']}")
+        body.extend(pad + "  " + line for line in c["text"].splitlines())
+    return "\n".join(head + [""] + body) + "\n"
+
+
+def _scrape_reddit_thread(cli: str, args, thread_id: str):
+    """Try the Unlocker on one thread.
+
+    Returns (data, reason). `data` is None when the page cannot be used at all;
+    otherwise it holds the parsed post and comments and the two counts. `reason`
+    says why the result is not a complete thread, and is empty when it is.
+    A failed CLI call comes back as a reason, except an auth or quota failure,
+    which ends the run: falling back would only fail the same way, later.
+    """
+    cmd = [cli, "scrape", args.query, "-f", "html"]
+    if args.country:
+        cmd.extend(["--country", args.country])
+    if args.zone:
+        cmd.extend(["--zone", args.zone])
+    body, err, code = _run_raw(cmd, timeout=TIMEOUT_REDDIT_SCRAPE)
+    if err:
+        if code == EXIT_AUTH:
+            _fail(err, code=code)
+        return None, f"scrape failed: {err}"
+    size = len(body.encode("utf-8", "ignore"))
+    if size < MIN_REDDIT_HTML_BYTES:
+        return None, f"scrape returned only {size} bytes (empty or blocked)"
+    if "<shreddit-post" not in body:
+        return None, "scrape returned a page with no post in it (blocked or not a thread)"
+    parser = _RedditThreadParser(thread_id)
+    parser.feed(body)
+    parser.close()
+    post, comments = parser.result()
+    if post is None:
+        return None, "scrape returned a page with no post for this thread"
+    reported = post["reported_comments"]
+    data = {"post": post, "comments": comments, "recovered": len(comments),
+            "reported": reported, "bytes": size}
+    if reported is None:
+        return data, f"recovered {len(comments)} comments but the post does not say how many it has"
+    if len(comments) < reported:
+        return data, f"recovered {len(comments)} of {reported} reported comments"
+    return data, ""
+
+
+def _emit_reddit_scrape(args, data: dict, elapsed: float, note: str) -> None:
+    post, comments = data["post"], data["comments"]
+    reported = data["reported"]
+    out_path = args.out or default_out_path(args.query)
+    text = _render_thread(args.query, post, comments, reported)
+    # Fit the structured records under --max-chars by dropping trailing
+    # comments, never by cutting the JSON string mid-way.
+    keep = list(comments)
+    while True:
+        shown = {"post": {k: v for k, v in post.items() if k != "reported_comments"}, "comments": keep}
+        content = json.dumps(shown, ensure_ascii=False)
+        if not args.max_chars or len(content) <= args.max_chars or not keep:
+            break
+        keep = keep[: max(0, len(keep) // 2)]
+    payload = {
+        "url": args.query,
+        "mode": args.mode,
+        "route": "scrape",
+        "provider": "brightdata",
+        "log_via": "brightdata",
+        "title": post["title"],
+        "date": (post["created"] or "")[:10] or None,
+        "recovered": data["recovered"],
+        "reported": reported,
+        "complete": not note,
+        "note": note or None,
+        "returned_in_content": len(keep),
+        "chars": len(text),
+        "text_file": out_path,
+        "verdict": "ok",
+        "reason": "",
+        "elapsed_s": round(elapsed, 1),
+        "content": content,
+    }
+    write_outputs(out_path, text, {k: v for k, v in payload.items() if k != "content"})
+    json.dump(payload, sys.stdout, ensure_ascii=False)
+    sys.stdout.write("\n")
+
+
+def run_reddit(args) -> None:
+    """Pick the route for a Reddit URL, try it, and say which one produced the data."""
+    target = args.query
+    if not target.startswith(("http://", "https://")):
+        _fail(f"{args.mode} mode requires a URL, got: {target[:80]}")
+    if "reddit.com" not in target:
+        _fail(f"{args.mode} mode expects a reddit.com URL, got: {target[:80]}")
+    thread = _reddit_thread(target)
+    route = args.route
+    if route == "pipeline":
+        return run_pipeline(args, extra={"route": "pipeline", "route_reason": "forced with --route pipeline"})
+    if thread is None:
+        if route == "scrape":
+            _fail("--route scrape reads a single thread (/r/<sub>/comments/<id>/<slug>/); "
+                  "a listing page holds only its first few posts. Use the pipeline route.")
+        return run_pipeline(args, extra={
+            "route": "pipeline",
+            "route_reason": "not a single-thread URL; a listing page holds only its first few posts"})
+    thread_id, slug = thread
+    if not slug and route == "auto":
+        return run_pipeline(args, extra={
+            "route": "pipeline",
+            "route_reason": "the thread URL has no slug, and the scrape returns almost nothing "
+                            "without it (149 bytes in testing); use the full URL to try the scrape"})
+    cli = _cli_bin()
+    started = time.monotonic()
+    data, reason = _scrape_reddit_thread(cli, args, thread_id)
+    elapsed = time.monotonic() - started
+    if data is not None and not reason:
+        return _emit_reddit_scrape(args, data, elapsed, "")
+    if route == "scrape":
+        if data is None:
+            _fail(f"--route scrape: {reason}")
+        # Forced, so no fallback: hand back what the page held and say it is partial.
+        return _emit_reddit_scrape(args, data, elapsed, reason + " (partial; no fallback with --route scrape)")
+    extra = {"route": "pipeline", "route_reason": "scrape was not enough, fell back",
+             "fallback_reason": reason, "scrape_elapsed_s": round(elapsed, 1)}
+    if data is not None:
+        extra.update({"scrape_recovered": data["recovered"], "scrape_reported": data["reported"]})
+    run_pipeline(args, extra=extra)
+
+
+def run_pipeline(args, extra: dict | None = None) -> None:
     target = args.query
     if args.mode == "pipeline":
         if not args.pipeline:
@@ -413,19 +710,17 @@ def run_pipeline(args) -> None:
     body = json.dumps(parsed, ensure_ascii=False)
     if args.max_chars and len(body) > args.max_chars:
         body = body[: args.max_chars]
-    json.dump(
-        {
-            "url": target,
-            "mode": args.mode,
-            "pipeline": dataset,
-            "provider": "brightdata",
-            "title": None,
-            "content": body,
-            "date": None,
-        },
-        sys.stdout,
-        ensure_ascii=False,
-    )
+    payload = {
+        "url": target,
+        "mode": args.mode,
+        "pipeline": dataset,
+        "provider": "brightdata",
+        "title": None,
+        "content": body,
+        "date": None,
+    }
+    payload.update(extra or {})
+    json.dump(payload, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
 
 
@@ -451,6 +746,9 @@ def main() -> None:
                    help="discover mode: return page content with each result")
     p.add_argument("--pipeline", default=None,
                    help="pipeline mode: dataset name; see `brightdata pipelines list`")
+    p.add_argument("--route", default="auto", choices=ROUTES,
+                   help="reddit mode: auto tries `scrape` first for a single thread and falls back to "
+                        "the pipeline; scrape never falls back; pipeline skips the scrape")
     p.add_argument("--session", default=None, help="render mode: browser session name")
     p.add_argument("--settle", type=float, default=3.0,
                    help="render mode: seconds to let a single-page app finish drawing (default 3)")
@@ -475,7 +773,12 @@ def main() -> None:
             f"{', '.join(sorted(SERP_MODES | CONTENT_MODES | RENDER_MODES | DISCOVER_MODES | PIPELINE_MODES))}"
         )
 
-    if args.mode in CONTENT_MODES:
+    if args.route != "auto" and args.mode != "reddit":
+        _fail(f"--route {args.route} applies to reddit mode only, not {args.mode!r}")
+
+    if args.mode == "reddit":
+        run_reddit(args)
+    elif args.mode in CONTENT_MODES:
         run_content(args)
     elif args.mode in RENDER_MODES:
         run_render(args)

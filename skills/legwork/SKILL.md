@@ -201,10 +201,16 @@ failure logged by hand defaults to `ok`, which records a page nobody read.
    date, and say in Limitations that the original refused you.
 5. A page that has moved or gone: `platforms.py search --on wayback`.
 
-**Reddit is the exception:** it blocks every rung above, so
-`bd_search.py "<url>" -m reddit` is the only route there, not a last resort. For
-any other platform that blocks everything, `-m pipeline --pipeline NAME`. Both
-are billed per record.
+**Reddit is the exception:** the free rungs above are blocked there, so
+use `bd_search.py "<url>" -m reddit`. For a single thread, give the full URL
+with its slug. It tries the Unlocker scrape first (5 to 30 seconds, about a
+cent), checks that it recovered as many comments as the post reports, and falls
+back to the pipeline (8 to 12 minutes, billed per record) if the page is empty,
+blocked or short. The JSON names the route (`route`) and the counts
+(`recovered`, `reported`). A subreddit listing, or a URL with no slug, goes
+straight to the pipeline. `--route scrape` or `--route pipeline` forces one.
+For any other platform that blocks everything, `-m pipeline --pipeline NAME`,
+billed per record.
 
 `bd_search.py` exiting 2 means auth or quota: tell the user to run
 `brightdata login`, and do not retry. `fetch.py` exiting 5 means the address is

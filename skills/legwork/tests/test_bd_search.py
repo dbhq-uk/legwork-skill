@@ -237,6 +237,222 @@ def test_reddit_mode_still_refuses_a_non_reddit_url(monkeypatch, capsys):
 
 
 # ---------------------------------------------------------------------------
+# Reddit: scrape a single thread first, fall back to the slow pipeline
+# ---------------------------------------------------------------------------
+
+THREAD_URL = 'https://www.reddit.com/r/example/comments/abc123/a_made_up_thread_title/'
+SLUGLESS_URL = 'https://www.reddit.com/r/example/comments/abc123/'
+LISTING_URL = 'https://www.reddit.com/r/example/new/'
+PIPELINE_BODY = json.dumps([{'title': 'A thread', 'num_comments': 3}])
+
+# Three comments: a root, a reply to it, and a second root. Tiny and invented.
+THREE_COMMENTS = [
+    ('t1_aaa', None, 'alice', 5, 0, '<p>First root comment.</p><p>Second paragraph.</p>'),
+    ('t1_bbb', 't1_aaa', 'bob', 2, 1, '<p>A reply to the first.</p>'),
+    ('t1_ccc', None, 'carol', 1, 0, '<p>Another root.</p>'),
+]
+
+
+def thread_html(reported=3, comments=THREE_COMMENTS, pad=3000):
+    """A small synthetic page in the shape the Unlocker returns for a thread.
+
+    Replies sit inside their parent's element, as on the real page. The filler
+    only lifts the body past the empty-page threshold.
+    """
+    count = '' if reported is None else ' comment-count="{}"'.format(reported)
+    out = ['<html><body><div>', '<!-- ' + 'x' * pad + ' -->',
+           '<shreddit-post id="t3_abc123" post-title="A made up thread title" '
+           'author="dave" score="42"{} created-timestamp="2026-10-01T10:00:00.000000+0000" '
+           'subreddit-prefixed-name="r/example">'.format(count),
+           '<shreddit-post-text-body slot="text-body"><div slot="text-body">'
+           '<div class="md"><p>The post body.</p></div></div></shreddit-post-text-body>',
+           '</shreddit-post>']
+    open_depths = []
+    for thing, parent, author, score, depth, body in comments:
+        while open_depths and open_depths[-1] >= depth:
+            out.append('</shreddit-comment>')
+            open_depths.pop()
+        parent_attr = ' parentId="{}"'.format(parent) if parent else ''
+        out.append('<shreddit-comment author="{}" thingId="{}" depth="{}"{} score="{}">'
+                   '<details><summary><faceplate-tracker><a href="/u/{}">{}</a></faceplate-tracker>'
+                   '</summary><div class="md" slot="comment">{}</div></details>'
+                   .format(author, thing, depth, parent_attr, score, author, author, body))
+        open_depths.append(depth)
+    out.extend('</shreddit-comment>' for _ in open_depths)
+    out.append('</div></body></html>')
+    return '\n'.join(out)
+
+
+def run_reddit(monkeypatch, capsys, tmp_path, url, *bodies, extra=()):
+    recorder = _Recorder(*bodies)
+    payload = run(monkeypatch, capsys,
+                  [url, '-m', 'reddit', '--out', str(tmp_path / 'thread.txt'), *extra], recorder)
+    return recorder, payload
+
+
+def run_reddit_failing(monkeypatch, capsys, url, *bodies, extra=()):
+    recorder = _Recorder(*bodies)
+    monkeypatch.setattr(bd_search.subprocess, 'run', recorder)
+    monkeypatch.setattr(bd_search.shutil, 'which', lambda _: '/usr/bin/brightdata')
+    monkeypatch.setattr('sys.argv', ['bd_search.py', url, '-m', 'reddit', *extra])
+    with pytest.raises(SystemExit) as exit_info:
+        bd_search.main()
+    return recorder, exit_info.value.code, json.loads(capsys.readouterr().err)['error']
+
+
+def test_a_full_thread_is_read_by_the_scrape_alone(monkeypatch, capsys, tmp_path):
+    recorder, payload = run_reddit(monkeypatch, capsys, tmp_path, THREAD_URL, thread_html())
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0][1:] == ['scrape', THREAD_URL, '-f', 'html']
+    assert payload['route'] == 'scrape'
+    assert (payload['recovered'], payload['reported'], payload['complete']) == (3, 3, True)
+    assert 'pipeline' not in payload
+    assert payload['log_via'] == 'brightdata'
+    assert payload['verdict'] == 'ok'
+    body = json.loads(payload['content'])
+    assert body['post']['title'] == 'A made up thread title'
+    assert (body['post']['author'], body['post']['score']) == ('dave', 42)
+    assert body['post']['text'] == 'The post body.'
+    first, reply, other = body['comments']
+    assert (first['author'], first['score'], first['depth'], first['parent']) == ('alice', 5, 0, None)
+    assert first['text'] == 'First root comment.\nSecond paragraph.'
+    # The reply's text is its own, and it names its parent.
+    assert (reply['author'], reply['depth'], reply['parent'], reply['text']) == (
+        'bob', 1, 't1_aaa', 'A reply to the first.')
+    assert (other['author'], other['depth'], other['parent']) == ('carol', 0, None)
+
+
+def test_the_scrape_route_writes_the_text_and_a_sidecar(monkeypatch, capsys, tmp_path):
+    _, payload = run_reddit(monkeypatch, capsys, tmp_path, THREAD_URL, thread_html())
+    text = (tmp_path / 'thread.txt').read_text(encoding='utf-8')
+    assert 'recovered 3 of reported 3' in text
+    assert 'A reply to the first.' in text
+    sidecar = json.loads((tmp_path / 'thread.json').read_text(encoding='utf-8'))
+    assert sidecar['route'] == 'scrape' and sidecar['text_file'] == payload['text_file']
+    assert 'content' not in sidecar
+
+
+def test_fewer_comments_than_reported_falls_back_to_the_pipeline(monkeypatch, capsys, tmp_path):
+    recorder, payload = run_reddit(monkeypatch, capsys, tmp_path, THREAD_URL,
+                                   thread_html(reported=5), PIPELINE_BODY)
+    assert [c[1] for c in recorder.calls] == ['scrape', 'pipelines']
+    assert recorder.calls[1][2] == 'reddit_posts'
+    assert payload['route'] == 'pipeline'
+    assert payload['pipeline'] == 'reddit_posts'
+    assert '3 of 5' in payload['fallback_reason']
+    assert (payload['scrape_recovered'], payload['scrape_reported']) == (3, 5)
+
+
+def test_a_post_that_does_not_report_a_count_cannot_be_checked_so_it_falls_back(monkeypatch, capsys, tmp_path):
+    _, payload = run_reddit(monkeypatch, capsys, tmp_path, THREAD_URL,
+                            thread_html(reported=None), PIPELINE_BODY)
+    assert payload['route'] == 'pipeline'
+    assert 'does not say' in payload['fallback_reason']
+
+
+@pytest.mark.parametrize('page, why', [
+    ('', 'only 0 bytes'),
+    ('<html>' + 'blocked ' * 15 + '</html>', 'bytes'),
+    ('<html><body>' + 'a page with no post ' * 200 + '</body></html>', 'no post'),
+])
+def test_an_empty_or_blocked_page_falls_back_to_the_pipeline(monkeypatch, capsys, tmp_path, page, why):
+    recorder, payload = run_reddit(monkeypatch, capsys, tmp_path, THREAD_URL, page, PIPELINE_BODY)
+    assert [c[1] for c in recorder.calls] == ['scrape', 'pipelines']
+    assert payload['route'] == 'pipeline'
+    assert why in payload['fallback_reason']
+    assert 'scrape_recovered' not in payload
+
+
+def test_a_scrape_that_errors_falls_back_to_the_pipeline(monkeypatch, capsys):
+    def flaky(cmd, **kwargs):
+        if cmd[1] == 'scrape':
+            return subprocess.CompletedProcess(cmd, 1, stdout='', stderr='upstream timeout')
+        return subprocess.CompletedProcess(cmd, 0, stdout=PIPELINE_BODY, stderr='')
+
+    payload = run(monkeypatch, capsys, [THREAD_URL, '-m', 'reddit'], flaky)
+    assert payload['route'] == 'pipeline' and 'upstream timeout' in payload['fallback_reason']
+
+
+def test_an_auth_failure_on_the_scrape_stops_the_run_rather_than_falling_back(monkeypatch, capsys):
+    bad = _Recorder('', returncode=1, stderr='Invalid or expired API key')
+    monkeypatch.setattr(bd_search.subprocess, 'run', bad)
+    monkeypatch.setattr(bd_search.shutil, 'which', lambda _: '/usr/bin/brightdata')
+    monkeypatch.setattr('sys.argv', ['bd_search.py', THREAD_URL, '-m', 'reddit'])
+    with pytest.raises(SystemExit) as exit_info:
+        bd_search.main()
+    assert exit_info.value.code == 2
+    assert len(bad.calls) == 1
+
+
+def test_a_thread_url_without_its_slug_goes_to_the_pipeline_and_says_why(monkeypatch, capsys, tmp_path):
+    recorder, payload = run_reddit(monkeypatch, capsys, tmp_path, SLUGLESS_URL, PIPELINE_BODY)
+    assert [c[1] for c in recorder.calls] == ['pipelines']
+    assert payload['route'] == 'pipeline'
+    assert 'slug' in payload['route_reason']
+
+
+def test_a_subreddit_listing_always_uses_the_pipeline(monkeypatch, capsys, tmp_path):
+    recorder, payload = run_reddit(monkeypatch, capsys, tmp_path, LISTING_URL, PIPELINE_BODY)
+    assert [c[1] for c in recorder.calls] == ['pipelines']
+    assert payload['route'] == 'pipeline'
+    assert 'listing' in payload['route_reason']
+
+
+def test_route_pipeline_skips_the_scrape_even_for_a_full_thread(monkeypatch, capsys, tmp_path):
+    recorder, payload = run_reddit(monkeypatch, capsys, tmp_path, THREAD_URL, PIPELINE_BODY,
+                                   extra=('--route', 'pipeline'))
+    assert [c[1] for c in recorder.calls] == ['pipelines']
+    assert payload['route'] == 'pipeline' and '--route pipeline' in payload['route_reason']
+
+
+def test_route_scrape_does_not_fall_back_and_marks_a_partial_thread(monkeypatch, capsys, tmp_path):
+    recorder, payload = run_reddit(monkeypatch, capsys, tmp_path, THREAD_URL, thread_html(reported=5),
+                                   extra=('--route', 'scrape'))
+    assert [c[1] for c in recorder.calls] == ['scrape']
+    assert payload['route'] == 'scrape' and payload['complete'] is False
+    assert (payload['recovered'], payload['reported']) == (3, 5)
+    assert 'partial' in payload['note']
+
+
+def test_route_scrape_on_an_empty_page_fails_rather_than_falling_back(monkeypatch, capsys):
+    recorder, code, error = run_reddit_failing(monkeypatch, capsys, THREAD_URL, 'tiny',
+                                               extra=('--route', 'scrape'))
+    assert code == 1 and [c[1] for c in recorder.calls] == ['scrape']
+    assert '--route scrape' in error
+
+
+def test_route_scrape_is_refused_for_a_listing(monkeypatch, capsys):
+    recorder, code, error = run_reddit_failing(monkeypatch, capsys, LISTING_URL, 'x',
+                                               extra=('--route', 'scrape'))
+    assert code == 1 and recorder.calls == []
+    assert 'single thread' in error
+
+
+def test_route_scrape_still_tries_a_slugless_url_when_forced(monkeypatch, capsys, tmp_path):
+    recorder, payload = run_reddit(monkeypatch, capsys, tmp_path, SLUGLESS_URL, thread_html(),
+                                   extra=('--route', 'scrape'))
+    assert [c[1] for c in recorder.calls] == ['scrape'] and payload['route'] == 'scrape'
+
+
+def test_route_applies_to_reddit_mode_only(monkeypatch, capsys):
+    monkeypatch.setattr('sys.argv', ['bd_search.py', 'acme', '-m', 'general', '--route', 'scrape'])
+    with pytest.raises(SystemExit):
+        bd_search.main()
+    assert 'reddit mode only' in json.loads(capsys.readouterr().err)['error']
+
+
+def test_a_long_thread_is_cut_by_whole_comments_so_the_json_stays_valid(monkeypatch, capsys, tmp_path):
+    many = [('t1_{:03d}'.format(i), None, 'user{}'.format(i), i, 0, '<p>{}</p>'.format('word ' * 40))
+            for i in range(30)]
+    _, payload = run_reddit(monkeypatch, capsys, tmp_path, THREAD_URL,
+                            thread_html(reported=30, comments=many), extra=('--max-chars', '2000'))
+    shown = json.loads(payload['content'])
+    assert payload['recovered'] == payload['reported'] == 30 and payload['complete'] is True
+    assert 0 < payload['returned_in_content'] == len(shown['comments']) < 30
+    assert 'user29' in (tmp_path / 'thread.txt').read_text(encoding='utf-8')
+
+
+# ---------------------------------------------------------------------------
 # Failure: the caller has to be able to tell "try the next rung" from
 # "your credentials are bad"
 # ---------------------------------------------------------------------------
